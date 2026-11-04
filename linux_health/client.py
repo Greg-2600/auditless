@@ -294,6 +294,11 @@ class ApiClient:
         result: list[dict[str, Any]] = self._request("GET", "/api/fleet")
         return result
 
+    def backup(self) -> dict[str, Any]:
+        """Snapshot the database (POST /api/maintenance/backup)."""
+        result: dict[str, Any] = self._request("POST", "/api/maintenance/backup")
+        return result
+
     def host_compliance(self, host_id: str) -> dict[str, Any]:
         """CIS compliance of the host's latest report (GET .../compliance)."""
         result: dict[str, Any] = self._request(

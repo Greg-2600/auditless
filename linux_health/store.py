@@ -406,6 +406,29 @@ class Store:
             cursor = conn.execute("DELETE FROM schedules WHERE id = ?", (schedule_id,))
         return cursor.rowcount > 0
 
+    # -- maintenance --------------------------------------------------
+
+    def backup(self, keep: int = 7) -> Path:
+        """Snapshot the database (prunes to the newest `keep` copies)."""
+        import contextlib
+
+        dest_dir = self.directory / "backups"
+        dest_dir.mkdir(exist_ok=True)
+        dest = (
+            dest_dir
+            / f"auditless-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000:06d}.db"
+        )
+        with _connect(self.db_path) as source:
+            target = sqlite3.connect(str(dest))
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+        for old in sorted(dest_dir.glob("auditless-*.db"))[:-keep]:
+            with contextlib.suppress(OSError):
+                old.unlink()
+        return dest
+
     def mark_schedule_run(self, schedule_id: str) -> None:
         """Record a run and advance next_run (best effort)."""
         try:
