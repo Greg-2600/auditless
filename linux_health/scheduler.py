@@ -46,21 +46,36 @@ def should_notify(schedule: dict, report: dict | None, diff: dict | None) -> boo
     return bool(diff and diff.get("regressed"))
 
 
-def post_webhook(url: str, payload: dict) -> None:
-    """POST JSON to a webhook URL (secrets never logged)."""
+def post_webhook(url: str, payload: dict, retries: int = 3) -> bool:
+    """POST JSON to a webhook URL with backoff retries.
+
+    Secrets never logged. Returns True on delivery, False after
+    exhausting retries (delivery failure never fails the scan).
+    """
     if not url:
-        return
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            response.read()
-    except Exception as exc:  # delivery failure must not fail the scan
-        print(f"webhook delivery failed: {exc}")
+        return False
+    body = json.dumps(payload).encode("utf-8")
+    for attempt in range(max(1, retries)):
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                response.read()
+            return True
+        except Exception:  # delivery failure must not fail the scan
+            if attempt + 1 >= max(1, retries):
+                print("webhook delivery failed after retries")
+            else:
+                time.sleep(2.0 * (attempt + 1))
+    return False
+
+
+_running: set[str] = set()
+_running_lock = threading.Lock()
 
 
 def run_due_schedules(store: Any, scan_host: Any) -> list[dict]:
@@ -81,6 +96,13 @@ def run_due_schedules(store: Any, scan_host: Any) -> list[dict]:
     for schedule in store.list_schedules(enabled_only=True):
         if schedule.get("next_run") and schedule["next_run"] > now:
             continue
+        with _running_lock:
+            if schedule["id"] in _running:
+                outcomes.append(
+                    {"schedule_id": schedule["id"], "skipped": "already running"}
+                )
+                continue
+            _running.add(schedule["id"])
         outcome: dict[str, Any] = {"schedule_id": schedule["id"], "notified": False}
         try:
             previous = _previous_report(store, schedule["host_id"], "")
@@ -89,7 +111,7 @@ def run_due_schedules(store: Any, scan_host: Any) -> list[dict]:
                 outcome["report_id"] = job.id
                 diff = diff_reports(previous, report) if previous else None
                 if should_notify(schedule, report, diff):
-                    post_webhook(
+                    if post_webhook(
                         schedule.get("webhook_url") or "",
                         {
                             "event": "scan.completed",
@@ -104,13 +126,15 @@ def run_due_schedules(store: Any, scan_host: Any) -> list[dict]:
                             "fixed": (diff or {}).get("fixed", []),
                             "regressed": (diff or {}).get("regressed", []),
                         },
-                    )
-                    outcome["notified"] = True
+                    ):
+                        outcome["notified"] = True
             else:
                 outcome["error"] = (job.error or "scan failed")[:300]
         except Exception as exc:
             outcome["error"] = str(exc)[:300]
         finally:
+            with _running_lock:
+                _running.discard(schedule["id"])
             store.mark_schedule_run(schedule["id"])
         outcomes.append(outcome)
     return outcomes
@@ -122,10 +146,23 @@ def scheduler_loop(
     interval: float = 30.0,
     scan_host: Any | None = None,
 ) -> None:
-    """Tick forever (daemon thread): run due schedules, then sleep."""
+    """Tick forever (daemon thread): run due schedules, then sleep.
+
+    Takes a best-effort database snapshot once per calendar day.
+    """
+    import datetime
+
     from .dashboard import scan_host_now
 
+    last_backup = ""
     while not stop.wait(interval):
+        today = datetime.date.today().isoformat()
+        if today != last_backup:
+            try:
+                store.backup()
+            except Exception:
+                pass
+            last_backup = today
         try:
             run_due_schedules(store, scan_host or scan_host_now)
         except Exception as exc:  # the loop itself must never die

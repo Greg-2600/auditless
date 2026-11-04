@@ -24,7 +24,7 @@ init_text = (ROOT / "linux_health" / "__init__.py").read_text(encoding="utf-8")
 version = re.search(r'__version__\s*=\s*"([^"]+)"', init_text).group(1)  # type: ignore[union-attr]
 
 setup(
-    name="linux-health",
+    name="auditless",
     version=version,
     author="Greg Baker",
     description="Agentless Linux security assessment with hardening index",
@@ -56,6 +56,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
+            "auditless=linux_health.cli:main",
             "linux-health=linux_health.cli:main",
         ],
     },

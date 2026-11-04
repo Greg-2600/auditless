@@ -1561,6 +1561,17 @@ def api_host_trend(host_id: str, limit: int = 100) -> list[dict]:
     ]
 
 
+@app.post(
+    "/api/maintenance/backup",
+    summary="Snapshot the database",
+    dependencies=_guarded,
+)
+def api_backup() -> dict:
+    """Best-effort SQLite snapshot (pruned server-side)."""
+    dest = get_store().backup()
+    return {"path": dest.name, "bytes": dest.stat().st_size}
+
+
 @app.get(
     "/api/fleet", summary="Fleet overview: latest score per host", dependencies=_guarded
 )

@@ -89,3 +89,17 @@ def test_host_id_traversal_rejected(store, tmp_path):
     assert not outside.exists()
     assert store.delete_host("../escape") is False
     assert not outside.exists()
+
+
+def test_backup_roundtrip_and_prune(store):
+    """Snapshots restore fully; only the newest `keep` are retained."""
+    store.upsert_host("b", "h", "u")
+    first = store.backup(keep=2)
+    assert first.exists()
+    restored = Store(first.parent.parent)
+    assert [h["name"] for h in restored.list_hosts()] == ["b"]
+    # Rapid snapshots get unique names; only newest `keep` are retained.
+    for _ in range(3):
+        store.backup(keep=2)
+    remaining = sorted((store.directory / "backups").glob("auditless-*.db"))
+    assert len(remaining) == 2

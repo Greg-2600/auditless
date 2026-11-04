@@ -332,6 +332,12 @@ def test_delete_job(client, monkeypatch):
     assert exc_info.value.status == 404
 
 
+def test_backup_endpoint(client):
+    result = client.backup()
+    assert result["path"].endswith(".db")
+    assert result["bytes"] > 0
+
+
 def test_wait_for_times_out(client, monkeypatch):
     import threading as _threading
 

@@ -169,7 +169,7 @@ def test_run_due_schedules_notifies_regression(store):
 
     monkey.setattr(
         "linux_health.scheduler.post_webhook",
-        lambda url, payload: posted.append((url, payload)),
+        lambda url, payload: posted.append((url, payload)) or True,
     )
     try:
         outcomes = run_due_schedules(store, fake_scan_host)
@@ -215,6 +215,8 @@ def test_post_webhook_delivery():
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
+            # NOTE: receivers must consume the request body first; closing
+            # with it unread RSTs the connection on some stacks (flaky 200s).
             length = int(self.headers.get("Content-Length", 0))
             received["body"] = self.rfile.read(length)
             self.send_response(200)
@@ -238,6 +240,96 @@ def test_post_webhook_delivery():
         server.shutdown()
         thread.join(timeout=5)
     assert json.loads(received["body"])["event"] == "scan.completed"
+
+
+def test_post_webhook_retries_then_gives_up():
+    """Flaky receiver: two failures then success still delivers."""
+    import http.server
+
+    attempts = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            # Consume the body: closing with it unread RSTs responses (flaky).
+            length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(length)
+            attempts.append(1)
+            if len(attempts) < 3:
+                self.send_response(500)
+            else:
+                self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.05}
+    )
+    thread.daemon = True
+    thread.start()
+    try:
+        assert (
+            post_webhook(
+                f"http://127.0.0.1:{server.server_address[1]}/hook",
+                {"event": "x"},
+                retries=3,
+            )
+            is True
+        )
+        assert len(attempts) == 3
+        attempts.clear()
+        assert (
+            post_webhook(
+                f"http://127.0.0.1:{server.server_address[1]}/dead",
+                {"event": "x"},
+                retries=1,
+            )
+            is False
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+
+def test_run_due_skips_overlapping_run(store):
+    """A schedule already running is skipped, never stacked."""
+    import linux_health.scheduler as sched_mod
+
+    host = _host(store)
+    sched = store.create_schedule(host["id"], "n", "* * * * *")
+    import sqlite3
+
+    with sqlite3.connect(str(store.db_path)) as conn:
+        conn.execute("UPDATE schedules SET next_run = 0 WHERE id = ?", (sched["id"],))
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_scan_host(host_id, overrides):
+        from linux_health import dashboard
+
+        started.set()
+        assert release.wait(15)
+        job = dashboard.ScanJob(
+            id="slow", hostname="h", username="u", status="error", error="boom"
+        )
+        return job, None
+
+    calls = []
+    thread = threading.Thread(
+        target=lambda: calls.append(run_due_schedules(store, slow_scan_host)),
+        daemon=True,
+    )
+    thread.start()
+    assert started.wait(10)
+    time.sleep(0.2)  # let the first tick register running
+    second = run_due_schedules(store, slow_scan_host)
+    assert second == [{"schedule_id": sched["id"], "skipped": "already running"}]
+    release.set()
+    thread.join(timeout=15)
+    assert calls[0][0]["error"] == "boom"  # None report takes the error path
+    assert sched_mod._running == set()  # lock released on every path
 
 
 def test_scheduler_loop_ticks_and_stops(store):
