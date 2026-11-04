@@ -86,3 +86,6 @@ bandit-report.json
 # Trivy
 trivy-results.sarif
 reports/
+
+# Local dashboard runtime data (SQLite + keys); containers use a volume
+data/

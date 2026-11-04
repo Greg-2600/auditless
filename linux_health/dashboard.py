@@ -197,6 +197,60 @@ class KeyUpload(BaseModel):
     key: str = Field(description="PEM/OpenSSH private key text.")
 
 
+class ScheduleCreate(BaseModel):
+    """Create an unattended scan schedule."""
+
+    host_id: str
+    name: str = Field(examples=["nightly prod-web"])
+    cron: str = Field(
+        examples=["0 3 * * *"],
+        description="5-field cron (minute hour day month weekday).",
+    )
+    profile: str = ""
+    webhook_url: str = Field(
+        default="",
+        description="Notification endpoint (write-only; never returned).",
+    )
+    notify_on: str = Field(
+        default="regression",
+        description="One of regression, threshold, always, never.",
+    )
+    min_index: int | None = Field(
+        default=None, description="Breach threshold for threshold policy."
+    )
+    enabled: bool = True
+
+
+class ScheduleUpdate(BaseModel):
+    """Partial schedule update (all fields optional)."""
+
+    name: str | None = None
+    cron: str | None = None
+    profile: str | None = None
+    webhook_url: str | None = None
+    notify_on: str | None = None
+    min_index: int | None = None
+    enabled: bool | None = None
+
+
+class SchedulePublic(BaseModel):
+    """Schedule metadata (webhook URL never exposed)."""
+
+    id: str
+    host_id: str
+    name: str
+    cron: str
+    profile: str
+    has_webhook: bool
+    notify_on: str
+    min_index: int | None = None
+    enabled: int
+    last_run: float | None = None
+    next_run: float | None = None
+    created_at: float
+    updated_at: float
+
+
 class ScanJobPublic(BaseModel):
     """Job record safe for responses (no credentials, no report by default)."""
 
@@ -670,6 +724,24 @@ Binds to localhost; do not expose without auth + TLS.</div>
 <div id="status" style="margin-top:10px"></div>
 </div>
 <div class="card"><h3 style="margin-top:0">Recent scans (this session)</h3><div id="hist" class="hist">loading&hellip;</div></div>
+<div class="card"><h3 style="margin-top:0">Fleet overview</h3>
+<div class="toolbar"><button style="margin:0" onclick="loadFleet()">Refresh</button></div>
+<div id="fleet" class="hist">loading&hellip;</div>
+<div id="trend"></div></div>
+<div class="card"><h3 style="margin-top:0">Scan schedules</h3>
+<div class="row" style="grid-template-columns:1fr 1fr 140px 120px">
+<div><label>Host</label><select id="schedhost"></select></div>
+<div><label>Name</label><input id="schedname" placeholder="nightly"></div>
+<div><label>Cron</label><input id="schedcron" value="0 3 * * *"></div>
+<div><label>Notify</label><select id="schednotify"><option value="regression">regression</option><option value="threshold">threshold</option><option value="always">always</option><option value="never">never</option></select></div>
+</div>
+<div class="row" style="grid-template-columns:1fr 120px">
+<div><label>Webhook URL (optional, stored server-side, never shown)</label><input id="schedhook" placeholder="https://hooks.example.com/..."></div>
+<div><label>Min index</label><input id="schedmin" placeholder="70"></div>
+</div>
+<button onclick="addSched()">Add schedule</button>
+<div id="scheds" class="hist" style="margin-top:10px">loading&hellip;</div>
+</div>
 <div class="card"><h3 style="margin-top:0">Saved reports (persisted)</h3>
 <div class="toolbar"><button style="margin:0" onclick="loadReports()">Refresh</button>
 <button style="margin:0" onclick="runDiff()">Compare A &rarr; B</button></div>
@@ -771,6 +843,53 @@ async function putKey(){
   keytext.value="";loadHosts();status("key stored (0600, never readable back)");}
  catch(e){status('<span class="err">'+esc(e.message)+"</span>")}}
 async function delKey(){await api("/api/hosts/"+keyhost.value+"/key",{method:"DELETE"});loadHosts()}
+async function loadFleet(){
+ try{const f=await api("/api/fleet");
+  document.getElementById("fleet").innerHTML=f.length?("<table><tr><th>Host</th>"+
+   "<th>Latest</th><th>Reports</th><th></th></tr>"+f.map(x=>
+   `<tr><td>${esc(x.name)}<br><span style="color:var(--dim)">${esc(x.hostname)}</span></td>`+
+   `<td class="${lvl(x.latest_index||0)}"><b>${x.latest_index??"&ndash;"}</b></td>`+
+   `<td>${x.total_reports}</td>`+
+   `<td><a onclick="showTrend('${x.host_id}','${esc(x.name)}')">trend</a></td></tr>`).join("")+
+   "</table>"):"no saved hosts yet";}
+ catch(e){document.getElementById("fleet").textContent="unavailable"}}
+async function showTrend(id,name){
+ const t=await api("/api/hosts/"+id+"/trend?limit=100");
+ const el=document.getElementById("trend");
+ if(!t.length){el.innerHTML="<p class='hist'>no reports yet for "+esc(name)+"</p>";return}
+ const W=520,H=160,P=28,vals=t.map(x=>x.hardening_index??0);
+ const pts=vals.map((v,i)=>[P+i*(W-2*P)/Math.max(1,vals.length-1),H-P-v/100*(H-2*P)]);
+ el.innerHTML=`<h4>${esc(name)} hardening trend</h4>`+
+  `<svg width="${W}" height="${H}" style="background:#0d1117;border:1px solid var(--line);border-radius:6px">`+
+  `<line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#30363d"/>`+
+  `<polyline fill="none" stroke="#58a6ff" stroke-width="2" points="${pts.map(p=>p.join(",")).join(" ")}"/>`+
+  pts.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${vals[i]>=75?"#3fb950":vals[i]>=60?"#d29922":"#f85149"}"><title>${vals[i]} @ ${esc(t[i].report_id||"")}</title></circle>`).join("")+
+  `</svg>`}
+async function loadScheds(){
+ try{const s=await api("/api/schedules");
+  const hosts=await api("/api/hosts");
+  schedhost.innerHTML=hosts.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");
+  document.getElementById("scheds").innerHTML=s.length?s.map(x=>
+   `<div>${esc(x.name)} &mdash; <code>${esc(x.cron)}</code> &mdash; `+
+   `${x.enabled?"enabled":"disabled"} &mdash; notify:${x.notify_on}`+
+   `${x.has_webhook?" (webhook)":""} &mdash; next:${x.next_run?new Date(x.next_run*1000).toLocaleString():"?"}`+
+   ` <a onclick="runSched('${x.id}')">run now</a> `+
+   `<a onclick="toggleSched('${x.id}',${x.enabled?0:1})">${x.enabled?"disable":"enable"}</a> `+
+   `<a onclick="delSched('${x.id}')">delete</a></div>`).join(""):"no schedules yet";}
+ catch(e){document.getElementById("scheds").textContent="unavailable"}}
+async function addSched(){
+ const b={host_id:schedhost.value,name:schedname.value,cron:schedcron.value,
+  notify_on:schednotify.value,webhook_url:schedhook.value};
+ if(schedmin.value)b.min_index=parseInt(schedmin.value,10);
+ try{await api("/api/schedules",{method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify(b)});
+  schedname.value=schedhook.value=schedmin.value="";loadScheds();}
+ catch(e){status('<span class="err">'+esc(e.message)+"</span>")}}
+async function delSched(id){await api("/api/schedules/"+id,{method:"DELETE"});loadScheds()}
+async function toggleSched(id,en){await api("/api/schedules/"+id,{method:"PATCH",
+ headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:!!en})});loadScheds()}
+async function runSched(id){const j=await api("/api/schedules/"+id+"/run",{method:"POST"});
+ status("manual run started: "+j.id);cur=j.id;poll();loadHist()}
 async function loadReports(){
  try{const r=await api("/api/reports?limit=30");
   document.getElementById("reps").innerHTML=r.length?r.map(x=>
@@ -838,6 +957,8 @@ function dl(){const b=new Blob([JSON.stringify(window._rep,null,2)],
 loadHist();
 loadHosts();
 loadReports();
+loadFleet();
+loadScheds();
 </script>
 </body>
 </html>
@@ -1003,6 +1124,32 @@ def api_get_report(  # pylint: disable=redefined-builtin
 def api_list_profiles() -> list[dict]:
     """Profile names/paths usable as the scan `profile` parameter."""
     return list_profiles()
+
+
+def scan_host_now(host_id: str, overrides: dict) -> tuple[ScanJob, dict | None]:
+    """Run a saved-host scan synchronously with persistence (scheduler path)."""
+    base, run_params = resolve_host_scan(host_id, overrides)
+    job = start_scan({**base, "password": run_params.get("password", "")})
+    _run_job(job, run_params, host_id)
+    return job, (job.report if job.status == "done" else None)
+
+
+def _schedule_public(row: dict) -> SchedulePublic:
+    return SchedulePublic(
+        id=str(row["id"]),
+        host_id=str(row["host_id"]),
+        name=str(row["name"]),
+        cron=str(row["cron"]),
+        profile=str(row.get("profile") or ""),
+        has_webhook=bool(row.get("webhook_url")),
+        notify_on=str(row["notify_on"]),
+        min_index=row.get("min_index"),
+        enabled=int(row["enabled"]),
+        last_run=row.get("last_run"),
+        next_run=row.get("next_run"),
+        created_at=float(row["created_at"]),
+        updated_at=float(row["updated_at"]),
+    )
 
 
 def _host_public(row: dict) -> HostPublic:
@@ -1232,12 +1379,175 @@ def api_diff_reports(from_id: str, to_id: str) -> dict:
     return result
 
 
-def serve_forever(host: str = "127.0.0.1", port: int = 8080) -> None:
+@app.get(
+    "/api/schedules",
+    response_model=list[SchedulePublic],
+    summary="List scan schedules",
+    dependencies=_guarded,
+)
+def api_list_schedules() -> list[SchedulePublic]:
+    """Unattended scan schedules (webhook URLs never exposed)."""
+    return [_schedule_public(row) for row in get_store().list_schedules()]
+
+
+@app.post(
+    "/api/schedules",
+    response_model=SchedulePublic,
+    status_code=201,
+    summary="Create a scan schedule",
+    dependencies=_guarded,
+)
+def api_create_schedule(data: ScheduleCreate) -> SchedulePublic:
+    """Schedule recurring scans for a saved host (cron validated)."""
+    try:
+        row = get_store().create_schedule(
+            data.host_id,
+            data.name,
+            data.cron,
+            data.profile,
+            data.webhook_url,
+            data.notify_on,
+            data.min_index,
+            data.enabled,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _schedule_public(row)
+
+
+@app.get(
+    "/api/schedules/{schedule_id}",
+    response_model=SchedulePublic,
+    summary="Fetch one schedule",
+    dependencies=_guarded,
+)
+def api_get_schedule(schedule_id: str) -> SchedulePublic:
+    """Fetch schedule metadata (never the webhook URL)."""
+    row = get_store().get_schedule(schedule_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown schedule")
+    return _schedule_public(row)
+
+
+@app.patch(
+    "/api/schedules/{schedule_id}",
+    response_model=SchedulePublic,
+    summary="Update a schedule",
+    dependencies=_guarded,
+)
+def api_update_schedule(schedule_id: str, data: ScheduleUpdate) -> SchedulePublic:
+    """Partial update; changing cron recomputes the next run."""
+    try:
+        row = get_store().update_schedule(
+            schedule_id,
+            **{k: v for k, v in data.model_dump().items() if v is not None},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown schedule")
+    return _schedule_public(row)
+
+
+@app.delete(
+    "/api/schedules/{schedule_id}", summary="Delete a schedule", dependencies=_guarded
+)
+def api_delete_schedule(schedule_id: str) -> dict:
+    """Remove an unattended schedule."""
+    if not get_store().delete_schedule(schedule_id):
+        raise HTTPException(status_code=404, detail="unknown schedule")
+    return {"deleted": schedule_id}
+
+
+@app.post(
+    "/api/schedules/{schedule_id}/run",
+    response_model=ScanJobPublic,
+    status_code=201,
+    summary="Trigger a scheduled scan now",
+    dependencies=_guarded,
+)
+def api_run_schedule_now(schedule_id: str) -> ScanJobPublic:
+    """Run a schedule's host immediately (same pipeline, persisted)."""
+    row = get_store().get_schedule(schedule_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown schedule")
+    try:
+        job, _ = scan_host_now(row["host_id"], {"profile": row.get("profile") or ""})
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _public_job(job, include_report=True)
+
+
+@app.get(
+    "/api/hosts/{host_id}/trend",
+    summary="Hardening-index history for a host",
+    dependencies=_guarded,
+)
+def api_host_trend(host_id: str, limit: int = 100) -> list[dict]:
+    """Chronological hardening scores for charting progress."""
+    if not get_store().get_host(host_id):
+        raise HTTPException(status_code=404, detail="unknown host")
+    rows = get_store().list_reports(host_id, max(1, min(limit, 500)))
+    return [
+        {
+            "report_id": r["id"],
+            "created_at": r["created_at"],
+            "hardening_index": r["hardening_index"],
+            "status": r["status"],
+        }
+        for r in reversed(rows)
+    ]
+
+
+@app.get(
+    "/api/fleet", summary="Fleet overview: latest score per host", dependencies=_guarded
+)
+def api_fleet() -> list[dict]:
+    """One row per saved host with its latest hardening index."""
+    fleet = []
+    for host in get_store().list_hosts():
+        rows = get_store().list_reports(host["id"], limit=1)
+        latest = rows[0] if rows else None
+        fleet.append(
+            {
+                "host_id": host["id"],
+                "name": host["name"],
+                "hostname": host["hostname"],
+                "latest_index": latest["hardening_index"] if latest else None,
+                "latest_report_id": latest["id"] if latest else None,
+                "latest_at": latest["created_at"] if latest else None,
+                "total_reports": len(get_store().list_reports(host["id"], limit=1000)),
+            }
+        )
+    return fleet
+
+
+def serve_forever(
+    host: str = "127.0.0.1", port: int = 8080, scheduler: bool = True
+) -> None:
     """Run the dashboard with uvicorn until interrupted."""
     import sys
 
     import uvicorn
 
+    stop_event: threading.Event | None = None
+    if scheduler:
+        import threading as _threading
+
+        from .scheduler import scheduler_loop
+
+        stop_event = _threading.Event()
+        worker = _threading.Thread(
+            target=scheduler_loop,
+            args=(get_store(), stop_event),
+            kwargs={"interval": 30.0},
+            daemon=True,
+            name="auditless-scheduler",
+        )
+        worker.start()
+        print("Scheduler enabled (30s tick): unattended scans will run")
     if host not in ("127.0.0.1", "localhost", "::1"):
         print(
             f"Warning: binding {host} exposes the unauthenticated dashboard"
@@ -1246,4 +1556,10 @@ def serve_forever(host: str = "127.0.0.1", port: int = 8080) -> None:
         )
     print(f"Auditless UI on http://{host}:{port} (Ctrl-C to stop)")
     print(f"Swagger docs at http://{host}:{port}/docs")
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="warning")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if stop_event is not None:
+            stop_event.set()

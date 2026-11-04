@@ -238,6 +238,62 @@ class ApiClient:
         )
         return result
 
+    def create_schedule(
+        self, host_id: str, name: str, cron: str, **options: Any
+    ) -> dict[str, Any]:
+        """Create an unattended scan schedule (POST /api/schedules)."""
+        payload: dict[str, Any] = {
+            "host_id": host_id,
+            "name": name,
+            "cron": cron,
+            **options,
+        }
+        result: dict[str, Any] = self._request("POST", "/api/schedules", payload)
+        return result
+
+    def list_schedules(self) -> list[dict[str, Any]]:
+        """Scan schedules, webhook URLs never included (GET /api/schedules)."""
+        result: list[dict[str, Any]] = self._request("GET", "/api/schedules")
+        return result
+
+    def get_schedule(self, schedule_id: str) -> dict[str, Any]:
+        """Fetch one schedule (GET /api/schedules/{id})."""
+        result: dict[str, Any] = self._request("GET", f"/api/schedules/{schedule_id}")
+        return result
+
+    def update_schedule(self, schedule_id: str, **fields: Any) -> dict[str, Any]:
+        """Partial schedule update (PATCH /api/schedules/{id})."""
+        result: dict[str, Any] = self._request(
+            "PATCH", f"/api/schedules/{schedule_id}", fields
+        )
+        return result
+
+    def delete_schedule(self, schedule_id: str) -> dict[str, Any]:
+        """Remove a schedule (DELETE /api/schedules/{id})."""
+        result: dict[str, Any] = self._request(
+            "DELETE", f"/api/schedules/{schedule_id}"
+        )
+        return result
+
+    def run_schedule_now(self, schedule_id: str) -> dict[str, Any]:
+        """Trigger a scheduled scan immediately (POST .../run)."""
+        result: dict[str, Any] = self._request(
+            "POST", f"/api/schedules/{schedule_id}/run"
+        )
+        return result
+
+    def host_trend(self, host_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        """Hardening-index history for charting (GET /api/hosts/{id}/trend)."""
+        result: list[dict[str, Any]] = self._request(
+            "GET", f"/api/hosts/{host_id}/trend", params={"limit": str(limit)}
+        )
+        return result
+
+    def fleet(self) -> list[dict[str, Any]]:
+        """Latest score per saved host (GET /api/fleet)."""
+        result: list[dict[str, Any]] = self._request("GET", "/api/fleet")
+        return result
+
     def wait_for(
         self, job_id: str, deadline: float = 30.0, interval: float = 0.3
     ) -> dict[str, Any]:

@@ -65,6 +65,21 @@ CREATE TABLE IF NOT EXISTS reports (
     created_at REAL NOT NULL,
     finished_at REAL
 );
+CREATE TABLE IF NOT EXISTS schedules (
+    id TEXT PRIMARY KEY,
+    host_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    cron TEXT NOT NULL,
+    profile TEXT NOT NULL DEFAULT '',
+    webhook_url TEXT NOT NULL DEFAULT '',
+    notify_on TEXT NOT NULL DEFAULT 'regression',
+    min_index INTEGER,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_run REAL,
+    next_run REAL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
 """
 
 
@@ -255,3 +270,150 @@ class Store:
         with _connect(self.db_path) as conn:
             cursor = conn.execute("DELETE FROM reports WHERE id = ?", (report_id,))
         return cursor.rowcount > 0
+
+    # -- schedules ----------------------------------------------------
+
+    def create_schedule(
+        self,
+        host_id: str,
+        name: str,
+        cron: str,
+        profile: str = "",
+        webhook_url: str = "",
+        notify_on: str = "regression",
+        min_index: int | None = None,
+        enabled: bool = True,
+    ) -> dict:
+        """Create a scan schedule (validates host, cron, and policy)."""
+        from .cron import CronExpr
+
+        if not self.get_host(host_id):
+            raise KeyError(f"unknown host {host_id}")
+        if notify_on not in ("regression", "threshold", "always", "never"):
+            raise ValueError(f"bad notify_on: {notify_on!r}")
+        CronExpr(cron)  # raises ValueError when invalid
+        now = time.time()
+        sid = uuid.uuid4().hex[:12]
+        with _connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO schedules (id, host_id, name, cron, profile,"
+                " webhook_url, notify_on, min_index, enabled, last_run,"
+                " next_run, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+                (
+                    sid,
+                    host_id,
+                    name,
+                    cron,
+                    profile,
+                    webhook_url,
+                    notify_on,
+                    min_index,
+                    int(enabled),
+                    now,
+                    now,
+                ),
+            )
+        self._refresh_next_run(sid)
+        result = self.get_schedule(sid)
+        assert result is not None
+        return result
+
+    def _refresh_next_run(self, schedule_id: str) -> None:
+        """Recompute next_run from the cron expression (now-based)."""
+        import datetime
+
+        from .cron import CronExpr
+
+        with _connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT cron FROM schedules WHERE id = ?", (schedule_id,)
+            ).fetchone()
+            if row is None:
+                return
+            nxt = CronExpr(row["cron"]).next_after(datetime.datetime.now())
+            conn.execute(
+                "UPDATE schedules SET next_run = ?, updated_at = ? WHERE id = ?",
+                (nxt.timestamp(), time.time(), schedule_id),
+            )
+
+    def get_schedule(self, schedule_id: str) -> dict | None:
+        """Fetch one schedule row (includes webhook URL: server-side only)."""
+        with _connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM schedules WHERE id = ?", (schedule_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_schedules(self, enabled_only: bool = False) -> list[dict]:
+        """All schedules, newest first."""
+        with _connect(self.db_path) as conn:
+            if enabled_only:
+                rows = conn.execute(
+                    "SELECT * FROM schedules WHERE enabled = 1"
+                    " ORDER BY created_at DESC"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM schedules ORDER BY created_at DESC"
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_schedule(self, schedule_id: str, **fields: object) -> dict | None:
+        """Partial update (recomputes next_run when cron changes)."""
+        allowed = {
+            "name",
+            "cron",
+            "profile",
+            "webhook_url",
+            "notify_on",
+            "min_index",
+            "enabled",
+        }
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if "notify_on" in updates and updates["notify_on"] not in (
+            "regression",
+            "threshold",
+            "always",
+            "never",
+        ):
+            raise ValueError(f"bad notify_on: {updates['notify_on']!r}")
+        if "cron" in updates:
+            from .cron import CronExpr
+
+            CronExpr(str(updates["cron"]))
+        if "enabled" in updates:
+            updates["enabled"] = int(bool(updates["enabled"]))
+        if not updates:
+            return self.get_schedule(schedule_id)
+        with _connect(self.db_path) as conn:
+            if not conn.execute(
+                "SELECT id FROM schedules WHERE id = ?", (schedule_id,)
+            ).fetchone():
+                return None
+            sets = ", ".join(f"{k} = ?" for k in updates)
+            conn.execute(
+                f"UPDATE schedules SET {sets}, updated_at = ? WHERE id = ?",
+                (*updates.values(), time.time(), schedule_id),
+            )
+        if "cron" in updates:
+            self._refresh_next_run(schedule_id)
+        return self.get_schedule(schedule_id)
+
+    def delete_schedule(self, schedule_id: str) -> bool:
+        """Remove a schedule."""
+        with _connect(self.db_path) as conn:
+            cursor = conn.execute("DELETE FROM schedules WHERE id = ?", (schedule_id,))
+        return cursor.rowcount > 0
+
+    def mark_schedule_run(self, schedule_id: str) -> None:
+        """Record a run and advance next_run (best effort)."""
+        try:
+            with _connect(self.db_path) as conn:
+                conn.execute(
+                    "UPDATE schedules SET last_run = ?, updated_at = ? WHERE id = ?",
+                    (time.time(), time.time(), schedule_id),
+                )
+            self._refresh_next_run(schedule_id)
+        except Exception:
+            pass
