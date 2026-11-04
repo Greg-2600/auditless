@@ -83,10 +83,12 @@ def build_parser() -> argparse.ArgumentParser:
         Configured argparse.ArgumentParser instance
     """
     parser = argparse.ArgumentParser(description="Linux host health checker over SSH")
-    parser.add_argument("hostname", help="Target host")
-    parser.add_argument("username", help="SSH username")
+    parser.add_argument("hostname", nargs="?", default=None, help="Target host")
+    parser.add_argument("username", nargs="?", default=None, help="SSH username")
     parser.add_argument(
         "password",
+        nargs="?",
+        default=None,
         help="SSH password (prefer key auth in production; use '-' with --ask-password to prompt)",
     )
     parser.add_argument("--port", type=int, default=22, help="SSH port (default: 22)")
@@ -145,6 +147,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Check for unused/orphaned packages and bloat",
     )
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Run the local web dashboard instead of a one-shot scan",
+    )
+    parser.add_argument(
+        "--serve-host",
+        type=str,
+        default="127.0.0.1",
+        help="Dashboard bind address (default: 127.0.0.1, keep loopback)",
+    )
+    parser.add_argument(
+        "--serve-port",
+        type=int,
+        default=8080,
+        help="Dashboard port (default: 8080)",
+    )
     return parser
 
 
@@ -159,6 +178,15 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.serve:
+        from .dashboard import serve_forever
+
+        serve_forever(args.serve_host, args.serve_port)
+        return 0
+
+    if not args.hostname or not args.username or args.password is None:
+        parser.error("hostname, username and password are required (or use --serve)")
     ports = parse_ports(args.scan_ports)
 
     password = args.password

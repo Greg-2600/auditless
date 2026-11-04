@@ -23,6 +23,9 @@ RUN mkdir -p /app/reports \
 
 USER appuser
 
+# Dashboard port (local web UI via --serve)
+EXPOSE 8080
+
 # Set the entry point
 ENTRYPOINT ["python", "-m", "linux_health"]
 CMD ["--help"]
