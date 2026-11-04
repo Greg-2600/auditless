@@ -1593,10 +1593,10 @@ black linux_health/ tests/ && ruff check linux_health/ tests/
 
 ### Test Suite Overview
 
-**Status:** 107/107 tests passing (100% pass rate)  
-**Coverage:** 66% overall (71% checks.py, 100% scanner.py, 100% ssh_client.py)  
+**Status:** 378 unit tests passing + 12 end-to-end tests (100% pass rate)  
+**Coverage:** 83% overall  
 **Framework:** pytest 7.0+  
-**Execution Time:** ~1.3 seconds
+**Execution Time:** ~8 seconds (unit), ~1 minute (e2e, containerized)
 
 ### Module Coverage Breakdown
 
@@ -1655,6 +1655,21 @@ pytest tests/ -s
 # Full traceback on error
 pytest tests/ -vv --tb=long
 ```
+
+#### End-to-End Suite (`tests/test_e2e.py`, 12 tests)
+
+Spins up real containers — a throwaway OpenSSH server plus the app image —
+and exercises every feature through the public `ApiClient`: CLI scans in
+all three formats, password + key auth, strict host-key rejection, version
+/ profiles / UI / Swagger, host CRUD, write-only keys, persisted scans,
+report diffing, and persistence across a container restart.
+
+```bash
+# Requires a working docker daemon + ssh-keygen (skips otherwise)
+AUDITLESS_E2E=1 pytest tests/test_e2e.py -v
+```
+
+CI runs the same in the `e2e` workflow job on every push/PR to `main`.
 
 ### Continuous Integration
 
