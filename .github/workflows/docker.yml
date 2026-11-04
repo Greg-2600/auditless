@@ -63,6 +63,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         run: |
           docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -v trivy-cache:/root/.cache/ \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             aquasec/trivy:0.76.1 image \

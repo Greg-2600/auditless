@@ -270,34 +270,42 @@ def run_scan(params: dict) -> dict:
             out_path.unlink()
 
 
+def _persist_job(job: ScanJob, host_id: str | None) -> None:
+    """Best-effort persistence (must never break status reporting)."""
+    try:
+        get_store().save_report(
+            job.id,
+            job.hostname,
+            job.username,
+            job.status,
+            job.report,
+            job.error,
+            host_id,
+            job.created_at,
+            job.finished_at,
+        )
+    except Exception:
+        pass
+
+
 def _run_job(job: ScanJob, params: dict, host_id: str | None = None) -> None:
+    # NOTE: terminal status flips only AFTER persisting, so pollers that
+    # observe done/error are guaranteed a stored row (no save race).
     job.status = "running"
     job.progress = "connecting over SSH and gathering checks"
     try:
         job.report = run_scan(params)
-        job.status = "done"
         job.progress = "complete"
         _save_report_copy(job.hostname, job.report)
-    except Exception as exc:  # keep the job record, report the failure
-        job.status = "error"
-        job.progress = "failed"
-        job.error = str(exc)[:1000]
-    finally:
         job.finished_at = time.time()
-        try:
-            get_store().save_report(
-                job.id,
-                job.hostname,
-                job.username,
-                job.status,
-                job.report,
-                job.error,
-                host_id,
-                job.created_at,
-                job.finished_at,
-            )
-        except Exception:
-            pass  # persistence must never break status reporting
+        job.status = "done"
+        _persist_job(job, host_id)
+    except Exception as exc:  # keep the job record, report the failure
+        job.error = str(exc)[:1000]
+        job.progress = "failed"
+        job.finished_at = time.time()
+        job.status = "error"
+        _persist_job(job, host_id)
 
 
 def start_scan(params: dict) -> ScanJob:
