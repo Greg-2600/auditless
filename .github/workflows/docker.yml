@@ -61,13 +61,14 @@ jobs:
         run: docker build -t linux-health:scan .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: linux-health:scan
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          exit-code: "0"
+        run: |
+          docker run --rm \
+            -v trivy-cache:/root/.cache/ \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            aquasec/trivy:0.76.1 image \
+            --format sarif --output /workspace/trivy-results.sarif \
+            --severity CRITICAL,HIGH --exit-code 0 \
+            linux-health:scan
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
