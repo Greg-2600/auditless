@@ -45,8 +45,9 @@ def test_key_bytes_never_in_records(store):
     assert store.get_host(host["id"])["has_key"] == 1
     path = store.key_path(host["id"])
     assert path.read_text() == secret
-    mode = stat.S_IMODE(os.stat(path).st_mode)
-    assert mode == 0o600, oct(mode)
+    if os.name != "nt":  # Windows has no POSIX permission bits
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+        assert mode == 0o600, oct(mode)
     # Metadata-only: no public surface carries the bytes.
     dumped = repr(store.get_host(host["id"])) + repr(store.list_hosts())
     assert "SENTINEL-KEY-BYTES" not in dumped
@@ -72,3 +73,19 @@ def test_report_roundtrip(store):
     assert store.get_report("missing") is None
     assert store.delete_report("r1") is True
     assert store.delete_report("r1") is False
+
+
+def test_host_id_traversal_rejected(store, tmp_path):
+    """Hostile ids must never reach the filesystem (CodeQL py/path-injection)."""
+    from linux_health.store import _safe_id
+
+    for hostile in ("../escape", "..\\escape", "a/b", "", "x" * 65, ".", "a b"):
+        with pytest.raises(ValueError):
+            _safe_id(hostile)
+        with pytest.raises(ValueError):
+            store.key_path(hostile)
+    # Unknown hostile ids vanish as 404-shaped KeyErrors, touching nothing.
+    outside = tmp_path / "data" / "escape"
+    assert not outside.exists()
+    assert store.delete_host("../escape") is False
+    assert not outside.exists()

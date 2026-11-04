@@ -1026,7 +1026,10 @@ def api_put_host_key(host_id: str, data: KeyUpload) -> dict:
         raise HTTPException(status_code=404, detail="unknown host")
     if not data.key.strip():
         raise HTTPException(status_code=400, detail="empty key")
-    get_store().set_host_key(host_id, data.key)
+    try:
+        get_store().set_host_key(host_id, data.key)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="unknown host") from exc
     return {"host_id": host_id, "has_key": True}
 
 
@@ -1035,7 +1038,11 @@ def api_get_host_key(host_id: str) -> dict:
     """Whether key bytes are stored. The key itself is never returned."""
     if not get_store().get_host(host_id):
         raise HTTPException(status_code=404, detail="unknown host")
-    return {"host_id": host_id, "has_key": get_store().has_host_key(host_id)}
+    try:
+        present = get_store().has_host_key(host_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="unknown host") from exc
+    return {"host_id": host_id, "has_key": present}
 
 
 @app.delete("/api/hosts/{host_id}/key", summary="Remove a stored key")
@@ -1043,7 +1050,10 @@ def api_delete_host_key(host_id: str) -> dict:
     """Delete stored key bytes (host record kept, flag cleared)."""
     if not get_store().get_host(host_id):
         raise HTTPException(status_code=404, detail="unknown host")
-    get_store().clear_host_key(host_id)
+    try:
+        get_store().clear_host_key(host_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="unknown host") from exc
     return {"host_id": host_id, "has_key": False}
 
 

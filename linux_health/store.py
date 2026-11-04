@@ -26,6 +26,15 @@ def data_dir() -> Path:
     return path
 
 
+def _safe_id(host_id: str) -> str:
+    """Validate an id before it touches the filesystem (traversal guard)."""
+    import re
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", host_id or ""):
+        raise ValueError(f"invalid host id: {host_id!r}")
+    return host_id
+
+
 def _connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -121,16 +130,21 @@ class Store:
 
     def delete_host(self, host_id: str) -> bool:
         """Delete a host and its stored key material."""
-        self.clear_host_key(host_id)
         with _connect(self.db_path) as conn:
-            cursor = conn.execute("DELETE FROM hosts WHERE id = ?", (host_id,))
-        return cursor.rowcount > 0
+            row = conn.execute(
+                "SELECT id FROM hosts WHERE id = ?", (host_id,)
+            ).fetchone()
+            if row is None:
+                return False
+            self.clear_host_key(host_id)
+            conn.execute("DELETE FROM hosts WHERE id = ?", (host_id,))
+        return True
 
     # -- keys (bytes on disk, 0600, write-only via API) ----------------
 
     def key_path(self, host_id: str) -> Path:
-        """Filesystem location for a host's private key."""
-        return self.directory / "keys" / host_id
+        """Filesystem location for a host's private key (guarded)."""
+        return self.directory / "keys" / _safe_id(host_id)
 
     def set_host_key(self, host_id: str, key_text: str) -> None:
         """Store key bytes with owner-only permissions; flag the host."""
