@@ -348,8 +348,9 @@ python -m linux_health --serve --serve-host 127.0.0.1 --serve-port 9000
 AUDITLESS_PORT=9000 docker compose up -d   # -> http://127.0.0.1:9000/
 ```
 
-Binding anywhere off loopback prints a warning: the dashboard has no
-auth, so put authentication + TLS in front before exposing it.
+Binding anywhere off loopback prints a warning: set `AUDITLESS_TOKEN`
+(bearer auth on every `/api/*` route) and put TLS in front before
+exposing it.
 
 - **Saved hosts** (`/api/hosts` CRUD): register once, scan repeatedly.
   Password hosts still prompt per scan; key hosts authenticate from the
@@ -362,6 +363,31 @@ auth, so put authentication + TLS in front before exposing it.
   fixed vs regressed checks and the hardening-index delta per host.
 - Data lives in `$AUDITLESS_DATA_DIR` (`./data` locally, `/app/data` in
   the container).
+
+### Unattended schedules, trends & drift alerts
+
+The serving process runs a 30s scheduler loop (`--no-scheduler` opts
+out). Schedules are cron expressions per saved host with a notification
+policy (`regression` | `threshold` | `always` | `never`):
+
+```bash
+# Equivalent API calls (ApiClient shown)
+api.create_schedule(host_id, "nightly", "0 3 * * *",
+                    webhook_url="https://hooks.example.com/abc",
+                    notify_on="regression")
+api.create_schedule(host_id, "watch", "*/30 * * * *",
+                    notify_on="threshold", min_index=70)
+```
+
+- Each run persists exactly like a manual scan, then diffs against the
+  host's previous completed report. Regressions (or sub-threshold
+  scores, or every run) POST a JSON payload to the webhook. Webhook URLs
+  are write-only: stored server-side, flagged `has_webhook`, never
+  returned or logged.
+- **Trends** (`GET /api/hosts/{id}/trend`) return chronological hardening
+  scores for charting; the UI draws per-host SVG sparklines.
+- **Fleet** (`GET /api/fleet`) returns one row per host with its latest
+  index, report id, and report count — the UI fleet table.
 
 Development gates run on every commit via pre-commit (black, ruff,
 pylint 10.00/10, mypy, bandit HIGH-only, full pytest suite) and mirror

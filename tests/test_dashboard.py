@@ -279,6 +279,11 @@ def test_openapi_spec_is_complete(client):
         "/api/reports",
         "/api/reports/{report_id}",
         "/api/diff",
+        "/api/schedules",
+        "/api/schedules/{schedule_id}",
+        "/api/schedules/{schedule_id}/run",
+        "/api/hosts/{host_id}/trend",
+        "/api/fleet",
     ):
         assert path in spec["paths"], path
     props = spec["components"]["schemas"]["ScanRequest"]["properties"]
@@ -396,6 +401,84 @@ def test_hostile_ids_never_touch_disk(client):
         assert exc_info.value.status == 404
 
 
+def test_schedules_crud_and_validation(client):
+    host = client.create_host("sched", "10.9.9.9", "u")
+    with pytest.raises(ApiError) as exc_info:
+        client.create_schedule(host["id"], "bad", "not a cron")
+    assert exc_info.value.status == 400
+    with pytest.raises(ApiError) as exc_info:
+        client.create_schedule("missing", "x", "* * * * *")
+    assert exc_info.value.status == 404
+    sched = client.create_schedule(
+        host["id"],
+        "nightly",
+        "0 3 * * *",
+        webhook_url="https://hooks/x/SECRET",
+        notify_on="always",
+    )
+    assert sched["next_run"] is not None
+    # Webhook URL stored server-side, never listed.
+    assert "SECRET" not in json.dumps(client.list_schedules())
+    assert "SECRET" not in json.dumps(client.get_schedule(sched["id"]))
+    updated = client.update_schedule(sched["id"], cron="0 4 * * *")
+    assert updated["cron"] == "0 4 * * *"
+    assert client.delete_schedule(sched["id"])["deleted"] == sched["id"]
+    with pytest.raises(ApiError) as exc_info:
+        client.get_schedule(sched["id"])
+    assert exc_info.value.status == 404
+
+
+def test_run_schedule_now_triggers_scan(client, monkeypatch):
+    from linux_health import dashboard
+
+    seen = {}
+
+    def fake_scan_host(host_id, overrides):
+        seen.update(host_id=host_id, overrides=overrides)
+        job = dashboard.ScanJob(id="manual1", hostname="h", username="u", status="done")
+        job.report = canned_report()
+        return job, job.report
+
+    monkeypatch.setattr(dashboard, "scan_host_now", fake_scan_host)
+    host = client.create_host("trig", "10.8.8.8", "u", auth="password")
+    sched = client.create_schedule(host["id"], "n", "0 3 * * *")
+    job = client.run_schedule_now(sched["id"])
+    assert seen["host_id"] == host["id"]
+    assert job["report"]["summary"]["hardening_index"] == 50
+    with pytest.raises(ApiError) as exc_info:
+        client.run_schedule_now("missing")
+    assert exc_info.value.status == 404
+
+
+def test_trend_and_fleet(client, monkeypatch):
+    from linux_health import dashboard
+
+    def fake_run_scan(params):
+        params["password"] = None
+        return canned_report()
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    host = client.create_host("trend", "10.7.7.7", "u", auth="password")
+    assert client.host_trend(host["id"]) == []
+    for _ in range(2):
+        done = client.wait_for(
+            client.start_scan(host_id=host["id"], password="x")["id"]
+        )
+        assert done["status"] == "done"
+    trend = client.host_trend(host["id"])
+    assert len(trend) == 2
+    assert [t["hardening_index"] for t in trend] == [50, 50]
+    assert trend[0]["created_at"] <= trend[1]["created_at"]
+    fleet = client.fleet()
+    entry = next(f for f in fleet if f["host_id"] == host["id"])
+    assert entry["latest_index"] == 50
+    assert entry["total_reports"] == 2
+    assert entry["latest_report_id"] == trend[1]["report_id"]
+    with pytest.raises(ApiError) as exc_info:
+        client.host_trend("missing")
+    assert exc_info.value.status == 404
+
+
 def test_json_report_carries_package_version():
     from linux_health import __version__
     from linux_health.checks import SystemInfo
@@ -484,10 +567,14 @@ def test_cli_serve_dispatch(monkeypatch):
     called = {}
     monkeypatch.setattr(
         "linux_health.dashboard.serve_forever",
-        lambda host, port: called.update(host=host, port=port),
+        lambda host, port, scheduler=True: called.update(
+            host=host, port=port, scheduler=scheduler
+        ),
     )
     assert cli.main(["--serve", "--serve-port", "9001"]) == 0
-    assert called == {"host": "127.0.0.1", "port": 9001}
+    assert called == {"host": "127.0.0.1", "port": 9001, "scheduler": True}
+    assert cli.main(["--serve", "--no-scheduler"]) == 0
+    assert called["scheduler"] is False
 
 
 def test_cli_missing_positionals_errors(capsys):

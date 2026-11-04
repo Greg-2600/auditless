@@ -173,6 +173,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=int(os.environ.get("AUDITLESS_PORT", "8080")),
         help="Dashboard port (env AUDITLESS_PORT; default: 8080)",
     )
+    parser.add_argument(
+        "--no-scheduler",
+        action="store_true",
+        help="Disable unattended scheduled scans while serving",
+    )
     return parser
 
 
@@ -191,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.serve:
         from .dashboard import serve_forever
 
-        serve_forever(args.serve_host, args.serve_port)
+        serve_forever(args.serve_host, args.serve_port, not args.no_scheduler)
         return 0
 
     if not args.hostname or not args.username:
