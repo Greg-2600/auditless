@@ -74,7 +74,11 @@ class ApiClient:
                     return json.loads(body)
                 return body
         except urllib.error.HTTPError as exc:
-            raise ApiError(exc.code, exc.read().decode("utf-8", "replace")) from exc
+            try:
+                body = exc.read().decode("utf-8", "replace")
+            finally:
+                exc.close()
+            raise ApiError(exc.code, body) from exc
 
     def health(self) -> dict[str, Any]:
         """Liveness probe (GET /healthz)."""

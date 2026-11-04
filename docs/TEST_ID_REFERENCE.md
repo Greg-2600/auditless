@@ -1,5 +1,11 @@
 # Linux Health Test ID Reference
 
+> **Authoritative sources:** the runtime registry
+> (`linux_health/test_ids.py`, every ID locked by parametrized tests),
+> the CIS mapping (`linux_health/compliance.py`), and the live catalog
+> (`GET /api/compliance/controls`). What follows is the original v2.0
+> design note, kept for history.
+
 This document maps Linux Health checks to Lynis-compatible test IDs for consistency and compatibility.
 
 ## Test ID Format

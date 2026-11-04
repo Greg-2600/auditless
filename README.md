@@ -361,6 +361,8 @@ exposing it.
 - **Reports** (`/api/reports`) persist across restarts; **diff**
   (`/api/diff?from_id=..&to_id=..`, plus the UI Compare button) shows
   fixed vs regressed checks and the hardening-index delta per host.
+- **Backups** (`POST /api/maintenance/backup`, plus a daily automatic
+  snapshot, pruned server-side) protect the SQLite store.
 
 ### CIS compliance mapping
 
@@ -1660,20 +1662,22 @@ black linux_health/ tests/ && ruff check linux_health/ tests/
 
 ### Test Suite Overview
 
-**Status:** 378 unit tests passing + 12 end-to-end tests (100% pass rate)  
-**Coverage:** 83% overall  
+**Status:** 469 unit tests passing + 14 end-to-end tests (100% pass rate)  
+**Coverage:** 85% overall  
 **Framework:** pytest 7.0+  
 **Execution Time:** ~8 seconds (unit), ~1 minute (e2e, containerized)
 
 ### Module Coverage Breakdown
 
-| Module | Lines | Covered | Coverage | Focus Areas |
+| Module | Stmts | Cover | Focus Areas |
 | ------ | ----- | ------- | -------- | ----------- |
-| `checks.py` | 952 | 673 | **71%** | Security check logic, threat detection |
-| `cli.py` | 68 | 39 | **57%** | Argument parsing, orchestration |
-| `report.py` | 274 | 119 | **43%** | Text/Markdown formatting |
-| `scanner.py` | 29 | 29 | **100%** | Port scanning logic |
-| `ssh_client.py` | 33 | 33 | **100%** | SSH connection wrapper |
+| `checks.py` | 1337 | **74%** | Security check logic, threat detection |
+| `cli.py` | 122 | **90%** | Argument parsing, orchestration |
+| `report.py` | 361 | **88%** | Text/Markdown/JSON formatting |
+| `scanner.py` | 29 | **100%** | Port scanning logic |
+| `ssh_client.py` | 37 | **100%** | SSH connection wrapper |
+| `dashboard.py` | 648 | **90%** | FastAPI app, UI, API routes |
+| `store.py` / `scheduler.py` / `compliance.py` / `client.py` | — | **90–100%** | Persistence, scheduling, scoring, API client |
 
 ### Test Categories
 

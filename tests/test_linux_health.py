@@ -257,6 +257,128 @@ class TestCheckTestIdRegistry:
             ), f"{func_name}: {item.test_id!r} != {test_id!r}"
 
 
+class TestMainScanOrchestration:
+    """End-to-end main() flow with a stubbed SSH backend (no network)."""
+
+    def _patch_all(self, monkeypatch, **overrides):
+        from linux_health import cli
+        from linux_health.checks import CheckResult, SystemInfo
+
+        info = SystemInfo("h", "TestOS 1.0", "1.0", "1 day", "u")
+        check = CheckResult("C", "Item", "pass", "d", "r", test_id="T-1")
+
+        class FakeSession:
+            kwargs = None
+
+            def __init__(self, **kwargs):
+                FakeSession.kwargs = kwargs
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        monkeypatch.setattr(cli, "SSHSession", FakeSession)
+        monkeypatch.setattr(cli, "gather_system_info", lambda ssh: info)
+        monkeypatch.setattr(cli, "run_all_checks", lambda ssh, pw: [check])
+        for name in (
+            "run_all_database_checks",
+            "run_all_audit_checks",
+            "run_all_filesystem_checks",
+            "run_all_package_management_checks",
+            "run_all_container_checks",
+            "run_all_webserver_checks",
+            "run_all_dns_checks",
+        ):
+            monkeypatch.setattr(cli, name, lambda *a, **k: [])
+        for name in (
+            "gather_suid_binaries",
+            "gather_root_logins",
+            "gather_successful_ssh_logins",
+            "gather_failed_ssh_logins",
+            "gather_top_processes",
+            "gather_disk_usage_dirs",
+            "gather_available_updates",
+            "gather_firewall_rules",
+            "gather_sshd_config_check",
+            "gather_failed_systemd_units",
+            "gather_sudoers_info",
+            "gather_critical_file_permissions",
+            "gather_rkhunter_scan",
+            "gather_unused_packages",
+        ):
+            monkeypatch.setattr(cli, name, lambda *a, **k: "x")
+        from linux_health.scanner import PortStatus as _PortStatus
+
+        monkeypatch.setattr(
+            cli,
+            "scan_ports",
+            lambda host, ports: [
+                _PortStatus(port=p, open=True, reason="x") for p in ports
+            ],
+        )
+        return FakeSession
+
+    def test_main_text_scan_prints_report(self, monkeypatch, capsys):
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+        assert cli.main(["h", "u", "pw"]) == 0
+        assert "h" in capsys.readouterr().out
+
+    def test_main_json_scan_writes_file(self, monkeypatch, tmp_path):
+        import json
+
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+        out = tmp_path / "r.json"
+        assert cli.main(["h", "u", "pw", "--format", "json", "--output", str(out)]) == 0
+        assert (
+            json.loads(out.read_text(encoding="utf-8"))["summary"]["total_checks"] == 1
+        )
+
+    def test_main_markdown_scan_writes_file(self, monkeypatch, tmp_path):
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+        out = tmp_path / "r.md"
+        assert cli.main(["h", "u", "pw", "--format", "md", "--output", str(out)]) == 0
+        assert out.read_text(encoding="utf-8")
+
+    def test_main_passes_key_and_strict_flags(self, monkeypatch):
+        from linux_health import cli
+
+        fake = self._patch_all(monkeypatch)
+        assert (
+            cli.main(["h", "u", "", "--key-file", "/k", "--strict-host-key-checking"])
+            == 0
+        )
+        assert fake.kwargs["key_path"] == "/k"
+        assert fake.kwargs["strict_host_key_checking"] is True
+
+    def test_main_ssh_failure_exits_2(self, monkeypatch, capsys):
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+
+        class Boom:
+            def __init__(self, **kwargs):
+                pass
+
+            def __enter__(self):
+                raise ConnectionError("nope")
+
+            def __exit__(self, *args):
+                return False
+
+        monkeypatch.setattr(cli, "SSHSession", Boom)
+        with pytest.raises(SystemExit):
+            cli.main(["h", "u", "pw"])
+        assert "SSH failed" in capsys.readouterr().err
+
+
 class TestCheckResult:
     """Tests for CheckResult dataclass"""
 

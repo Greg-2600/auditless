@@ -102,6 +102,8 @@ def test_post_requires_credentials(client):
 def test_post_rejects_non_object(client):
     import urllib.request
 
+    import urllib.error
+
     req = urllib.request.Request(
         client.base_url + "/api/scans",
         data=b"[1, 2]",
@@ -110,9 +112,11 @@ def test_post_rejects_non_object(client):
     )
     try:
         urllib.request.urlopen(req, timeout=10)
-        raise AssertionError("expected HTTP error")
-    except OSError as exc:  # HTTPError
-        assert getattr(exc, "code", None) == 422
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 422
+        exc.close()
+        return
+    raise AssertionError("expected HTTP error")
 
 
 def test_unknown_scan_id_404(client):
