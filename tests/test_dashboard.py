@@ -224,7 +224,7 @@ def test_version_endpoint(client):
     info = client.version()
     from linux_health import __version__
 
-    assert info["version"] == __version__ == "2.0.0"
+    assert info["version"] == __version__
     assert info["api_version"] == "1.0"
     assert "ssh-scan" in info["features"]
 
