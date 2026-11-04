@@ -133,6 +133,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Prompt for SSH password (ignores positional password if set)",
     )
     parser.add_argument(
+        "--key-file",
+        type=str,
+        default=None,
+        help="SSH private key file for key auth (password then only used for sudo)",
+    )
+    parser.add_argument(
         "--strict-host-key-checking",
         action="store_true",
         help="Reject unknown SSH host keys instead of auto-adding them "
@@ -186,11 +192,13 @@ def main(argv: list[str] | None = None) -> int:
         serve_forever(args.serve_host, args.serve_port)
         return 0
 
-    if not args.hostname or not args.username or args.password is None:
-        parser.error("hostname, username and password are required (or use --serve)")
+    if not args.hostname or not args.username:
+        parser.error("hostname and username are required (or use --serve)")
+    if args.password is None and not args.key_file:
+        parser.error("password is required (or use --key-file / --serve)")
     ports = parse_ports(args.scan_ports)
 
-    password = args.password
+    password = args.password or ""
     if args.ask_password or password == "-":
         password = getpass.getpass("SSH password: ")
     elif password:
@@ -225,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
             port=args.port,
             timeout=args.timeout,
             strict_host_key_checking=args.strict_host_key_checking,
+            key_path=args.key_file,
         ) as ssh:
             system_info = gather_system_info(ssh)
             check_results = run_all_checks(ssh, password)

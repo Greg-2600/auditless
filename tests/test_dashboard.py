@@ -77,8 +77,10 @@ def _free_port() -> int:
 
 
 @pytest.fixture()
-def client():
-    """Live uvicorn server + ApiClient, job store reset around each test."""
+def client(tmp_path, monkeypatch):
+    """Live uvicorn + ApiClient; jobs and persistence isolated per test."""
+    monkeypatch.setenv("AUDITLESS_DATA_DIR", str(tmp_path / "data"))
+    dashboard.reset_store()
     dashboard._jobs.clear()
     dashboard._jobs_order.clear()
     port = _free_port()
@@ -100,6 +102,7 @@ def client():
     yield api
     server.should_exit = True
     thread.join(timeout=10)
+    dashboard.reset_store()
     dashboard._jobs.clear()
     dashboard._jobs_order.clear()
 
@@ -127,7 +130,7 @@ def test_swagger_ui_available(client):
 def test_post_requires_credentials(client):
     with pytest.raises(ApiError) as exc_info:
         client._request("POST", "/api/scans", {"hostname": "h", "username": "u"})
-    assert exc_info.value.status == 422  # Pydantic: missing password
+    assert exc_info.value.status == 400  # no password and no saved key
 
 
 def test_post_rejects_non_object(client):
@@ -251,10 +254,18 @@ def test_openapi_spec_is_complete(client):
         "/api/scans/{job_id}",
         "/api/scans/{job_id}/report",
         "/api/profiles",
+        "/api/hosts",
+        "/api/hosts/{host_id}",
+        "/api/hosts/{host_id}/key",
+        "/api/reports",
+        "/api/reports/{report_id}",
+        "/api/diff",
     ):
         assert path in spec["paths"], path
     props = spec["components"]["schemas"]["ScanRequest"]["properties"]
-    assert props["password"].get("writeOnly") is True
+    pw_schema = props["password"]
+    branches = pw_schema.get("anyOf", [pw_schema])
+    assert any(b.get("writeOnly") is True for b in branches)
     for field in (
         "hostname",
         "username",
@@ -393,3 +404,158 @@ def test_cli_missing_positionals_errors(capsys):
     with pytest.raises(SystemExit):
         main([])
     assert "hostname" in capsys.readouterr().err
+
+
+def test_hosts_crud(client):
+    with pytest.raises(ApiError) as exc_info:
+        client.get_host("missing")
+    assert exc_info.value.status == 404
+    host = client.create_host("web", "10.0.0.9", "admin", port=2222, auth="key")
+    assert host["has_key"] == 0
+    assert "BEGIN" not in json.dumps(host)
+    assert client.get_host(host["id"])["hostname"] == "10.0.0.9"
+    assert any(h["id"] == host["id"] for h in client.list_hosts())
+    updated = client.update_host(host["id"], port=22)
+    assert updated["port"] == 22
+    assert client.delete_host(host["id"])["deleted"] == host["id"]
+    assert client.list_hosts() == []
+
+
+def test_host_key_lifecycle_never_readable(client, tmp_path):
+    host = client.create_host("k", "h", "u", auth="key")
+    assert client.get_host_key(host["id"]) == {"host_id": host["id"], "has_key": False}
+    secret = "-----BEGIN OPENSSH PRIVATE KEY-----\nSENTINEL-KEY-9z9z\n"
+    assert client.put_host_key(host["id"], secret)["has_key"] is True
+    assert client.get_host_key(host["id"])["has_key"] is True
+    # Key bytes must not surface anywhere in the API.
+    dump = json.dumps(client.get_host(host["id"])) + json.dumps(client.list_hosts())
+    assert "SENTINEL-KEY-9z9z" not in dump
+    assert client.delete_host_key(host["id"])["has_key"] is False
+    assert client.get_host_key(host["id"])["has_key"] is False
+    with pytest.raises(ApiError) as exc_info:
+        client.put_host_key(host["id"], "   ")
+    assert exc_info.value.status == 400
+
+
+def test_key_file_permissions(client):
+    import os
+    import stat
+
+    from linux_health.dashboard import get_store
+
+    host = client.create_host("k", "h", "u", auth="key")
+    client.put_host_key(host["id"], "SENTINEL-PERM-KEY")
+    mode = stat.S_IMODE(os.stat(get_store().key_path(host["id"])).st_mode)
+    assert mode == 0o600, oct(mode)
+
+
+def test_scan_saved_password_host(client, monkeypatch):
+    seen = {}
+
+    def fake_run_scan(params):
+        seen.update(params)
+        params["password"] = None
+        return canned_report()
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    host = client.create_host("pw", "10.1.1.1", "root", auth="password")
+    job = client.start_scan(host_id=host["id"], password=SENTINEL_PASSWORD)
+    done = client.wait_for(job["id"])
+    assert done["status"] == "done"
+    assert seen["hostname"] == "10.1.1.1"
+    assert "key_path" not in seen or not seen["key_path"]
+    assert SENTINEL_PASSWORD not in json.dumps(done)
+
+
+def test_scan_saved_key_host_uses_stored_key(client, monkeypatch):
+    seen = {}
+
+    def fake_run_scan(params):
+        seen.update(params)
+        params["password"] = None
+        return canned_report()
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    host = client.create_host("kk", "10.2.2.2", "root", auth="key")
+    client.put_host_key(host["id"], "SENTINEL-STORED-KEY")
+    job = client.start_scan(host_id=host["id"])  # no password needed
+    done = client.wait_for(job["id"])
+    assert done["status"] == "done"
+    assert seen["key_path"].endswith(host["id"])
+    assert SENTINEL_PASSWORD not in json.dumps(done)
+
+
+def test_scan_host_errors(client):
+    with pytest.raises(ApiError) as exc_info:
+        client.start_scan(host_id="missing", password="x")
+    assert exc_info.value.status == 404
+    host = client.create_host("nokey", "h", "u", auth="key")
+    with pytest.raises(ApiError) as exc_info:
+        client.start_scan(host_id=host["id"])
+    assert exc_info.value.status == 400
+    pw = client.create_host("nopw", "h", "u", auth="password")
+    with pytest.raises(ApiError) as exc_info:
+        client.start_scan(host_id=pw["id"])
+    assert exc_info.value.status == 400
+
+
+def test_reports_persisted_and_diffed(client, monkeypatch):
+    def fake_run_scan(params):
+        params["password"] = None
+        return canned_report()
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    host = client.create_host("hist", "10.3.3.3", "u", auth="password")
+    first = client.wait_for(client.start_scan(host_id=host["id"], password="x")["id"])
+    assert first["status"] == "done"
+    stored = client.list_reports(host_id=host["id"])
+    assert len(stored) == 1 and stored[0]["hardening_index"] == 50
+    full = client.get_stored_report(stored[0]["id"])
+    assert full["report"]["summary"]["hardening_index"] == 50
+
+    # Second report with one fix and one regression.
+    improved = canned_report()
+    improved["checks"][0]["status"] = "pass"  # Firewall fixed
+    improved["checks"][1]["status"] = "fail"  # Disk regressed
+    improved["summary"]["hardening_index"] = 55
+
+    def fake_run_scan2(params):
+        params["password"] = None
+        return improved
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan2)
+    second = client.wait_for(client.start_scan(host_id=host["id"], password="x")["id"])
+    assert second["status"] == "done"
+    ids = [r["id"] for r in client.list_reports(host_id=host["id"])]
+    assert len(ids) == 2
+    diff = client.diff_reports(ids[1], ids[0])
+    assert diff["hardening_delta"] == 5
+    assert [f["test_id"] for f in diff["fixed"]] == ["FIRE-4512"]
+    assert [r["test_id"] for r in diff["regressed"]] == ["STOR-6310"]
+    assert client.delete_stored_report(ids[0])["deleted"] == ids[0]
+    with pytest.raises(ApiError) as exc_info:
+        client.diff_reports(ids[1], ids[0])
+    assert exc_info.value.status == 404
+
+
+def test_ssh_key_auth_wiring(monkeypatch):
+    """SSHSession passes key_filename through to paramiko."""
+    from unittest.mock import MagicMock, patch
+
+    from linux_health.ssh_client import SSHSession
+
+    with patch("linux_health.ssh_client.paramiko.SSHClient") as cls:
+        mock_client = MagicMock()
+        cls.return_value = mock_client
+        session = SSHSession("h", "u", "", key_path="/keys/abc")
+        session.connect()
+        _, kwargs = mock_client.connect.call_args
+        assert kwargs["key_filename"] == "/keys/abc"
+        assert kwargs["password"] is None
+
+
+def test_cli_key_file_flag():
+    from linux_health.cli import build_parser
+
+    args = build_parser().parse_args(["h", "u", "--key-file", "/keys/abc"])
+    assert args.key_file == "/keys/abc"

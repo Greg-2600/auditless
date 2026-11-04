@@ -311,6 +311,28 @@ print(done["report"]["summary"]["hardening_index"])
 print(api.get_report(job["id"], format="md")[:200])
 ```
 
+### Persistent UI with saved hosts, keys & report diffs
+
+`docker compose up -d` runs the dashboard as a persistent service with
+SQLite + SSH keys on a named volume (`auditless-data`):
+
+```bash
+docker compose up -d --build
+open http://127.0.0.1:8080/   # UI, Swagger at /docs
+```
+
+- **Saved hosts** (`/api/hosts` CRUD): register once, scan repeatedly.
+  Password hosts still prompt per scan; key hosts authenticate from the
+  stored key — passwords are never persisted.
+- **SSH keys** (`PUT /api/hosts/{id}/key`): bytes land 0600 owned by the
+  container user, flagged `has_key`, and are never readable back through
+  any endpoint. CLI equivalent: `--key-file ~/.ssh/id_ed25519`.
+- **Reports** (`/api/reports`) persist across restarts; **diff**
+  (`/api/diff?from_id=..&to_id=..`, plus the UI Compare button) shows
+  fixed vs regressed checks and the hardening-index delta per host.
+- Data lives in `$AUDITLESS_DATA_DIR` (`./data` locally, `/app/data` in
+  the container).
+
 Development gates run on every commit via pre-commit (black, ruff,
 pylint 10.00/10, mypy, bandit HIGH-only, full pytest suite) and mirror
 in CI:

@@ -92,12 +92,20 @@ class ApiClient:
         return result
 
     def start_scan(
-        self, hostname: str, username: str, password: str, **options: Any
+        self,
+        hostname: str = "",
+        username: str = "",
+        password: str = "",
+        host_id: str | None = None,
+        **options: Any,
     ) -> dict[str, Any]:
         """Start a scan; returns the job record (HTTP 201).
 
+        Either hostname/username/password or host_id (saved host; password
+        still per-request unless the host uses stored key auth).
+
         Raises:
-            ApiError: 422 when credentials are missing/invalid.
+            ApiError: 400/404/422 for bad requests.
         """
         payload: dict[str, Any] = {
             "hostname": hostname,
@@ -105,6 +113,8 @@ class ApiClient:
             "password": password,
             **options,
         }
+        if host_id:
+            payload["host_id"] = host_id
         result: dict[str, Any] = self._request("POST", "/api/scans", payload)
         return result
 
@@ -133,6 +143,94 @@ class ApiClient:
     def list_profiles(self) -> list[dict[str, Any]]:
         """Scan profiles discovered on the server (GET /api/profiles)."""
         result: list[dict[str, Any]] = self._request("GET", "/api/profiles")
+        return result
+
+    def create_host(
+        self,
+        name: str,
+        hostname: str,
+        username: str,
+        port: int = 22,
+        auth: str = "password",
+    ) -> dict[str, Any]:
+        """Register a host (POST /api/hosts)."""
+        result: dict[str, Any] = self._request(
+            "POST",
+            "/api/hosts",
+            {
+                "name": name,
+                "hostname": hostname,
+                "username": username,
+                "port": port,
+                "auth": auth,
+            },
+        )
+        return result
+
+    def list_hosts(self) -> list[dict[str, Any]]:
+        """Saved hosts, metadata only (GET /api/hosts)."""
+        result: list[dict[str, Any]] = self._request("GET", "/api/hosts")
+        return result
+
+    def get_host(self, host_id: str) -> dict[str, Any]:
+        """Fetch one host (GET /api/hosts/{id})."""
+        result: dict[str, Any] = self._request("GET", f"/api/hosts/{host_id}")
+        return result
+
+    def update_host(self, host_id: str, **fields: Any) -> dict[str, Any]:
+        """Partial host update (PATCH /api/hosts/{id})."""
+        result: dict[str, Any] = self._request("PATCH", f"/api/hosts/{host_id}", fields)
+        return result
+
+    def delete_host(self, host_id: str) -> dict[str, Any]:
+        """Delete a host and its key (DELETE /api/hosts/{id})."""
+        result: dict[str, Any] = self._request("DELETE", f"/api/hosts/{host_id}")
+        return result
+
+    def put_host_key(self, host_id: str, key_text: str) -> dict[str, Any]:
+        """Store key bytes (write-only; PUT /api/hosts/{id}/key)."""
+        result: dict[str, Any] = self._request(
+            "PUT", f"/api/hosts/{host_id}/key", {"key": key_text}
+        )
+        return result
+
+    def get_host_key(self, host_id: str) -> dict[str, Any]:
+        """Key presence only; the key itself is never returned."""
+        result: dict[str, Any] = self._request("GET", f"/api/hosts/{host_id}/key")
+        return result
+
+    def delete_host_key(self, host_id: str) -> dict[str, Any]:
+        """Remove stored key bytes (DELETE /api/hosts/{id}/key)."""
+        result: dict[str, Any] = self._request("DELETE", f"/api/hosts/{host_id}/key")
+        return result
+
+    def list_reports(
+        self, host_id: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """Persisted reports, newest first (GET /api/reports)."""
+        params = {"limit": str(limit)}
+        if host_id:
+            params["host_id"] = host_id
+        result: list[dict[str, Any]] = self._request(
+            "GET", "/api/reports", params=params
+        )
+        return result
+
+    def get_stored_report(self, report_id: str) -> dict[str, Any]:
+        """Full persisted report (GET /api/reports/{id})."""
+        result: dict[str, Any] = self._request("GET", f"/api/reports/{report_id}")
+        return result
+
+    def delete_stored_report(self, report_id: str) -> dict[str, Any]:
+        """Forget a persisted report (DELETE /api/reports/{id})."""
+        result: dict[str, Any] = self._request("DELETE", f"/api/reports/{report_id}")
+        return result
+
+    def diff_reports(self, from_id: str, to_id: str) -> dict[str, Any]:
+        """Check-by-check progress between two reports (GET /api/diff)."""
+        result: dict[str, Any] = self._request(
+            "GET", "/api/diff", params={"from_id": from_id, "to_id": to_id}
+        )
         return result
 
     def wait_for(

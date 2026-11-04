@@ -29,6 +29,7 @@ class SSHSession:
         port: int = 22,
         timeout: float = 5.0,
         strict_host_key_checking: bool = False,
+        key_path: str | None = None,
     ):
         self.hostname = hostname
         self.username = username
@@ -36,6 +37,7 @@ class SSHSession:
         self.port = port
         self.timeout = timeout
         self.strict_host_key_checking = strict_host_key_checking
+        self.key_path = key_path
         self._client: paramiko.SSHClient | None = None
 
     def __enter__(self) -> "SSHSession":
@@ -69,8 +71,9 @@ class SSHSession:
             hostname=self.hostname,
             port=self.port,
             username=self.username,
-            password=self.password,
+            password=self.password or None,
             timeout=self.timeout,
+            key_filename=self.key_path,
             allow_agent=False,
             look_for_keys=False,
         )

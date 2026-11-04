@@ -338,6 +338,15 @@ class TestGatherSystemInfo:
         assert info.hostname == "ubuntu\n"
         assert "Ubuntu" in info.os
 
+    def test_gather_system_info_os_command_sources_release_file(self):
+        """OS probe must source /etc/os-release (no dangling else)."""
+        mock_ssh = Mock()
+        mock_ssh.run = MagicMock(return_value=(0, "Ubuntu 22.04.5 LTS", ""))
+        gather_system_info(mock_ssh)
+        os_cmd = mock_ssh.run.call_args_list[2].args[0]
+        assert "/etc/os-release" in os_cmd
+        assert "if " in os_cmd and "else" in os_cmd and "fi" in os_cmd
+
 
 class TestRunAllChecks:
     """Tests for run_all_checks function"""

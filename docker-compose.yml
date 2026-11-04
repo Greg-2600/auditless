@@ -3,9 +3,28 @@ services:
     build: .
     image: linux-health:latest
     container_name: linux-health
+    # Persistent UI: serves the dashboard with SQLite + keys on a volume.
+    command: ["--serve", "--serve-host", "0.0.0.0", "--serve-port", "8080"]
+    ports:
+      - "127.0.0.1:8080:8080"
     environment:
       - PYTHONUNBUFFERED=1
+      - AUDITLESS_DATA_DIR=/app/data
     volumes:
+      - auditless-data:/app/data
       - ./reports:/app/reports
     stdin_open: true
     tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "linux_health", "--help"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # One-shot CLI scans (no persistence needed):
+  #   docker compose run --rm --no-deps linux-health \
+  #     192.168.1.100 admin password --format md --output /reports/scan.md
+
+volumes:
+  auditless-data:

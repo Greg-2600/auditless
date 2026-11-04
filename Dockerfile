@@ -16,12 +16,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY linux_health/ /app/linux_health/
 
-# Create reports directory and non-root runtime user
-RUN mkdir -p /app/reports \
+# Create data + reports directories (volumes mount over these)
+RUN mkdir -p /app/data /app/reports \
     && useradd --create-home --shell /bin/bash appuser \
     && chown -R appuser:appuser /app
 
 USER appuser
+
+VOLUME ["/app/data"]
 
 # Dashboard port (local web UI via --serve)
 EXPOSE 8080

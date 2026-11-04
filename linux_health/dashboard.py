@@ -37,11 +37,29 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field, SecretStr
 
+from .store import Store
+
 MAX_JOBS = 50
 
 _jobs: dict[str, "ScanJob"] = {}
 _jobs_order: list[str] = []
 _jobs_lock = threading.Lock()
+
+_STORE: Store | None = None
+
+
+def get_store() -> Store:
+    """Process-wide persistence handle (override via reset in tests)."""
+    global _STORE
+    if _STORE is None:
+        _STORE = Store()
+    return _STORE
+
+
+def reset_store() -> None:
+    """Drop the cached store (tests point at isolated dirs)."""
+    global _STORE
+    _STORE = None
 
 
 @dataclass
@@ -77,10 +95,15 @@ class ScanJob:
 class ScanRequest(BaseModel):
     """Parameters for starting a scan. Password is write-only."""
 
-    hostname: str = Field(examples=["192.168.1.100"])
-    username: str = Field(examples=["admin"])
-    password: SecretStr = Field(
-        description="SSH password. Memory-only for the run; never stored or returned."
+    hostname: str = Field(default="", examples=["192.168.1.100"])
+    username: str = Field(default="", examples=["admin"])
+    password: SecretStr | None = Field(
+        default=None,
+        description="SSH password. Memory-only for the run; never stored or returned.",
+    )
+    host_id: str | None = Field(
+        default=None,
+        description="Saved host to scan (alternative to hostname/username).",
     )
     port: int = 22
     timeout: float = 5.0
@@ -97,6 +120,49 @@ class ScanRequest(BaseModel):
     strict_host_key_checking: bool = Field(
         default=False, description="Reject unknown host keys (MITM protection)."
     )
+
+
+class HostCreate(BaseModel):
+    """Register a host for saved key auth and report history."""
+
+    name: str = Field(examples=["prod-web-01"])
+    hostname: str = Field(examples=["192.168.1.100"])
+    username: str = Field(examples=["admin"])
+    port: int = 22
+    auth: str = Field(
+        default="password",
+        description="'password' (prompted per scan) or 'key' (stored server-side).",
+    )
+
+
+class HostUpdate(BaseModel):
+    """Partial host update (all fields optional)."""
+
+    name: str | None = None
+    hostname: str | None = None
+    username: str | None = None
+    port: int | None = None
+    auth: str | None = None
+
+
+class HostPublic(BaseModel):
+    """Host metadata (key bytes are never exposed)."""
+
+    id: str
+    name: str
+    hostname: str
+    port: int
+    username: str
+    auth: str
+    has_key: int
+    created_at: float
+    updated_at: float
+
+
+class KeyUpload(BaseModel):
+    """Private key material (write-only; stored 0600, never readable back)."""
+
+    key: str = Field(description="PEM/OpenSSH private key text.")
 
 
 class ScanJobPublic(BaseModel):
@@ -141,7 +207,7 @@ def run_scan(params: dict) -> dict:
 
     Args:
         params: Scan parameters (hostname, username, password, port,
-            timeout, command_timeout, scan_ports, profile,
+            timeout, command_timeout, scan_ports, profile, key_path,
             enable_rootkit_scan, check_package_hygiene,
             strict_host_key_checking).
 
@@ -155,10 +221,11 @@ def run_scan(params: dict) -> dict:
     from .cli import main as cli_main
 
     password = params.get("password") or ""
+    key_path = params.get("key_path") or ""
     argv = [
         params.get("hostname") or "",
         params.get("username") or "",
-        password if password else "-",
+        password,
         "--port",
         str(params.get("port", 22)),
         "--timeout",
@@ -168,6 +235,8 @@ def run_scan(params: dict) -> dict:
         "--format",
         "json",
     ]
+    if key_path:
+        argv += ["--key-file", str(key_path)]
     if params.get("scan_ports"):
         argv += ["--scan-ports", str(params["scan_ports"])]
     if params.get("profile"):
@@ -178,13 +247,11 @@ def run_scan(params: dict) -> dict:
         argv.append("--check-package-hygiene")
     if params.get("strict_host_key_checking"):
         argv.append("--strict-host-key-checking")
-    if not password:
-        argv.append("--ask-password")
 
     out_path = Path(tempfile.mkdtemp(prefix="auditless-")) / "report.json"
     argv += ["--output", str(out_path)]
     try:
-        if not password:
+        if not password and not key_path:
             raise RuntimeError("password is required to start a scan")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
@@ -203,7 +270,7 @@ def run_scan(params: dict) -> dict:
             out_path.unlink()
 
 
-def _run_job(job: ScanJob, params: dict) -> None:
+def _run_job(job: ScanJob, params: dict, host_id: str | None = None) -> None:
     job.status = "running"
     job.progress = "connecting over SSH and gathering checks"
     try:
@@ -217,6 +284,20 @@ def _run_job(job: ScanJob, params: dict) -> None:
         job.error = str(exc)[:1000]
     finally:
         job.finished_at = time.time()
+        try:
+            get_store().save_report(
+                job.id,
+                job.hostname,
+                job.username,
+                job.status,
+                job.report,
+                job.error,
+                host_id,
+                job.created_at,
+                job.finished_at,
+            )
+        except Exception:
+            pass  # persistence must never break status reporting
 
 
 def start_scan(params: dict) -> ScanJob:
@@ -224,11 +305,115 @@ def start_scan(params: dict) -> ScanJob:
     hostname = (params.get("hostname") or "").strip()
     username = (params.get("username") or "").strip()
     password = params.get("password") or ""
-    if not hostname or not username or not password:
-        raise ValueError("hostname, username and password are required")
+    key_path = params.get("key_path") or ""
+    if not hostname or not username or (not password and not key_path):
+        raise ValueError("hostname, username and password (or key) are required")
     job = ScanJob(id=uuid.uuid4().hex[:12], hostname=hostname, username=username)
     _register_job(job)
     return job
+
+
+def resolve_host_scan(host_id: str, overrides: dict) -> tuple[dict, dict]:
+    """Build (job_params, run_params) for a saved host.
+
+    Passwords are never stored: password hosts require a per-scan password,
+    key hosts use the stored key file (optional password = sudo only).
+
+    Raises:
+        KeyError: Unknown host. ValueError: Missing credential.
+    """
+    host = get_store().get_host(host_id)
+    if host is None:
+        raise KeyError(f"unknown host {host_id}")
+    password = overrides.get("password") or ""
+    key_path = ""
+    if host["auth"] == "key":
+        if not get_store().has_host_key(host_id):
+            raise ValueError("host uses key auth but no key is stored")
+        key_path = str(get_store().key_path(host_id))
+    elif not password:
+        raise ValueError("password is required for this host")
+    base = {
+        "hostname": host["hostname"],
+        "username": host["username"],
+        "port": host["port"],
+        "key_path": key_path,
+        "timeout": overrides.get("timeout", 5.0),
+        "command_timeout": overrides.get("command_timeout", 60.0),
+        "scan_ports": overrides.get("scan_ports", ""),
+        "profile": overrides.get("profile", ""),
+        "enable_rootkit_scan": bool(overrides.get("enable_rootkit_scan")),
+        "check_package_hygiene": bool(overrides.get("check_package_hygiene")),
+        "strict_host_key_checking": bool(overrides.get("strict_host_key_checking")),
+    }
+    return base, {**base, "password": password}
+
+
+def diff_reports(before: dict, after: dict) -> dict:
+    """Compare two stored reports check-by-check.
+
+    Checks are keyed by (test_id, item). Returns fixed / regressed /
+    new / gone lists plus the hardening-index delta.
+    """
+
+    def key(check: dict) -> str:
+        return f"{check.get('test_id', '')}::{check.get('item', '')}"
+
+    def rank(status: str) -> int:
+        return {"pass": 2, "warn": 1, "fail": 0}.get(status, -1)
+
+    old = {key(c): c for c in before.get("checks", [])}
+    new = {key(c): c for c in after.get("checks", [])}
+    fixed, regressed, changed = [], [], []
+    for ident, new_check in new.items():
+        if ident not in old:
+            continue
+        old_status, new_status = old[ident].get("status"), new_check.get("status")
+        entry = {
+            "test_id": new_check.get("test_id", ""),
+            "item": new_check.get("item", ""),
+            "category": new_check.get("category", ""),
+            "from": old_status,
+            "to": new_status,
+            "recommendation": new_check.get("recommendation", ""),
+        }
+        if rank(new_status) > rank(old_status):
+            fixed.append(entry)
+        elif rank(new_status) < rank(old_status):
+            regressed.append(entry)
+        elif old[ident].get("details") != new_check.get("details"):
+            changed.append(entry)
+    return {
+        "hardening_before": (before.get("summary") or {}).get("hardening_index"),
+        "hardening_after": (after.get("summary") or {}).get("hardening_index"),
+        "hardening_delta": (
+            ((after.get("summary") or {}).get("hardening_index") or 0)
+            - ((before.get("summary") or {}).get("hardening_index") or 0)
+        ),
+        "fixed": fixed,
+        "regressed": regressed,
+        "changed": changed,
+        "new": [
+            {
+                "test_id": c.get("test_id", ""),
+                "item": c.get("item", ""),
+                "category": c.get("category", ""),
+                "to": c.get("status", ""),
+            }
+            for ident, c in new.items()
+            if ident not in old
+        ],
+        "gone": [
+            {
+                "test_id": c.get("test_id", ""),
+                "item": c.get("item", ""),
+                "category": c.get("category", ""),
+                "from": c.get("status", ""),
+            }
+            for ident, c in old.items()
+            if ident not in new
+        ],
+    }
 
 
 def get_job(job_id: str) -> ScanJob | None:
@@ -311,18 +496,10 @@ def list_profiles() -> list[dict]:
     return found
 
 
-def render_saved_report(job: ScanJob, fmt: str) -> tuple[str, str]:
-    """Re-render a finished scan's stored report in json/md/text.
-
-    Raises:
-        ValueError: If the format is unknown.
-        RuntimeError: If the scan is not finished successfully.
-    """
+def render_report_dict(report: dict, fmt: str) -> tuple[str, str]:
+    """Re-render a stored report dict in json/md/text (no job needed)."""
     if fmt not in ("json", "md", "text"):
         raise ValueError(f"unknown format {fmt!r}: use json, md or text")
-    if job.status != "done" or not job.report:
-        raise RuntimeError("scan is not complete")
-    report = job.report
     if fmt == "json":
         return json.dumps(report, indent=2), "application/json"
 
@@ -374,6 +551,18 @@ def render_saved_report(job: ScanJob, fmt: str) -> tuple[str, str]:
     )
 
 
+def render_saved_report(job: ScanJob, fmt: str) -> tuple[str, str]:
+    """Re-render a finished in-memory job in json/md/text.
+
+    Raises:
+        ValueError: If the format is unknown.
+        RuntimeError: If the scan is not finished successfully.
+    """
+    if job.status != "done" or not job.report:
+        raise RuntimeError("scan is not complete")
+    return render_report_dict(job.report, fmt)
+
+
 INDEX_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -415,6 +604,7 @@ th{color:var(--dim);font-weight:600}.pass{color:var(--grn)}.warn{color:var(--yel
 <div class="sub">Agentless Linux security scanner &mdash; hardening index, checks &amp; remediation &mdash; <a style="color:var(--acc)" href="/docs">API reference (Swagger)</a></div>
 <div class="card">
 <h3 style="margin-top:0">New scan</h3>
+<div style="margin-bottom:8px"><label>Saved host (optional &mdash; overrides manual fields)</label><select id="hostsel" onchange="hostPick()"><option value="">manual entry</option></select></div>
 <div class="row">
 <div><label>Hostname / IP</label><input id="host" placeholder="192.168.1.100"></div>
 <div><label>SSH username</label><input id="user" placeholder="admin"></div>
@@ -431,7 +621,27 @@ th{color:var(--dim);font-weight:600}.pass{color:var(--grn)}.warn{color:var(--yel
 Binds to localhost; do not expose without auth + TLS.</div>
 <div id="status" style="margin-top:10px"></div>
 </div>
-<div class="card"><h3 style="margin-top:0">Recent scans</h3><div id="hist" class="hist">loading&hellip;</div></div>
+<div class="card"><h3 style="margin-top:0">Recent scans (this session)</h3><div id="hist" class="hist">loading&hellip;</div></div>
+<div class="card"><h3 style="margin-top:0">Saved reports (persisted)</h3>
+<div class="toolbar"><button style="margin:0" onclick="loadReports()">Refresh</button>
+<button style="margin:0" onclick="runDiff()">Compare A &rarr; B</button></div>
+<div id="reps" class="hist">loading&hellip;</div><div id="diff"></div></div>
+<div class="card"><h3 style="margin-top:0">Saved hosts</h3>
+<div class="row" style="grid-template-columns:1fr 1fr 1fr 100px 110px">
+<div><label>Name</label><input id="hname" placeholder="prod-web-01"></div>
+<div><label>Hostname / IP</label><input id="hhost" placeholder="192.168.1.100"></div>
+<div><label>SSH username</label><input id="huser" placeholder="admin"></div>
+<div><label>Port</label><input id="hport" value="22"></div>
+<div><label>Auth</label><select id="hauth"><option value="password">password</option><option value="key">key</option></select></div>
+</div>
+<button onclick="addHost()">Add host</button>
+<div id="hosts" class="hist" style="margin-top:10px">loading&hellip;</div>
+<div style="margin-top:10px"><label>Private key for selected host (write-only, stored 0600, never readable back)</label>
+<div class="toolbar"><select id="keyhost"></select></div>
+<textarea id="keytext" rows="4" style="width:100%;background:#0d1117;border:1px solid var(--line);color:var(--txt);border-radius:6px" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+<div class="toolbar"><button style="margin:0" onclick="putKey()">Save key</button>
+<button style="margin:0" onclick="delKey()">Delete key</button></div></div>
+</div>
 <div id="result"></div>
 </div>
 <script>
@@ -439,15 +649,20 @@ let cur=null,timer=null;
 async function api(p,o){const r=await fetch(p,o);const j=await r.json();
 if(!r.ok)throw new Error(j.detail||j.error||r.status);return j}
 async function startScan(){
- const b={hostname:host.value,username:user.value,password:pass.value,
-  port:parseInt(port.value||"22",10),
-  strict_host_key_checking:strict.checked,enable_rootkit_scan:rootkit.checked,
-  check_package_hygiene:hygiene.checked};
+ const hs=hostsel.value;
+ const b=hs?{host_id:hs}:{hostname:host.value,username:user.value,
+  port:parseInt(port.value||"22",10)};
+ if(pass.value)b.password=pass.value;
+ if(!hs)b.port=parseInt(port.value||"22",10);
+ Object.assign(b,{strict_host_key_checking:strict.checked,
+  enable_rootkit_scan:rootkit.checked,check_package_hygiene:hygiene.checked});
  pass.value="";status("starting&hellip;");
  try{const j=await api("/api/scans",{method:"POST",
   headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
   cur=j.id;go.disabled=true;poll();}
  catch(e){status('<span class="err">'+esc(e.message)+"</span>")}}
+function hostPick(){const d=!!hostsel.value;
+ [host,user,port].forEach(i=>i.disabled=d)}
 async function poll(){
  clearInterval(timer);
  timer=setInterval(async()=>{
@@ -471,6 +686,58 @@ async function loadHist(){
  catch(e){document.getElementById("hist").textContent="unavailable"}}
 async function show(id){cur=id;const j=await api("/api/scans/"+id);
  if(j.status==="done")render(j.report);else status(esc(j.status))}
+let diffA=null,diffB=null;
+async function loadHosts(){
+ try{const h=await api("/api/hosts");
+  hostsel.innerHTML='<option value="">manual entry</option>'+h.map(x=>
+   `<option value="${x.id}">${esc(x.name)} (${esc(x.hostname)})${x.auth==="key"?" [key]":""}</option>`).join("");
+  keyhost.innerHTML=h.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");
+  document.getElementById("hosts").innerHTML=h.length?h.map(x=>
+   `<div>${esc(x.name)} &mdash; ${esc(x.username)}@${esc(x.hostname)}:${x.port}`+
+   ` [${x.auth}${x.has_key?", key stored":""}] `+
+   `<a onclick="scanHost('${x.id}')">scan</a> `+
+   `<a onclick="delHost('${x.id}')">delete</a></div>`).join(""):"no saved hosts yet";}
+ catch(e){document.getElementById("hosts").textContent="unavailable"}}
+async function addHost(){
+ const b={name:hname.value,hostname:hhost.value,username:huser.value,
+  port:parseInt(hport.value||"22",10),auth:hauth.value};
+ try{await api("/api/hosts",{method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify(b)});
+  hname.value=hhost.value=huser.value="";loadHosts();}
+ catch(e){status('<span class="err">'+esc(e.message)+"</span>")}}
+async function delHost(id){await api("/api/hosts/"+id,{method:"DELETE"});loadHosts()}
+async function scanHost(id){hostsel.value=id;hostPick();window.scrollTo(0,0)}
+async function putKey(){
+ try{await api("/api/hosts/"+keyhost.value+"/key",{method:"PUT",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({key:keytext.value})});
+  keytext.value="";loadHosts();status("key stored (0600, never readable back)");}
+ catch(e){status('<span class="err">'+esc(e.message)+"</span>")}}
+async function delKey(){await api("/api/hosts/"+keyhost.value+"/key",{method:"DELETE"});loadHosts()}
+async function loadReports(){
+ try{const r=await api("/api/reports?limit=30");
+  document.getElementById("reps").innerHTML=r.length?r.map(x=>
+   `<div><a onclick="viewReport('${x.id}')">${esc(x.hostname)}</a> &mdash; ${x.status}`+
+   (x.hardening_index!=null?` &mdash; <b>${x.hardening_index}/100</b>`:"")+
+   ` <a onclick="setDiff('A','${x.id}')">A</a> <a onclick="setDiff('B','${x.id}')">B</a> `+
+   `<a onclick="delReport('${x.id}')">delete</a></div>`).join(""):"no saved reports yet";}
+ catch(e){document.getElementById("reps").textContent="unavailable"}}
+async function viewReport(id){const r=await api("/api/reports/"+id);
+ if(r.report)render(r.report);else status("report has no payload")}
+async function delReport(id){await api("/api/reports/"+id,{method:"DELETE"});loadReports()}
+function setDiff(which,id){if(which==="A")diffA=id;else diffB=id;
+ status("diff: A="+(diffA||"?")+" B="+(diffB||"?"))}
+async function runDiff(){
+ if(!diffA||!diffB){status('<span class="err">pick A and B reports first</span>');return}
+ const d=await api("/api/diff?from_id="+diffA+"&to_id="+diffB);
+ const row=x=>`<tr><td>${esc(x.test_id||"")}</td><td>${esc(x.item||"")}</td>`+
+  `<td>${esc(x.from||"")}&rarr;<b>${esc(x.to||"")}</b></td></tr>`;
+ document.getElementById("diff").innerHTML=
+  `<h4>Hardening ${d.hardening_before} &rarr; <b>${d.hardening_after}</b>`+
+  ` (delta ${d.hardening_delta>=0?"+":""}${d.hardening_delta})</h4>`+
+  `<h4 class="pass">Fixed (${d.fixed.length})</h4><table>${d.fixed.map(row).join("")}</table>`+
+  `<h4 class="fail">Regressed (${d.regressed.length})</h4><table>${d.regressed.map(row).join("")}</table>`+
+  (d.new.length?`<h4>New (${d.new.length})</h4><table>${d.new.map(row).join("")}</table>`:"");}
 function render(r){
  const s=r.summary||{};const cats=r.hardening_by_category||{};
  const el=document.getElementById("result");
@@ -512,6 +779,8 @@ function dl(){const b=new Blob([JSON.stringify(window._rep,null,2)],
  {type:"application/json"});const a=document.createElement("a");
  a.href=URL.createObjectURL(b);a.download="auditless-report.json";a.click()}
 loadHist();
+loadHosts();
+loadReports();
 </script>
 </body>
 </html>
@@ -575,31 +844,11 @@ def api_list_scans() -> list[ScanJobPublic]:
 def api_start_scan(data: ScanRequest) -> ScanJobPublic:
     """Register a job and run the shared CLI scan pipeline in the background.
 
-    Poll GET /api/scans/{id} until status is done or error.
+    Poll GET /api/scans/{id} until status is done or error. Pass host_id
+    to scan a saved host (password still per-request unless key auth).
     """
-    try:
-        job = start_scan(
-            {
-                "hostname": data.hostname,
-                "username": data.username,
-                "password": data.password.get_secret_value(),
-                "port": data.port,
-                "timeout": data.timeout,
-                "command_timeout": data.command_timeout,
-                "scan_ports": data.scan_ports,
-                "profile": data.profile,
-                "enable_rootkit_scan": data.enable_rootkit_scan,
-                "check_package_hygiene": data.check_package_hygiene,
-                "strict_host_key_checking": data.strict_host_key_checking,
-            }
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    params = {
-        "hostname": job.hostname,
-        "username": job.username,
-        "password": data.password.get_secret_value(),
-        "port": data.port,
+    host_id = data.host_id
+    overrides = {
         "timeout": data.timeout,
         "command_timeout": data.command_timeout,
         "scan_ports": data.scan_ports,
@@ -608,9 +857,31 @@ def api_start_scan(data: ScanRequest) -> ScanJobPublic:
         "check_package_hygiene": data.check_package_hygiene,
         "strict_host_key_checking": data.strict_host_key_checking,
     }
+    secret = data.password.get_secret_value() if data.password else ""
+    try:
+        if host_id:
+            try:
+                base, run_params = resolve_host_scan(
+                    host_id, {**overrides, "password": secret}
+                )
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            params = run_params
+            job = start_scan({**base, "password": secret})
+        else:
+            params = {
+                "hostname": data.hostname,
+                "username": data.username,
+                "password": secret,
+                "key_path": "",
+                **overrides,
+            }
+            job = start_scan(params)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     # Own thread (not BackgroundTasks): deterministic under both uvicorn
     # and TestClient, whose background-task timing varies by version.
-    worker = threading.Thread(target=_run_job, args=(job, params), daemon=True)
+    worker = threading.Thread(target=_run_job, args=(job, params, host_id), daemon=True)
     worker.start()
     return _public_job(job)
 
@@ -663,6 +934,177 @@ def api_get_report(  # pylint: disable=redefined-builtin
 def api_list_profiles() -> list[dict]:
     """Profile names/paths usable as the scan `profile` parameter."""
     return list_profiles()
+
+
+def _host_public(row: dict) -> HostPublic:
+    return HostPublic(
+        id=str(row["id"]),
+        name=str(row["name"]),
+        hostname=str(row["hostname"]),
+        port=int(row["port"]),
+        username=str(row["username"]),
+        auth=str(row["auth"]),
+        has_key=int(row["has_key"]),
+        created_at=float(row["created_at"]),
+        updated_at=float(row["updated_at"]),
+    )
+
+
+@app.get("/api/hosts", response_model=list[HostPublic], summary="List saved hosts")
+def api_list_hosts() -> list[HostPublic]:
+    """Saved hosts (metadata only; key bytes never exposed)."""
+    return [_host_public(row) for row in get_store().list_hosts()]
+
+
+@app.post(
+    "/api/hosts",
+    response_model=HostPublic,
+    status_code=201,
+    summary="Register a host",
+)
+def api_create_host(data: HostCreate) -> HostPublic:
+    """Save a host for key auth and report history."""
+    if data.auth not in ("password", "key"):
+        raise HTTPException(status_code=400, detail="auth must be 'password' or 'key'")
+    try:
+        row = get_store().upsert_host(
+            data.name, data.hostname, data.username, data.port, data.auth
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _host_public(row)
+
+
+@app.get("/api/hosts/{host_id}", response_model=HostPublic, summary="Fetch one host")
+def api_get_host(host_id: str) -> HostPublic:
+    """Fetch host metadata (never key bytes)."""
+    row = get_store().get_host(host_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown host")
+    return _host_public(row)
+
+
+@app.patch("/api/hosts/{host_id}", response_model=HostPublic, summary="Update a host")
+def api_update_host(host_id: str, data: HostUpdate) -> HostPublic:
+    """Partial host update; changing auth to password drops nothing else."""
+    row = get_store().get_host(host_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown host")
+    if data.auth is not None and data.auth not in ("password", "key"):
+        raise HTTPException(status_code=400, detail="auth must be 'password' or 'key'")
+    updated = get_store().upsert_host(
+        data.name or row["name"],
+        data.hostname or row["hostname"],
+        data.username or row["username"],
+        data.port if data.port is not None else row["port"],
+        data.auth or row["auth"],
+        host_id=host_id,
+    )
+    return _host_public(updated)
+
+
+@app.delete("/api/hosts/{host_id}", summary="Delete a host and its key")
+def api_delete_host(host_id: str) -> dict:
+    """Remove a host record and any stored key material."""
+    if not get_store().delete_host(host_id):
+        raise HTTPException(status_code=404, detail="unknown host")
+    return {"deleted": host_id}
+
+
+@app.put("/api/hosts/{host_id}/key", summary="Store a host private key")
+def api_put_host_key(host_id: str, data: KeyUpload) -> dict:
+    """Save key bytes with owner-only permissions (write-only endpoint)."""
+    if not get_store().get_host(host_id):
+        raise HTTPException(status_code=404, detail="unknown host")
+    if not data.key.strip():
+        raise HTTPException(status_code=400, detail="empty key")
+    get_store().set_host_key(host_id, data.key)
+    return {"host_id": host_id, "has_key": True}
+
+
+@app.get("/api/hosts/{host_id}/key", summary="Key presence (never the key)")
+def api_get_host_key(host_id: str) -> dict:
+    """Whether key bytes are stored. The key itself is never returned."""
+    if not get_store().get_host(host_id):
+        raise HTTPException(status_code=404, detail="unknown host")
+    return {"host_id": host_id, "has_key": get_store().has_host_key(host_id)}
+
+
+@app.delete("/api/hosts/{host_id}/key", summary="Remove a stored key")
+def api_delete_host_key(host_id: str) -> dict:
+    """Delete stored key bytes (host record kept, flag cleared)."""
+    if not get_store().get_host(host_id):
+        raise HTTPException(status_code=404, detail="unknown host")
+    get_store().clear_host_key(host_id)
+    return {"host_id": host_id, "has_key": False}
+
+
+@app.get("/api/reports", summary="Persisted scan reports, newest first")
+def api_list_reports(host_id: str | None = None, limit: int = 50) -> list[dict]:
+    """Stored report summaries, optionally filtered by host."""
+    return get_store().list_reports(host_id, max(1, min(limit, 200)))
+
+
+@app.get("/api/reports/{report_id}", summary="Fetch one persisted report")
+def api_get_stored_report(report_id: str) -> dict:
+    """Full stored report including the JSON payload."""
+    import json as _json
+
+    row = get_store().get_report(report_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown report")
+    payload = dict(row)
+    if payload.get("report_json"):
+        payload["report"] = _json.loads(payload["report_json"])
+    del payload["report_json"]
+    return payload
+
+
+@app.delete("/api/reports/{report_id}", summary="Forget a persisted report")
+def api_delete_stored_report(report_id: str) -> dict:
+    """Remove a stored report."""
+    if not get_store().delete_report(report_id):
+        raise HTTPException(status_code=404, detail="unknown report")
+    return {"deleted": report_id}
+
+
+@app.get("/api/reports/{report_id}/report", summary="Persisted report re-rendered")
+def api_get_stored_report_rendered(
+    report_id: str, format: str = "json"  # pylint: disable=redefined-builtin
+) -> Response:
+    """Stored report rendered as json, md or text."""
+    import json as _json
+
+    row = get_store().get_report(report_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown report")
+    if not row.get("report_json"):
+        raise HTTPException(status_code=409, detail="scan did not complete")
+    try:
+        content, content_type = render_report_dict(
+            _json.loads(row["report_json"]), format
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(content=content, media_type=content_type)
+
+
+@app.get("/api/diff", summary="Diff two reports (fixed vs regressed)")
+def api_diff_reports(from_id: str, to_id: str) -> dict:
+    """Check-by-check progress between two stored reports."""
+    import json as _json
+
+    rows = [get_store().get_report(rid) for rid in (from_id, to_id)]
+    if rows[0] is None or rows[1] is None:
+        raise HTTPException(status_code=404, detail="unknown report id")
+    if not rows[0].get("report_json") or not rows[1].get("report_json"):
+        raise HTTPException(status_code=409, detail="report incomplete")
+    result = diff_reports(
+        _json.loads(rows[0]["report_json"]), _json.loads(rows[1]["report_json"])
+    )
+    result["from"] = {"id": from_id, "hostname": rows[0]["hostname"]}
+    result["to"] = {"id": to_id, "hostname": rows[1]["hostname"]}
+    return result
 
 
 def serve_forever(host: str = "127.0.0.1", port: int = 8080) -> None:
