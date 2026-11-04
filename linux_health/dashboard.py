@@ -77,6 +77,9 @@ _jobs: dict[str, "ScanJob"] = {}
 _jobs_order: list[str] = []
 _jobs_lock = threading.Lock()
 
+_proposals: dict[str, dict] = {}
+_proposals_lock = threading.Lock()
+
 _STORE: Store | None = None
 
 
@@ -897,10 +900,35 @@ async function loadReports(){
    (x.hardening_index!=null?` &mdash; <b>${x.hardening_index}/100</b>`:"")+
    ` <a onclick="setDiff('A','${x.id}')">A</a> <a onclick="setDiff('B','${x.id}')">B</a> `+
    (x.host_id?`<a onclick="showComp('${x.host_id}')">compliance</a> `:"")+
+   `<a onclick="proposeFixes('${x.id}')">fix</a> `+
    `<a onclick="delReport('${x.id}')">delete</a></div>`).join(""):"no saved reports yet";}
  catch(e){document.getElementById("reps").textContent="unavailable"}}
 async function viewReport(id){const r=await api("/api/reports/"+id);
+ window._repHost=r.host_id||null;
  if(r.report)render(r.report);else status("report has no payload")}
+async function proposeFixes(id){
+ const ps=await api("/api/reports/"+id+"/remediations",{method:"POST"});
+ if(!ps.length){status("no safe fixes proposed for this report");return}
+ document.getElementById("diff").innerHTML="<h3>Proposed fixes (dry-run — nothing executed)</h3>"+
+  ps.map(p=>`<div class="card"><b>${esc(p.title)}</b> `+
+   `<span class="chip">${p.risk}</span> <span class="chip">${esc(p.test_id)} ${esc(p.item)}</span>`+
+   `<p class="hist">${esc(p.description)}<br>Preconditions: ${esc(p.preconditions)}</p>`+
+   `<pre>${esc(p.script.join("\n"))}</pre>`+
+   `<button onclick="approveFix('${p.proposal_id}')">Approve &amp; apply</button></div>`).join("");}
+async function approveFix(pid){
+ const pw=prompt("SSH/sudo password (empty for key-auth hosts):","")||"";
+ const hid=window._repHost||(hostsel.value||prompt("Host id to fix:","")||"");
+ if(!hid){status('<span class="err">no host selected</span>');return}
+ const r=await api("/api/remediations/"+pid+"/apply",{method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({host_id:hid,password:pw})});
+ const rows=r.results.map(x=>`<tr><td><code>${esc(x.command.slice(0,60))}</code></td>`+
+  `<td class="${x.exit_code===0?"pass":"fail"}"><b>${x.exit_code}</b></td>`+
+  `<td>${esc((x.stdout||x.stderr||"").slice(0,200))}</td></tr>`).join("");
+ document.getElementById("diff").innerHTML+=
+  `<h3>Apply results</h3><table><tr><th>Command</th><th>Exit</th><th>Output</th></tr>${rows}</table>`+
+  `<p class="hist">Verification scan: <a onclick="show('${r.verification_job_id}')">${r.verification_job_id}</a> (polls automatically)</p>`;
+ cur=r.verification_job_id;poll();loadHist();}
 async function delReport(id){await api("/api/reports/"+id,{method:"DELETE"});loadReports()}
 function setDiff(which,id){if(which==="A")diffA=id;else diffB=id;
  status("diff: A="+(diffA||"?")+" B="+(diffB||"?"))}
@@ -1570,6 +1598,127 @@ def api_backup() -> dict:
     """Best-effort SQLite snapshot (pruned server-side)."""
     dest = get_store().backup()
     return {"path": dest.name, "bytes": dest.stat().st_size}
+
+
+@app.get(
+    "/api/remediations",
+    summary="Remediation catalog (dry-run scripts)",
+    dependencies=_guarded,
+)
+def api_remediation_catalog() -> list[dict]:
+    """All available fixes with their exact scripts (nothing executes)."""
+    from .remediations import REMEDIATIONS
+
+    return [
+        {
+            "id": r.id,
+            "title": r.title,
+            "risk": r.risk,
+            "description": r.description,
+            "preconditions": r.preconditions,
+            "test_ids": r.test_ids,
+            "script": list(r.script),
+        }
+        for r in REMEDIATIONS
+    ]
+
+
+class RemediationApply(BaseModel):
+    """Approval to execute a proposal on a host (password write-only)."""
+
+    host_id: str
+    password: SecretStr | None = Field(
+        default=None,
+        description="SSH/sudo password (memory-only; key hosts may omit).",
+    )
+
+
+@app.post(
+    "/api/reports/{report_id}/remediations",
+    summary="Propose fixes for a report (dry-run)",
+    dependencies=_guarded,
+)
+def api_propose_remediations(report_id: str) -> list[dict]:
+    """Match failed checks to catalog entries; returns scripts, runs nothing."""
+    import json as _json
+    import uuid as _uuid
+
+    from .remediations import propose_for_report
+
+    row = get_store().get_report(report_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown report")
+    if not row.get("report_json"):
+        raise HTTPException(status_code=409, detail="report incomplete")
+    proposals = []
+    for proposal in propose_for_report(_json.loads(row["report_json"])):
+        proposal = dict(proposal)
+        proposal["proposal_id"] = _uuid.uuid4().hex[:12]
+        proposal["report_id"] = report_id
+        with _proposals_lock:
+            _proposals[proposal["proposal_id"]] = proposal
+        proposals.append(proposal)
+    return proposals
+
+
+@app.post(
+    "/api/remediations/{proposal_id}/apply",
+    summary="Approve and execute a fix, then verify",
+    dependencies=_guarded,
+)
+def api_apply_remediation(proposal_id: str, data: RemediationApply) -> dict:
+    """Execute the proposal script over SSH, then start a verify rescan.
+
+    Returns per-command results plus the verification job id; poll the
+    job and diff to prove the finding flipped.
+    """
+    from .checks import _run, reset_command_cache
+    from .ssh_client import SSHSession
+
+    with _proposals_lock:
+        proposal = _proposals.get(proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="unknown proposal")
+    try:
+        base, run_params = resolve_host_scan(
+            data.host_id,
+            {"password": data.password.get_secret_value() if data.password else ""},
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    password = run_params.get("password", "")
+    results = []
+    try:
+        with SSHSession(
+            hostname=base["hostname"],
+            username=base["username"],
+            password=password,
+            port=base["port"],
+            timeout=10.0,
+            key_path=base.get("key_path") or None,
+        ) as ssh:
+            reset_command_cache()
+            for line in proposal["script"]:
+                code, out, err = _run(ssh, line, password, use_cache=False)
+                results.append(
+                    {
+                        "command": line,
+                        "exit_code": code,
+                        "stdout": out[-500:],
+                        "stderr": err[-500:],
+                    }
+                )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"apply failed: {exc}") from exc
+
+    job = start_scan({**base, "password": password})
+    worker = threading.Thread(target=_run_job, args=(job, {**run_params}, data.host_id))
+    worker.daemon = True
+    worker.start()
+    return {"results": results, "verification_job_id": job.id}
 
 
 @app.get(

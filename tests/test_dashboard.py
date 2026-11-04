@@ -252,6 +252,9 @@ def test_openapi_spec_is_complete(client):
         "/api/fleet",
         "/api/compliance/controls",
         "/api/hosts/{host_id}/compliance",
+        "/api/remediations",
+        "/api/reports/{report_id}/remediations",
+        "/api/remediations/{proposal_id}/apply",
     ):
         assert path in spec["paths"], path
     props = spec["components"]["schemas"]["ScanRequest"]["properties"]
