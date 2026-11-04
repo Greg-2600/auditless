@@ -411,6 +411,29 @@ def test_api_key_host_scan(stack):
     assert done["report"]["summary"]["total_checks"] > 50
 
 
+def test_remediation_flips_finding_live(stack):
+    """Live approve loop: TMOUT warn -> apply fix -> rescan shows pass."""
+    api = stack["api"]
+    host = api.create_host("e2e-remediate", SSH_NAME, "tester", port=2222, auth="key")
+    api.put_host_key(host["id"], stack["private_key"])
+    first = api.wait_for(
+        api.start_scan(host_id=host["id"])["id"], deadline=420, interval=5.0
+    )
+    assert first["status"] == "done"
+    before = [c for c in first["report"]["checks"] if c["test_id"] == "SHLL-6202"]
+    assert before and before[0]["status"] in ("warn", "fail")
+    proposals = api.propose_remediations(first["id"])
+    shell = next(p for p in proposals if p["remediation_id"] == "shell-timeout")
+    applied = api.apply_remediation(
+        shell["proposal_id"], host["id"], password=E2E_PASSWORD
+    )
+    assert all(s["exit_code"] == 0 for s in applied["results"])
+    verify = api.wait_for(applied["verification_job_id"], deadline=420, interval=5.0)
+    assert verify["status"] == "done"
+    after = [c for c in verify["report"]["checks"] if c["test_id"] == "SHLL-6202"]
+    assert after and after[0]["status"] == "pass"
+
+
 def test_api_diff_and_report_formats(stack):
     """Two scans of one host diff cleanly; md/text re-render."""
     api = stack["api"]
