@@ -37,7 +37,7 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix={{branch}}-
+            type=sha
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
@@ -51,6 +51,9 @@ jobs:
 
   security-scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
@@ -58,14 +61,18 @@ jobs:
         run: docker build -t linux-health:scan .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: linux-health:scan
-          format: sarif
-          output: trivy-results.sarif
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v trivy-cache:/root/.cache/ \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            aquasec/trivy:0.76.1 image \
+            --format sarif --output /workspace/trivy-results.sarif \
+            --severity CRITICAL,HIGH --exit-code 0 \
+            linux-health:scan
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: trivy-results.sarif

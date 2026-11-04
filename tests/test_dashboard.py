@@ -366,6 +366,17 @@ def test_client_refuses_non_http_scheme():
         ApiClient("ftp://example.com").health()
 
 
+def test_hostile_ids_never_touch_disk(client):
+    """Traversal ids 404 without creating files (path-injection guard)."""
+    for hostile in ("..%2Fescape", "..", "a/b"):
+        with pytest.raises(ApiError) as exc_info:
+            client.put_host_key(hostile, "x")
+        assert exc_info.value.status == 404
+        with pytest.raises(ApiError) as exc_info:
+            client.get_host_key(hostile)
+        assert exc_info.value.status == 404
+
+
 def test_json_report_carries_package_version():
     from linux_health import __version__
     from linux_health.checks import SystemInfo
@@ -384,6 +395,32 @@ def test_cli_serve_flags():
     assert args.serve is True
     assert args.serve_host == "127.0.0.1"
     assert args.serve_port == 8080
+
+
+def test_cli_serve_bind_env_config(monkeypatch):
+    """Bind address/port come from env, CLI flags win."""
+    from linux_health.cli import build_parser
+
+    monkeypatch.setenv("AUDITLESS_HOST", "0.0.0.0")
+    monkeypatch.setenv("AUDITLESS_PORT", "9000")
+    args = build_parser().parse_args(["--serve"])
+    assert args.serve_host == "0.0.0.0"
+    assert args.serve_port == 9000
+    args = build_parser().parse_args(
+        ["--serve", "--serve-host", "127.0.0.1", "--serve-port", "9001"]
+    )
+    assert (args.serve_host, args.serve_port) == ("127.0.0.1", 9001)
+
+
+def test_serve_warns_on_non_loopback(monkeypatch, capsys):
+    """Binding off loopback prints a loud warning (then serves)."""
+    from linux_health import dashboard
+
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+    dashboard.serve_forever("0.0.0.0", 8080)
+    assert "exposes the unauthenticated dashboard" in capsys.readouterr().err
+    dashboard.serve_forever("127.0.0.1", 8080)
+    assert "exposes" not in capsys.readouterr().err
 
 
 def test_cli_serve_dispatch(monkeypatch):
@@ -445,8 +482,11 @@ def test_key_file_permissions(client):
 
     host = client.create_host("k", "h", "u", auth="key")
     client.put_host_key(host["id"], "SENTINEL-PERM-KEY")
-    mode = stat.S_IMODE(os.stat(get_store().key_path(host["id"])).st_mode)
-    assert mode == 0o600, oct(mode)
+    if os.name != "nt":  # Windows has no POSIX permission bits
+        mode = stat.S_IMODE(os.stat(get_store().key_path(host["id"])).st_mode)
+        assert mode == 0o600, oct(mode)
+    else:
+        assert get_store().has_host_key(host["id"]) is True
 
 
 def test_scan_saved_password_host(client, monkeypatch):

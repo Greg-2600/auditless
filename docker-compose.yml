@@ -4,12 +4,17 @@ services:
     image: linux-health:latest
     container_name: linux-health
     # Persistent UI: serves the dashboard with SQLite + keys on a volume.
-    command: ["--serve", "--serve-host", "0.0.0.0", "--serve-port", "8080"]
+    # Bind/port via env (defaults: all interfaces inside the container,
+    # published to host loopback only — safe by default):
+    #   AUDITLESS_HOST=0.0.0.0 AUDITLESS_PORT=8080 docker compose up -d
+    command: ["--serve"]
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${AUDITLESS_PORT:-8080}:8080"
     environment:
       - PYTHONUNBUFFERED=1
       - AUDITLESS_DATA_DIR=/app/data
+      - AUDITLESS_HOST=${AUDITLESS_HOST:-0.0.0.0}
+      - AUDITLESS_PORT=${AUDITLESS_PORT:-8080}
     volumes:
       - auditless-data:/app/data
       - ./reports:/app/reports
