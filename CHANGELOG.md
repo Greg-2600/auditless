@@ -5,6 +5,29 @@ All notable changes to Linux Health Security Scanner are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-11-04
+
+### Added
+
+**Fleet automation**
+- Unattended cron schedules per saved host with regression/threshold/
+  always/never webhook policies, hardening trends, and fleet overview
+  (API, UI charts, `--no-scheduler` opt-out)
+- Scheduler production gaps closed: overlap guard, webhook retries,
+  SQLite snapshots (daily auto + endpoint), log rotation
+
+**Compliance & remediation**
+- Runtime test-ID registry (50 checks locked by tests)
+- CIS Ubuntu Linux 22.04 v2.0.0 scoring (API + UI, best effort with
+  explicit unmapped list)
+- Guided remediation: propose dry-runs, approve + apply over SSH,
+  automatic verification rescan (5 fixes, authoring guide)
+
+**Platform**
+- Bearer-token API auth, env-driven bind (`AUDITLESS_HOST/_PORT`),
+  persistent compose stack, containerized e2e suite (14 tests),
+  multi-arch images, full lint gates (black/ruff/pylint/mypy/bandit)
+
 ## [2.0.0] - 2026-01-10
 
 ### Added
