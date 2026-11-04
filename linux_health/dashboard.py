@@ -896,6 +896,7 @@ async function loadReports(){
    `<div><a onclick="viewReport('${x.id}')">${esc(x.hostname)}</a> &mdash; ${x.status}`+
    (x.hardening_index!=null?` &mdash; <b>${x.hardening_index}/100</b>`:"")+
    ` <a onclick="setDiff('A','${x.id}')">A</a> <a onclick="setDiff('B','${x.id}')">B</a> `+
+   (x.host_id?`<a onclick="showComp('${x.host_id}')">compliance</a> `:"")+
    `<a onclick="delReport('${x.id}')">delete</a></div>`).join(""):"no saved reports yet";}
  catch(e){document.getElementById("reps").textContent="unavailable"}}
 async function viewReport(id){const r=await api("/api/reports/"+id);
@@ -903,6 +904,18 @@ async function viewReport(id){const r=await api("/api/reports/"+id);
 async function delReport(id){await api("/api/reports/"+id,{method:"DELETE"});loadReports()}
 function setDiff(which,id){if(which==="A")diffA=id;else diffB=id;
  status("diff: A="+(diffA||"?")+" B="+(diffB||"?"))}
+async function showComp(hostId){
+ const c=await api("/api/hosts/"+hostId+"/compliance");
+ const rows=c.controls.map(x=>`<tr><td>${esc(x.control)}<br><span style="color:var(--dim)">${esc(x.title)}</span></td>`+
+  `<td>${x.level}</td><td class="${x.status}"><b>${x.status.toUpperCase()}</b></td>`+
+  `<td>${x.score}</td><td>${x.tests.map(t=>esc(t.test_id)).join(", ")}</td></tr>`).join("");
+ const secs=Object.entries(c.sections).map(([k,v])=>
+  `<tr><td>${esc(v.section)}</td><td class="${v.score>=75?"pass":v.score>=60?"warn":"fail"}"><b>${v.score}</b></td><td>${v.controls}</td></tr>`).join("");
+ document.getElementById("diff").innerHTML=
+  `<h3>CIS compliance: <span class="score ${lvl(c.overall_score)}">${c.overall_score}/100</span></h3>`+
+  `<p class="hist">${esc(c.benchmark)} &mdash; coverage ${c.coverage.mapped_checks}/${c.coverage.total_checks} checks (${c.coverage.percent}%) &mdash; ${c.extended.length} extended (non-CIS) checks</p>`+
+  `<h4>By section</h4><table><tr><th>Section</th><th>Score</th><th>Controls</th></tr>${secs}</table>`+
+  `<h4>Controls</h4><table><tr><th>Control</th><th>Level</th><th>Status</th><th>Score</th><th>Tests</th></tr>${rows}</table>`}
 async function runDiff(){
  if(!diffA||!diffB){status('<span class="err">pick A and B reports first</span>');return}
  const d=await api("/api/diff?from_id="+diffA+"&to_id="+diffB);
@@ -1150,6 +1163,53 @@ def _schedule_public(row: dict) -> SchedulePublic:
         created_at=float(row["created_at"]),
         updated_at=float(row["updated_at"]),
     )
+
+
+@app.get(
+    "/api/compliance/controls",
+    summary="CIS control catalog",
+    dependencies=_guarded,
+)
+def api_compliance_controls() -> dict:
+    """Test-ID to CIS control mapping with benchmark metadata."""
+    from .compliance import BENCHMARK, CONTROL_TITLES, TEST_CIS, UNMAPPED_REASONS
+
+    return {
+        "benchmark": BENCHMARK,
+        "controls": CONTROL_TITLES,
+        "mapping": {
+            tid: [{"control": c, "level": lvl} for c, lvl in mappings]
+            for tid, mappings in TEST_CIS.items()
+        },
+        "unmapped": UNMAPPED_REASONS,
+    }
+
+
+@app.get(
+    "/api/hosts/{host_id}/compliance",
+    summary="CIS compliance for a host's latest report",
+    dependencies=_guarded,
+)
+def api_host_compliance(host_id: str) -> dict:
+    """Score the host's latest completed report against CIS controls."""
+    import json as _json
+
+    from .compliance import compliance_summary
+
+    if not get_store().get_host(host_id):
+        raise HTTPException(status_code=404, detail="unknown host")
+    latest = None
+    for row in get_store().list_reports(host_id, limit=20):
+        if row["status"] == "done":
+            full = get_store().get_report(row["id"])
+            if full and full.get("report_json"):
+                latest = _json.loads(full["report_json"])
+                break
+    if latest is None:
+        raise HTTPException(status_code=409, detail="no completed report")
+    result = compliance_summary(latest)
+    result["host_id"] = host_id
+    return result
 
 
 def _host_public(row: dict) -> HostPublic:

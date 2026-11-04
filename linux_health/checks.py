@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import functools
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 from .ssh_client import SSHSession
+from .test_ids import CHECK_TEST_IDS
 
 COMMAND_TIMEOUT: float = 60.0
 # Performance optimization: Cache command outputs during session
@@ -107,6 +110,7 @@ def _run(
         return _COMMAND_CACHE[cache_key]
 
     # Run command on SSH session with a hard timeout, sending sudo password when needed.
+    effective_timeout = command_timeout or COMMAND_TIMEOUT
     # Check if this is a mock object (for testing)
     if (
         hasattr(ssh, "_client")
@@ -114,7 +118,6 @@ def _run(
         and not isinstance(ssh._client, type(None))
     ):
         try:
-            effective_timeout = command_timeout or COMMAND_TIMEOUT
             stdin, stdout, stderr = ssh._client.exec_command(
                 command, timeout=effective_timeout
             )
@@ -652,7 +655,7 @@ def check_auth_failures(ssh: SSHSession, password: str = "") -> CheckResult:
         )
     try:
         count = int(out.strip().splitlines()[-1])
-    except ValueError:
+    except (ValueError, IndexError):
         return _warn(
             "Auth failures (24h)",
             f"Unexpected log output: {out}",
@@ -3258,6 +3261,49 @@ def check_dns_configuration(ssh: SSHSession, password: str = "") -> CheckResult:
         "No action",
         category,
     )
+
+
+CheckFn = Callable[..., CheckResult | List[CheckResult]]
+
+
+def with_test_id(test_id: str) -> Callable[[CheckFn], CheckFn]:
+    """Stamp results with a registry test ID unless already set.
+
+    Handles both single-CheckResult and list returns (e.g. SSH config
+    yields several findings under one identifier).
+    """
+
+    def decorator(fn: CheckFn) -> CheckFn:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> CheckResult | List[CheckResult]:
+            result = fn(*args, **kwargs)
+            results = result if isinstance(result, list) else [result]
+            for item in results:
+                if isinstance(item, CheckResult) and not item.test_id:
+                    item.test_id = test_id
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+_ATTACHED_IDS: set[str] = set()
+
+
+def _attach_test_ids() -> None:
+    """Apply the CHECK_TEST_IDS registry to this module's check functions."""
+    namespace = globals()
+    for name, test_id in CHECK_TEST_IDS.items():
+        if name in _ATTACHED_IDS:
+            continue
+        fn = namespace.get(name)
+        if callable(fn):
+            namespace[name] = with_test_id(test_id)(fn)
+            _ATTACHED_IDS.add(name)
+
+
+_attach_test_ids()
 
 
 def run_all_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:

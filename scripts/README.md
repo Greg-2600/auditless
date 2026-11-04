@@ -4,19 +4,8 @@ This directory contains utility scripts for Linux Health Security Scanner develo
 
 ## Scripts Overview
 
-### add_test_ids.py
-**Purpose:** Utility script for managing and adding Lynis-compatible test IDs to security checks.
-
-**Usage:**
-```bash
-python scripts/add_test_ids.py [options]
-```
-
-**Features:**
-- Add test IDs to checks in bulk
-- Validate test ID format
-- Generate test ID mappings
-- For development purposes only
+> **Note:** test IDs are now attached at runtime by the `CHECK_TEST_IDS`
+> registry (`linux_health/test_ids.py`); no source patching is needed.
 
 **Requirements:** Python 3.11+
 
@@ -40,12 +29,6 @@ python scripts/test_json_output.py [options]
 ## Running During Development
 
 ```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Run specific script
-python scripts/add_test_ids.py
-
 # Run all development tests
 python scripts/test_json_output.py
 ```

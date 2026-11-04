@@ -22,7 +22,6 @@ linux_health/
 │
 ├── scripts/                # Development utilities
 │   ├── README.md
-│   ├── add_test_ids.py    # Test ID management
 │   └── test_json_output.py
 │
 ├── .github/                # GitHub configuration

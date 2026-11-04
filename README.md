@@ -361,6 +361,25 @@ exposing it.
 - **Reports** (`/api/reports`) persist across restarts; **diff**
   (`/api/diff?from_id=..&to_id=..`, plus the UI Compare button) shows
   fixed vs regressed checks and the hardening-index delta per host.
+
+### CIS compliance mapping
+
+Every check carries its Lynis-style test ID at runtime (`CHECK_TEST_IDS`
+registry in `linux_health/test_ids.py` — attached by decorator, no manual
+patching), and each ID maps to controls in the CIS Ubuntu Linux 22.04 LTS
+Benchmark v2.0.0 (`TEST_CIS` in `linux_health/compliance.py`, best effort
+with direct/partial levels; out-of-scope checks are explicitly listed in
+`UNMAPPED_REASONS`, never silent):
+
+```bash
+curl http://127.0.0.1:8080/api/compliance/controls | head -c 300
+```
+
+- `GET /api/hosts/{id}/compliance` scores the host's latest report:
+  per-control verdicts (worst contributing check wins), per-section
+  scores, a 0–100 overall score, coverage (mapped vs total), and the
+  non-CIS "extended" checks. The UI renders it as score + section bars
+  + control table from any saved report.
 - Data lives in `$AUDITLESS_DATA_DIR` (`./data` locally, `/app/data` in
   the container).
 

@@ -207,6 +207,56 @@ class TestBuildParser:
         assert args.check_package_hygiene is False
 
 
+class TestCheckTestIdRegistry:
+    """Every registry check emits its mapped test ID at runtime."""
+
+    def test_registry_covers_run_all_checks(self):
+        """All functions invoked by run_all_checks carry an identifier."""
+        import inspect
+        import re
+
+        import linux_health.checks as checks_mod
+        from linux_health.test_ids import CHECK_TEST_IDS
+
+        called = set(
+            re.findall(r"(check_\w+)\(", inspect.getsource(checks_mod.run_all_checks))
+        )
+        missing = {
+            fn for fn in called if fn.startswith("check_") and fn not in CHECK_TEST_IDS
+        }
+        assert not missing, f"checks without test IDs: {sorted(missing)}"
+
+    @pytest.mark.parametrize(
+        "func_name,test_id",
+        sorted(
+            __import__(
+                "linux_health.test_ids", fromlist=["CHECK_TEST_IDS"]
+            ).CHECK_TEST_IDS.items()
+        ),
+    )
+    def test_check_emits_mapped_id(self, func_name, test_id):
+        """Each mapped check stamps results with its registry ID."""
+        import inspect
+        from unittest.mock import MagicMock
+
+        import linux_health.checks as checks_mod
+
+        fn = getattr(checks_mod, func_name)
+        mock_ssh = MagicMock()
+        mock_ssh._client = None  # force the ssh.run() path in _run
+        mock_ssh.run.return_value = (0, "", "")
+        if "password" in inspect.signature(fn).parameters:
+            result = fn(mock_ssh, "")
+        else:
+            result = fn(mock_ssh)
+        results = result if isinstance(result, list) else [result]
+        assert results, f"{func_name} returned no results"
+        for item in results:
+            assert (
+                item.test_id == test_id
+            ), f"{func_name}: {item.test_id!r} != {test_id!r}"
+
+
 class TestCheckResult:
     """Tests for CheckResult dataclass"""
 
