@@ -386,6 +386,32 @@ def test_cli_serve_flags():
     assert args.serve_port == 8080
 
 
+def test_cli_serve_bind_env_config(monkeypatch):
+    """Bind address/port come from env, CLI flags win."""
+    from linux_health.cli import build_parser
+
+    monkeypatch.setenv("AUDITLESS_HOST", "0.0.0.0")
+    monkeypatch.setenv("AUDITLESS_PORT", "9000")
+    args = build_parser().parse_args(["--serve"])
+    assert args.serve_host == "0.0.0.0"
+    assert args.serve_port == 9000
+    args = build_parser().parse_args(
+        ["--serve", "--serve-host", "127.0.0.1", "--serve-port", "9001"]
+    )
+    assert (args.serve_host, args.serve_port) == ("127.0.0.1", 9001)
+
+
+def test_serve_warns_on_non_loopback(monkeypatch, capsys):
+    """Binding off loopback prints a loud warning (then serves)."""
+    from linux_health import dashboard
+
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+    dashboard.serve_forever("0.0.0.0", 8080)
+    assert "exposes the unauthenticated dashboard" in capsys.readouterr().err
+    dashboard.serve_forever("127.0.0.1", 8080)
+    assert "exposes" not in capsys.readouterr().err
+
+
 def test_cli_serve_dispatch(monkeypatch):
     from linux_health import cli
 

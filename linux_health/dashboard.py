@@ -1109,8 +1109,16 @@ def api_diff_reports(from_id: str, to_id: str) -> dict:
 
 def serve_forever(host: str = "127.0.0.1", port: int = 8080) -> None:
     """Run the dashboard with uvicorn until interrupted."""
+    import sys
+
     import uvicorn
 
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"Warning: binding {host} exposes the unauthenticated dashboard"
+            " to the network; put authentication + TLS in front.",
+            file=sys.stderr,
+        )
     print(f"Auditless UI on http://{host}:{port} (Ctrl-C to stop)")
     print(f"Swagger docs at http://{host}:{port}/docs")
     uvicorn.run(app, host=host, port=port, log_level="warning")

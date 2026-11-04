@@ -321,6 +321,22 @@ docker compose up -d --build
 open http://127.0.0.1:8080/   # UI, Swagger at /docs
 ```
 
+Bind address and port are env-driven (flags win over env, env over
+defaults). Bare `--serve` stays on loopback; compose binds all interfaces
+*inside* the container while publishing to host loopback only:
+
+```bash
+# Local: defaults 127.0.0.1:8080, or override per run
+AUDITLESS_HOST=0.0.0.0 AUDITLESS_PORT=9000 python -m linux_health --serve
+python -m linux_health --serve --serve-host 127.0.0.1 --serve-port 9000
+
+# Compose: published to host loopback regardless of container bind
+AUDITLESS_PORT=9000 docker compose up -d   # -> http://127.0.0.1:9000/
+```
+
+Binding anywhere off loopback prints a warning: the dashboard has no
+auth, so put authentication + TLS in front before exposing it.
+
 - **Saved hosts** (`/api/hosts` CRUD): register once, scan repeatedly.
   Password hosts still prompt per scan; key hosts authenticate from the
   stored key — passwords are never persisted.

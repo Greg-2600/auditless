@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -162,14 +163,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--serve-host",
         type=str,
-        default="127.0.0.1",
-        help="Dashboard bind address (default: 127.0.0.1, keep loopback)",
+        default=os.environ.get("AUDITLESS_HOST", "127.0.0.1"),
+        help="Dashboard bind address (env AUDITLESS_HOST; default: 127.0.0.1,"
+        " keep loopback unless behind auth + TLS)",
     )
     parser.add_argument(
         "--serve-port",
         type=int,
-        default=8080,
-        help="Dashboard port (default: 8080)",
+        default=int(os.environ.get("AUDITLESS_PORT", "8080")),
+        help="Dashboard port (env AUDITLESS_PORT; default: 8080)",
     )
     return parser
 
