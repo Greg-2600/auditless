@@ -1677,7 +1677,7 @@ CI runs the same in the `e2e` workflow job on every push/PR to `main`.
 
 Every push/PR to `main` runs three jobs:
 
-- `test` (ubuntu/windows/macos x Python 3.11/3.12): editable install,
+- `test` (ubuntu/windows/macos × Python 3.11/3.12): editable install,
   ruff, black, pylint (10/10 gate), mypy, bandit HIGH gate, pytest,
   coverage upload
 - `security`: bandit + safety reports (non-blocking)
