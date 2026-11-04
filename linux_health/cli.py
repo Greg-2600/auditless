@@ -10,6 +10,7 @@ import argparse
 import getpass
 import sys
 from pathlib import Path
+from typing import Any
 
 from .checks import (
     DetailedSecurityInfo,
@@ -310,7 +311,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Report written to {args.output}")
     else:
         # Print to stdout with UTF-8 encoding to handle Unicode characters on Windows
-        sys.stdout.reconfigure(encoding="utf-8")
+        stdout: Any = sys.stdout
+        stdout.reconfigure(encoding="utf-8")
         print(report)
     return 0
 

@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 import json
 import tempfile
@@ -190,9 +191,12 @@ def run_scan(params: dict) -> dict:
             code = cli_main(argv)
         if code != 0 or not out_path.exists():
             raise RuntimeError(f"scan failed (exit {code}): {buf.getvalue()[-500:]}")
-        return json.loads(out_path.read_text(encoding="utf-8"))
+        payload: dict = json.loads(out_path.read_text(encoding="utf-8"))
+        return payload
     except SystemExit as exc:
-        raise RuntimeError(f"scan failed: invalid arguments or SSH error ({exc})")
+        raise RuntimeError(
+            f"scan failed: invalid arguments or SSH error ({exc})"
+        ) from exc
     finally:
         params["password"] = None
         with contextlib.suppress(OSError):
@@ -352,9 +356,9 @@ def render_saved_report(job: ScanJob, fmt: str) -> tuple[str, str]:
     findings = report.get("detailed_findings") or {}
     detailed = DetailedSecurityInfo(
         **{
-            k: findings.get(k, "")
-            for k in DetailedSecurityInfo.__dataclass_fields__
-            if k not in ("rootkit_scan", "unused_packages")
+            f.name: findings.get(f.name, "")
+            for f in dataclasses.fields(DetailedSecurityInfo)
+            if f.name not in ("rootkit_scan", "unused_packages")
         },
         rootkit_scan=findings.get("rootkit_scan"),
         unused_packages=findings.get("unused_packages"),
@@ -590,7 +594,7 @@ def api_start_scan(data: ScanRequest) -> ScanJobPublic:
             }
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     params = {
         "hostname": job.hostname,
         "username": job.username,
@@ -639,7 +643,9 @@ def api_delete_scan(job_id: str) -> dict:
     "/api/scans/{job_id}/report",
     summary="Finished report in json, md or text",
 )
-def api_get_report(job_id: str, format: str = "json") -> Response:
+def api_get_report(  # pylint: disable=redefined-builtin
+    job_id: str, format: str = "json"
+) -> Response:
     """Re-render a completed scan's stored report in the requested format."""
     job = get_job(job_id)
     if job is None:
@@ -647,9 +653,9 @@ def api_get_report(job_id: str, format: str = "json") -> Response:
     try:
         content, content_type = render_saved_report(job, format)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return Response(content=content, media_type=content_type)
 
 

@@ -296,6 +296,31 @@ docker run --rm -p 127.0.0.1:8080:8080 linux-health --serve
   localhost; do not expose it to untrusted networks without authentication
   and TLS in front.
 
+First-party Python client (`linux_health.client.ApiClient`, stdlib only)
+talks to the app exclusively through the public API — the test suite
+dogfoods it, so anything the client cannot do is not really supported:
+
+```python
+from linux_health.client import ApiClient
+
+api = ApiClient("http://127.0.0.1:8080")
+job = api.start_scan(hostname="web-01", username="root", password="s3cr3t",
+                     strict_host_key_checking=True)
+done = api.wait_for(job["id"])
+print(done["report"]["summary"]["hardening_index"])
+print(api.get_report(job["id"], format="md")[:200])
+```
+
+Development gates run on every commit via pre-commit (black, ruff,
+pylint 10.00/10, mypy, bandit HIGH-only, full pytest suite) and mirror
+in CI:
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pip install pre-commit && .venv/bin/pre-commit install
+.venv/bin/pre-commit run --all-files
+```
+
 **Important Note for Scanning Localhost:**
 When running the scanner in a Docker container to audit the **host machine itself** (localhost), you must use one of these approaches:
 

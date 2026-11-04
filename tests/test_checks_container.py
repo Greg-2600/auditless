@@ -16,9 +16,13 @@ from linux_health.checks_container import (
 
 
 def mock_ssh_exec(return_values):
-    """Create a mock SSH client that returns sequential responses."""
+    """Create a mock SSH client that returns sequential responses.
+
+    Uses the real SSHSession interface (.run) so tests fail if checks
+    call methods that do not exist in production.
+    """
     mock_client = MagicMock()
-    mock_client.exec_command.side_effect = return_values
+    mock_client.run.side_effect = return_values
     return mock_client
 
 
@@ -554,6 +558,36 @@ class TestRunAllChecks(unittest.TestCase):
         ]
         actual_test_ids = [result.test_id for result in results]
         assert actual_test_ids == expected_test_ids
+
+
+class TestRealSessionInterface(unittest.TestCase):
+    """Regression: checks must only use the real SSHSession interface.
+
+    Production passes a genuine SSHSession (which exposes .run, not
+    .exec_command). A spec'd mock rejects any other attribute, so a
+    recurrence of the exec_command bug fails here instead of in prod.
+    """
+
+    def test_run_all_checks_with_specd_session(self):
+        """Full container suite runs against the true session API."""
+        from linux_health.checks import CheckResult
+        from linux_health.ssh_client import SSHSession
+
+        client = MagicMock(spec=SSHSession)
+        client.run.return_value = (0, "", "")
+        results = run_all_checks(client)
+        assert len(results) == 7
+        assert all(isinstance(r, CheckResult) for r in results)
+
+    def test_docker_installed_uses_run_not_exec_command(self):
+        """Spot-check one probe goes through .run."""
+        from linux_health.ssh_client import SSHSession
+
+        client = MagicMock(spec=SSHSession)
+        client.run.return_value = (0, "/usr/bin/docker", "")
+        result = check_docker_installed(client)
+        assert result.status in ("pass", "warn", "fail")
+        assert client.run.called
 
 
 if __name__ == "__main__":

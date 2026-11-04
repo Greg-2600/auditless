@@ -1,0 +1,50 @@
+# Pre-commit gates for auditless.
+#
+# Bootstrap once: /opt/homebrew/bin/python3 -m venv .venv
+#   .venv/bin/pip install -r requirements-dev.txt
+#   .venv/bin/pip install pre-commit && .venv/bin/pre-commit install
+#
+# Hooks run against the pinned venv toolchain (no network, deterministic).
+# Bandit gates on HIGH severity only: medium/low findings in this repo are
+# overwhelmingly scanner-domain strings (shell snippets mentioning /tmp,
+# /etc/passwd, 0.0.0.0), while accepted risks carry inline `# nosec`
+# justifications (see ssh_client.py).
+repos:
+  - repo: local
+    hooks:
+      - id: black
+        name: black (format check)
+        entry: .venv/bin/python -m black --check linux_health/ tests/
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: ruff
+        name: ruff (lint)
+        entry: .venv/bin/python -m ruff check linux_health/ tests/
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pylint
+        name: pylint (10.00/10 gate)
+        entry: .venv/bin/python -m pylint linux_health/ --fail-under=10.0
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: mypy
+        name: mypy (strict-ish gate)
+        entry: .venv/bin/python -m mypy linux_health/
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: bandit
+        name: bandit (HIGH severity gate)
+        entry: .venv/bin/python -m bandit -r linux_health/ -q -lll
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest
+        name: pytest (full suite)
+        entry: .venv/bin/python -m pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true

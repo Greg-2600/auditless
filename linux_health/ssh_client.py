@@ -42,7 +42,7 @@ class SSHSession:
         self.connect()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         self.close()
 
     def connect(self) -> None:
@@ -62,7 +62,9 @@ class SSHSession:
         if self.strict_host_key_checking:
             client.set_missing_host_key_policy(RejectPolicy())
         else:
-            client.set_missing_host_key_policy(AutoAddPolicy())
+            # Auto-add is the documented default for lab/CI convenience;
+            # --strict-host-key-checking switches to RejectPolicy.
+            client.set_missing_host_key_policy(AutoAddPolicy())  # nosec B507
         client.connect(
             hostname=self.hostname,
             port=self.port,
@@ -96,7 +98,12 @@ class SSHSession:
         """
         if not self._client:
             raise RuntimeError("SSHSession not connected")
-        _, stdout, stderr = self._client.exec_command(command, timeout=timeout)
+        # Executing operator-supplied commands on operator-owned targets
+        # over SSH is this tool's entire purpose; scan commands are fixed
+        # strings built by the check modules, never remote input.
+        _, stdout, stderr = self._client.exec_command(  # nosec B601
+            command, timeout=timeout
+        )
         exit_status = stdout.channel.recv_exit_status()
         out = stdout.read().decode("utf-8", errors="replace").strip()
         err = stderr.read().decode("utf-8", errors="replace").strip()

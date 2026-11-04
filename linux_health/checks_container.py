@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING
 from linux_health.checks import CheckResult, _fail, _pass, _warn
 
 if TYPE_CHECKING:
-    from linux_health.ssh_client import SSHClient
+    from linux_health.ssh_client import SSHSession
 
 
-def check_docker_installed(client: "SSHClient", timeout: int = 60) -> CheckResult:
+def check_docker_installed(client: "SSHSession", timeout: int = 60) -> CheckResult:
     """Check if Docker is installed on the system.
 
     Test ID: CONT-8100
@@ -25,13 +25,11 @@ def check_docker_installed(client: "SSHClient", timeout: int = 60) -> CheckResul
     test_id = "CONT-8100"
 
     try:
-        exit_code, stdout, stderr = client.exec_command("which docker", timeout=timeout)
+        exit_code, stdout, stderr = client.run("which docker", timeout=timeout)
 
         if exit_code == 0 and stdout.strip():
             # Get Docker version
-            exit_code, version_out, _ = client.exec_command(
-                "docker --version", timeout=timeout
-            )
+            exit_code, version_out, _ = client.run("docker --version", timeout=timeout)
             if exit_code == 0:
                 return _pass(
                     "Docker Installation",
@@ -66,7 +64,7 @@ def check_docker_installed(client: "SSHClient", timeout: int = 60) -> CheckResul
 
 
 def check_docker_socket_permissions(
-    client: "SSHClient", timeout: int = 60
+    client: "SSHSession", timeout: int = 60
 ) -> CheckResult:
     """Check Docker socket file permissions for security.
 
@@ -78,7 +76,7 @@ def check_docker_socket_permissions(
 
     try:
         # Check if Docker socket exists
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "test -S /var/run/docker.sock && echo exists", timeout=timeout
         )
 
@@ -92,7 +90,7 @@ def check_docker_socket_permissions(
             )
 
         # Check socket permissions
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "stat -c '%a %U:%G' /var/run/docker.sock", timeout=timeout
         )
 
@@ -145,7 +143,7 @@ def check_docker_socket_permissions(
         )
 
 
-def check_docker_daemon_config(client: "SSHClient", timeout: int = 60) -> CheckResult:
+def check_docker_daemon_config(client: "SSHSession", timeout: int = 60) -> CheckResult:
     """Check Docker daemon security configuration.
 
     Test ID: CONT-8102
@@ -156,7 +154,7 @@ def check_docker_daemon_config(client: "SSHClient", timeout: int = 60) -> CheckR
 
     try:
         # Check if daemon.json exists
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "test -f /etc/docker/daemon.json && echo exists", timeout=timeout
         )
 
@@ -170,7 +168,7 @@ def check_docker_daemon_config(client: "SSHClient", timeout: int = 60) -> CheckR
             )
 
         # Read daemon.json content
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "cat /etc/docker/daemon.json", timeout=timeout
         )
 
@@ -243,7 +241,7 @@ def check_docker_daemon_config(client: "SSHClient", timeout: int = 60) -> CheckR
         )
 
 
-def check_docker_image_security(client: "SSHClient", timeout: int = 60) -> CheckResult:
+def check_docker_image_security(client: "SSHSession", timeout: int = 60) -> CheckResult:
     """Check for untrusted or vulnerable Docker images.
 
     Test ID: CONT-8103
@@ -254,9 +252,7 @@ def check_docker_image_security(client: "SSHClient", timeout: int = 60) -> Check
 
     try:
         # Check if Docker is running
-        exit_code, _, _ = client.exec_command(
-            "docker info > /dev/null 2>&1", timeout=timeout
-        )
+        exit_code, _, _ = client.run("docker info > /dev/null 2>&1", timeout=timeout)
 
         if exit_code != 0:
             return _warn(
@@ -268,7 +264,7 @@ def check_docker_image_security(client: "SSHClient", timeout: int = 60) -> Check
             )
 
         # Get image list
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "docker images --format '{{.Repository}}:{{.Tag}}'", timeout=timeout
         )
 
@@ -332,7 +328,7 @@ def check_docker_image_security(client: "SSHClient", timeout: int = 60) -> Check
 
 
 def check_docker_container_runtime(
-    client: "SSHClient", timeout: int = 60
+    client: "SSHSession", timeout: int = 60
 ) -> CheckResult:
     """Check running containers for security issues.
 
@@ -344,9 +340,7 @@ def check_docker_container_runtime(
 
     try:
         # Check if Docker is running
-        exit_code, _, _ = client.exec_command(
-            "docker info > /dev/null 2>&1", timeout=timeout
-        )
+        exit_code, _, _ = client.run("docker info > /dev/null 2>&1", timeout=timeout)
 
         if exit_code != 0:
             return _warn(
@@ -358,9 +352,7 @@ def check_docker_container_runtime(
             )
 
         # Get running container count
-        exit_code, stdout, _ = client.exec_command(
-            "docker ps -q | wc -l", timeout=timeout
-        )
+        exit_code, stdout, _ = client.run("docker ps -q | wc -l", timeout=timeout)
 
         if exit_code != 0:
             return _fail(
@@ -383,7 +375,7 @@ def check_docker_container_runtime(
             )
 
         # Check for privileged containers
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "docker ps --format '{{.ID}}' | xargs -I {} docker inspect --format '{{.Id}}:{{.HostConfig.Privileged}}' {} | grep ':true' | wc -l",
             timeout=timeout,
         )
@@ -391,7 +383,7 @@ def check_docker_container_runtime(
         privileged_count = int(stdout.strip()) if exit_code == 0 else 0
 
         # Check for host network mode
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "docker ps --format '{{.ID}}' | xargs -I {} docker inspect --format '{{.Id}}:{{.HostConfig.NetworkMode}}' {} | grep ':host' | wc -l",
             timeout=timeout,
         )
@@ -437,7 +429,7 @@ def check_docker_container_runtime(
 
 
 def check_docker_network_isolation(
-    client: "SSHClient", timeout: int = 60
+    client: "SSHSession", timeout: int = 60
 ) -> CheckResult:
     """Check Docker network isolation and security.
 
@@ -449,9 +441,7 @@ def check_docker_network_isolation(
 
     try:
         # Check if Docker is running
-        exit_code, _, _ = client.exec_command(
-            "docker info > /dev/null 2>&1", timeout=timeout
-        )
+        exit_code, _, _ = client.run("docker info > /dev/null 2>&1", timeout=timeout)
 
         if exit_code != 0:
             return _warn(
@@ -463,7 +453,7 @@ def check_docker_network_isolation(
             )
 
         # Get network list
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "docker network ls --format '{{.Name}}'", timeout=timeout
         )
 
@@ -492,7 +482,7 @@ def check_docker_network_isolation(
             )
 
         # Check if containers are using default bridge
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "docker ps --format '{{.ID}}' | xargs -I {} docker inspect --format '{{.NetworkSettings.Networks}}' {} | grep -c 'bridge' || true",
             timeout=timeout,
         )
@@ -528,7 +518,9 @@ def check_docker_network_isolation(
         )
 
 
-def check_docker_resource_limits(client: "SSHClient", timeout: int = 60) -> CheckResult:
+def check_docker_resource_limits(
+    client: "SSHSession", timeout: int = 60
+) -> CheckResult:
     """Check if containers have resource limits configured.
 
     Test ID: CONT-8106
@@ -539,9 +531,7 @@ def check_docker_resource_limits(client: "SSHClient", timeout: int = 60) -> Chec
 
     try:
         # Check if Docker is running
-        exit_code, _, _ = client.exec_command(
-            "docker info > /dev/null 2>&1", timeout=timeout
-        )
+        exit_code, _, _ = client.run("docker info > /dev/null 2>&1", timeout=timeout)
 
         if exit_code != 0:
             return _warn(
@@ -553,9 +543,7 @@ def check_docker_resource_limits(client: "SSHClient", timeout: int = 60) -> Chec
             )
 
         # Get running container count
-        exit_code, stdout, _ = client.exec_command(
-            "docker ps -q | wc -l", timeout=timeout
-        )
+        exit_code, stdout, _ = client.run("docker ps -q | wc -l", timeout=timeout)
 
         if exit_code != 0:
             return _fail(
@@ -578,7 +566,7 @@ def check_docker_resource_limits(client: "SSHClient", timeout: int = 60) -> Chec
             )
 
         # Check for containers without memory limits
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "docker ps --format '{{.ID}}' | xargs -I {} docker inspect --format '{{.Id}}:{{.HostConfig.Memory}}' {} | grep ':0$' | wc -l",
             timeout=timeout,
         )
@@ -586,7 +574,7 @@ def check_docker_resource_limits(client: "SSHClient", timeout: int = 60) -> Chec
         no_memory_limit = int(stdout.strip()) if exit_code == 0 else container_count
 
         # Check for containers without CPU limits
-        exit_code, stdout, _ = client.exec_command(
+        exit_code, stdout, _ = client.run(
             "docker ps --format '{{.ID}}' | xargs -I {} docker inspect --format '{{.Id}}:{{.HostConfig.NanoCpus}}' {} | grep ':0$' | wc -l",
             timeout=timeout,
         )
@@ -628,7 +616,7 @@ def check_docker_resource_limits(client: "SSHClient", timeout: int = 60) -> Chec
         )
 
 
-def run_all_checks(client: "SSHClient", timeout: int = 60) -> list[CheckResult]:
+def run_all_checks(client: "SSHSession", timeout: int = 60) -> list[CheckResult]:
     """Run all container security checks.
 
     Args:

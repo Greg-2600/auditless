@@ -535,7 +535,7 @@ def render_report_json(
     level, _ = get_hardening_level(hardening["overall_index"])
 
     # Build JSON structure
-    report = {
+    report: dict[str, Any] = {
         "scan_info": {
             "generated_at": ts,
             "scanner": "Linux Health Security Scanner",

@@ -450,8 +450,8 @@ def run_all_audit_checks(ssh: SSHSession, password: str = "") -> List[CheckResul
                     details=f"Check failed with error: {str(e)}",
                     recommendation="Review check implementation and SSH connection",
                     test_id=(
-                        check.__doc__.split("Test ID: ")[1].split()[0]
-                        if "Test ID:" in check.__doc__
+                        (check.__doc__ or "").split("Test ID: ")[1].split()[0]
+                        if "Test ID:" in (check.__doc__ or "")
                         else "ACCT-XXXX"
                     ),
                 )

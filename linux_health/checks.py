@@ -160,7 +160,7 @@ def gather_system_info(ssh: SSHSession) -> SystemInfo:
     _, kernel, _ = _run(ssh, "uname -r")
     _, os_release, _ = _run(
         ssh,
-        ("bash -lc '" 'echo "\\$NAME \\$VERSION"; else uname -s; fi\''),
+        "bash -lc '" + 'echo "\\$NAME \\$VERSION"; else uname -s; fi\'',
     )
     _, uptime, _ = _run(ssh, "uptime -p || uptime")
     _, users, _ = _run(ssh, "who -q")

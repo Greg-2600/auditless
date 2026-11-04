@@ -36,6 +36,18 @@ jobs:
         run: |
           black --check linux_health/ tests/
 
+      - name: Lint with Pylint (10.00/10 gate)
+        run: |
+          pylint linux_health/ --fail-under=10.0
+
+      - name: Type check with Mypy
+        run: |
+          mypy linux_health/
+
+      - name: Security gate with Bandit (HIGH only)
+        run: |
+          bandit -r linux_health/ -q -lll
+
       - name: Run tests with pytest
         run: |
           pytest tests/ -v --tb=short
