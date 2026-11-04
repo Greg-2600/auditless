@@ -27,7 +27,21 @@ SSH_IMAGE = "lscr.io/linuxserver/openssh-server:latest"
 NETWORK = "auditless-e2e-net"
 SSH_NAME = "auditless-e2e-ssh"
 APP_NAME = "auditless-e2e-app"
+HOOK_NAME = "auditless-e2e-hook"
 VOLUME = "auditless-e2e-data"
+
+HOOK_SERVER = (
+    "import http.server\n"
+    "class H(http.server.BaseHTTPRequestHandler):\n"
+    "    def do_POST(self):\n"
+    "        n = int(self.headers.get('Content-Length', 0))\n"
+    "        print('HOOKPOST:' + self.rfile.read(n).decode(), flush=True)\n"
+    "        self.send_response(200)\n"
+    "        self.end_headers()\n"
+    "    def log_message(self, *a):\n"
+    "        pass\n"
+    "http.server.HTTPServer(('0.0.0.0', 8080), H).serve_forever()\n"
+)
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("AUDITLESS_E2E") != "1",
@@ -183,6 +197,19 @@ def stack(tmp_path_factory):
         else:
             raise AssertionError("app container never became healthy")
 
+        docker(
+            "run",
+            "-d",
+            "--name",
+            HOOK_NAME,
+            "--network",
+            NETWORK,
+            "python:3.14-slim",
+            "python",
+            "-c",
+            HOOK_SERVER,
+        )
+
         yield {
             "api": api,
             "ssh_host": "127.0.0.1",  # from the test runner
@@ -196,6 +223,7 @@ def stack(tmp_path_factory):
     finally:
         docker("rm", "-f", APP_NAME, check=False)
         docker("rm", "-f", SSH_NAME, check=False)
+        docker("rm", "-f", HOOK_NAME, check=False)
         docker("network", "rm", NETWORK, check=False)
         docker("volume", "rm", VOLUME, check=False)
 
@@ -435,3 +463,56 @@ def test_api_persistence_across_restart(stack):
     assert any(h["id"] == host["id"] for h in api.list_hosts())
     after = {r["id"] for r in api.list_reports()}
     assert before <= after
+
+
+def test_livefire_scheduled_range(stack):
+    """The full live-fire loop: key host, 1-minute schedule, webhook proof.
+
+    Mirrors the manual live-fire sessions: a saved key host scanned on a
+    cron schedule, webhook deliveries captured from the hook container's
+    logs, trend growth, and diffing across real accumulated reports.
+    """
+    api = stack["api"]
+    host = api.create_host("e2e-livefire", SSH_NAME, "tester", port=2222, auth="key")
+    api.put_host_key(host["id"], stack["private_key"])
+    sched = api.create_schedule(
+        host["id"],
+        "e2e-minutely",
+        "* * * * *",
+        webhook_url=f"http://{HOOK_NAME}:8080/hook",
+        notify_on="always",
+    )
+    assert sched["next_run"] is not None
+
+    # Baseline manual scan, then wait for at least one scheduled run.
+    first = api.wait_for(
+        api.start_scan(host_id=host["id"])["id"], deadline=420, interval=5.0
+    )
+    assert first["status"] == "done"
+    scheduled_id = None
+    end = time.time() + 300
+    while time.time() < end:
+        rows = api.list_reports(host_id=host["id"])
+        done = [r for r in rows if r["status"] == "done" and r["id"] != first["id"]]
+        if done:
+            scheduled_id = done[0]["id"]
+            break
+        time.sleep(10)
+    assert scheduled_id is not None, "no scheduled run accumulated"
+
+    trend = api.host_trend(host["id"])
+    assert len(trend) >= 2
+    assert all(t["hardening_index"] is not None for t in trend)
+
+    diff = api.diff_reports(first["id"], scheduled_id)
+    assert diff["hardening_delta"] == 0
+    assert set(diff) >= {"fixed", "regressed", "hardening_before", "hardening_after"}
+
+    logs = docker("logs", HOOK_NAME, check=False).stdout
+    posts = [line for line in logs.splitlines() if "HOOKPOST:" in line]
+    assert posts, "no webhook deliveries captured"
+    payload = json.loads(posts[-1].split("HOOKPOST:", 1)[1])
+    assert payload["event"] == "scan.completed"
+    assert payload["host_id"] == host["id"]
+    assert E2E_PASSWORD not in json.dumps(payload)
+    assert E2E_KEY_COMMENT not in json.dumps(payload)
