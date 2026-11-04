@@ -1644,48 +1644,20 @@ pytest tests/ -vv --tb=long
 
 ### Continuous Integration
 
-#### GitHub Actions Workflow
+#### GitHub Actions Workflow (`.github/workflows/tests.yml`)
 
-```yaml
-name: Quality Assurance
+Every push/PR to `main` runs three jobs:
 
-on: [push, pull_request]
+- `test` (ubuntu/windows/macos x Python 3.11/3.12): editable install,
+  ruff, black, pylint (10/10 gate), mypy, bandit HIGH gate, pytest,
+  coverage upload
+- `security`: bandit + safety reports (non-blocking)
+- `e2e` (ubuntu): the containerized end-to-end suite
+  (`AUDITLESS_E2E=1 pytest tests/test_e2e.py`)
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.11', '3.12']
-    
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-      
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-      
-      - name: Lint with Ruff
-        run: ruff check linux_health/ tests/
-      
-      - name: Check formatting
-        run: black --check linux_health/ tests/
-      
-      - name: Run tests with coverage
-        run: pytest tests/ --cov=linux_health --cov-report=xml
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage.xml
-          flags: unittests
-```
+`.github/workflows/docker.yml` builds + publishes `ghcr.io` images and
+runs a Trivy scan whose SARIF uploads to the Security tab. The same six
+gates run locally via `pre-commit run --all-files`.
 
 ---
 
@@ -1765,7 +1737,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Set up Python
         uses: actions/setup-python@v4
