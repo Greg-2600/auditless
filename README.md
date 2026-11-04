@@ -296,6 +296,20 @@ docker run --rm -p 127.0.0.1:8080:8080 linux-health --serve
   localhost; do not expose it to untrusted networks without authentication
   and TLS in front.
 
+**API authentication:** set `AUDITLESS_TOKEN` to require a bearer token
+on every `/api/*` route (Swagger gets an Authorize button; the UI prompts
+once per tab and keeps it in session storage):
+
+```bash
+export AUDITLESS_TOKEN="$(openssl rand -hex 32)"
+python -m linux_health --serve   # or: AUDITLESS_TOKEN=... docker compose up -d
+
+curl -H "Authorization: Bearer $AUDITLESS_TOKEN" http://127.0.0.1:8080/api/scans
+```
+
+Without the variable, the historical behavior applies (loopback-only,
+no auth). `/`, `/docs`, `/openapi.json` and `/healthz` stay public.
+
 First-party Python client (`linux_health.client.ApiClient`, stdlib only)
 talks to the app exclusively through the public API — the test suite
 dogfoods it, so anything the client cannot do is not really supported:

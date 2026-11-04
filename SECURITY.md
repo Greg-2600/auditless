@@ -4,35 +4,20 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 2.0.x   | :white_check_mark: |
+| 2.x     | :white_check_mark: |
 | 1.0.x   | :white_check_mark: |
 | < 1.0   | :x:                |
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Linux Health Security Scanner, please report it responsibly:
+If you discover a security vulnerability in Auditless, please report it
+**privately** — never through a public issue, social media, or chat:
 
-### Do Not
-
-- ❌ Open a public GitHub issue
-- ❌ Post about it on social media
-- ❌ Share vulnerability details publicly
-
-### Do
-
-1. **Email:** Send details to the maintainers (described below)
-2. **Wait:** Allow reasonable time (30 days) for a patch
-3. **Coordinate:** Work with maintainers on disclosure timeline
-
-### Reporting Process
-
-Email your security report to: **[security-contact@example.com]**
-
-Include:
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if you have one)
+1. Go to the repository's **Security** tab and choose
+   **Report a vulnerability** (private vulnerability reporting).
+2. Describe the issue, steps to reproduce, potential impact, and a
+   suggested fix if you have one.
+3. Allow reasonable time (30 days) for a patch and coordinate disclosure.
 
 ### What to Expect
 
@@ -50,15 +35,21 @@ Linux Health performs **read-only operations** on target systems:
 - ✅ No data exfiltration
 - ✅ Local report generation only
 
-However, users should:
-- Use SSH key-based authentication in production (not passwords)
-- Restrict scanner access to authorized network ranges
-- Scan systems with your organization's security policies
-- Audit scan results before acting on them
+Operator responsibilities:
+
+- Prefer SSH key auth (`--key-file`, saved hosts) over passwords; when a
+  password is needed, use `--ask-password`, never the command line.
+- Serve the dashboard on loopback, or set `AUDITLESS_TOKEN` (bearer auth
+  on every `/api/*` route) and put authentication + TLS in front before
+  exposing it to any network.
+- Scan keys are stored 0600 and never readable back through the API.
+- Restrict scanner access to authorized network ranges and audit scan
+  results before acting on them.
 
 ## Dependency Security
 
 We actively monitor dependencies for vulnerabilities via:
+
 - Regular `pip-audit` checks
 - GitHub Dependabot alerts
 - Manual security audits
@@ -67,4 +58,4 @@ Report dependency vulnerabilities using the process above.
 
 ---
 
-**Thank you for helping keep Linux Health secure!**
+**Thank you for helping keep Auditless secure!**

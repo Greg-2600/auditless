@@ -33,13 +33,45 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, SecretStr
 
 from .store import Store
 
 MAX_JOBS = 50
+
+_auth_scheme = HTTPBearer(auto_error=False)
+
+
+def require_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_auth_scheme),
+) -> None:
+    """Enforce bearer auth on API routes when AUDITLESS_TOKEN is set.
+
+    Unset token preserves the historical behavior (loopback-only, no auth).
+    Accepts Authorization: Bearer <token> or ?token= for convenience.
+    """
+    import hmac
+    import os
+
+    expected = os.environ.get("AUDITLESS_TOKEN", "")
+    if not expected:
+        return
+    provided = credentials.credentials if credentials else ""
+    if not provided:
+        provided = request.query_params.get("token", "")
+    if not provided or not hmac.compare_digest(provided, expected):
+        raise HTTPException(
+            status_code=401,
+            detail="missing or invalid API token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+_guarded = [Depends(require_token)]
 
 _jobs: dict[str, "ScanJob"] = {}
 _jobs_order: list[str] = []
@@ -610,6 +642,14 @@ th{color:var(--dim);font-weight:600}.pass{color:var(--grn)}.warn{color:var(--yel
 <div class="wrap">
 <h1>Auditless</h1>
 <div class="sub">Agentless Linux security scanner &mdash; hardening index, checks &amp; remediation &mdash; <a style="color:var(--acc)" href="/docs">API reference (Swagger)</a></div>
+<div class="card" id="tokbar" style="display:none;border-color:var(--yel)">
+<h3 style="margin-top:0">API token required</h3>
+<div class="toolbar"><input id="tokinput" type="password" placeholder="paste bearer token"></div>
+<div class="toolbar"><button style="margin:0" onclick="saveTok()">Save for this tab</button>
+<button style="margin:0" onclick="clearTok()">Clear</button></div>
+<div class="note">Set <code>AUDITLESS_TOKEN</code> on the server. The token lives in
+session storage only &mdash; never persisted.</div>
+</div>
 <div class="card">
 <h3 style="margin-top:0">New scan</h3>
 <div style="margin-bottom:8px"><label>Saved host (optional &mdash; overrides manual fields)</label><select id="hostsel" onchange="hostPick()"><option value="">manual entry</option></select></div>
@@ -654,8 +694,17 @@ Binds to localhost; do not expose without auth + TLS.</div>
 </div>
 <script>
 let cur=null,timer=null;
-async function api(p,o){const r=await fetch(p,o);const j=await r.json();
-if(!r.ok)throw new Error(j.detail||j.error||r.status);return j}
+let TOK=sessionStorage.getItem("auditless_tok")||"";
+async function api(p,o){o=o||{};o.headers=Object.assign({},o.headers||{});
+ if(TOK)o.headers["Authorization"]="Bearer "+TOK;
+ const r=await fetch(p,o);let j=null;
+ try{j=await r.json()}catch(e){j={detail:r.status}}
+ if(r.status===401){tokbar(true);throw new Error("API token required")}
+ if(!r.ok)throw new Error((j&&(j.detail||j.error))||r.status);return j}
+function tokbar(show){document.getElementById("tokbar").style.display=show?"block":"none"}
+function saveTok(){TOK=tokinput.value;sessionStorage.setItem("auditless_tok",TOK);
+ tokbar(false);loadHosts();loadReports();loadHist()}
+function clearTok(){TOK="";sessionStorage.removeItem("auditless_tok");tokinput.value=""}
 async function startScan(){
  const hs=hostsel.value;
  const b=hs?{host_id:hs}:{hostname:host.value,username:user.value,
@@ -825,7 +874,9 @@ def healthz() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/api/version", summary="Scanner and API version metadata")
+@app.get(
+    "/api/version", summary="Scanner and API version metadata", dependencies=_guarded
+)
 def api_version() -> dict:
     """Scanner version, API version, and supported feature flags."""
     return get_version_info()
@@ -833,6 +884,7 @@ def api_version() -> dict:
 
 @app.get(
     "/api/scans",
+    dependencies=_guarded,
     response_model=list[ScanJobPublic],
     summary="List recent scan jobs (newest first, no credentials)",
 )
@@ -845,6 +897,7 @@ def api_list_scans() -> list[ScanJobPublic]:
 
 @app.post(
     "/api/scans",
+    dependencies=_guarded,
     response_model=ScanJobPublic,
     status_code=201,
     summary="Start a scan (password is write-only)",
@@ -896,6 +949,7 @@ def api_start_scan(data: ScanRequest) -> ScanJobPublic:
 
 @app.get(
     "/api/scans/{job_id}",
+    dependencies=_guarded,
     response_model=ScanJobPublic,
     summary="Job status; includes the full report once done",
 )
@@ -909,6 +963,7 @@ def api_get_scan(job_id: str) -> ScanJobPublic:
 
 @app.delete(
     "/api/scans/{job_id}",
+    dependencies=_guarded,
     summary="Forget a job record",
 )
 def api_delete_scan(job_id: str) -> dict:
@@ -920,6 +975,7 @@ def api_delete_scan(job_id: str) -> dict:
 
 @app.get(
     "/api/scans/{job_id}/report",
+    dependencies=_guarded,
     summary="Finished report in json, md or text",
 )
 def api_get_report(  # pylint: disable=redefined-builtin
@@ -938,7 +994,11 @@ def api_get_report(  # pylint: disable=redefined-builtin
     return Response(content=content, media_type=content_type)
 
 
-@app.get("/api/profiles", summary="Scan profiles discovered on this host")
+@app.get(
+    "/api/profiles",
+    summary="Scan profiles discovered on this host",
+    dependencies=_guarded,
+)
 def api_list_profiles() -> list[dict]:
     """Profile names/paths usable as the scan `profile` parameter."""
     return list_profiles()
@@ -958,7 +1018,12 @@ def _host_public(row: dict) -> HostPublic:
     )
 
 
-@app.get("/api/hosts", response_model=list[HostPublic], summary="List saved hosts")
+@app.get(
+    "/api/hosts",
+    response_model=list[HostPublic],
+    summary="List saved hosts",
+    dependencies=_guarded,
+)
 def api_list_hosts() -> list[HostPublic]:
     """Saved hosts (metadata only; key bytes never exposed)."""
     return [_host_public(row) for row in get_store().list_hosts()]
@@ -966,6 +1031,7 @@ def api_list_hosts() -> list[HostPublic]:
 
 @app.post(
     "/api/hosts",
+    dependencies=_guarded,
     response_model=HostPublic,
     status_code=201,
     summary="Register a host",
@@ -983,7 +1049,12 @@ def api_create_host(data: HostCreate) -> HostPublic:
     return _host_public(row)
 
 
-@app.get("/api/hosts/{host_id}", response_model=HostPublic, summary="Fetch one host")
+@app.get(
+    "/api/hosts/{host_id}",
+    response_model=HostPublic,
+    summary="Fetch one host",
+    dependencies=_guarded,
+)
 def api_get_host(host_id: str) -> HostPublic:
     """Fetch host metadata (never key bytes)."""
     row = get_store().get_host(host_id)
@@ -992,7 +1063,12 @@ def api_get_host(host_id: str) -> HostPublic:
     return _host_public(row)
 
 
-@app.patch("/api/hosts/{host_id}", response_model=HostPublic, summary="Update a host")
+@app.patch(
+    "/api/hosts/{host_id}",
+    response_model=HostPublic,
+    summary="Update a host",
+    dependencies=_guarded,
+)
 def api_update_host(host_id: str, data: HostUpdate) -> HostPublic:
     """Partial host update; changing auth to password drops nothing else."""
     row = get_store().get_host(host_id)
@@ -1011,7 +1087,9 @@ def api_update_host(host_id: str, data: HostUpdate) -> HostPublic:
     return _host_public(updated)
 
 
-@app.delete("/api/hosts/{host_id}", summary="Delete a host and its key")
+@app.delete(
+    "/api/hosts/{host_id}", summary="Delete a host and its key", dependencies=_guarded
+)
 def api_delete_host(host_id: str) -> dict:
     """Remove a host record and any stored key material."""
     if not get_store().delete_host(host_id):
@@ -1019,7 +1097,11 @@ def api_delete_host(host_id: str) -> dict:
     return {"deleted": host_id}
 
 
-@app.put("/api/hosts/{host_id}/key", summary="Store a host private key")
+@app.put(
+    "/api/hosts/{host_id}/key",
+    summary="Store a host private key",
+    dependencies=_guarded,
+)
 def api_put_host_key(host_id: str, data: KeyUpload) -> dict:
     """Save key bytes with owner-only permissions (write-only endpoint)."""
     if not get_store().get_host(host_id):
@@ -1033,7 +1115,11 @@ def api_put_host_key(host_id: str, data: KeyUpload) -> dict:
     return {"host_id": host_id, "has_key": True}
 
 
-@app.get("/api/hosts/{host_id}/key", summary="Key presence (never the key)")
+@app.get(
+    "/api/hosts/{host_id}/key",
+    summary="Key presence (never the key)",
+    dependencies=_guarded,
+)
 def api_get_host_key(host_id: str) -> dict:
     """Whether key bytes are stored. The key itself is never returned."""
     if not get_store().get_host(host_id):
@@ -1045,7 +1131,9 @@ def api_get_host_key(host_id: str) -> dict:
     return {"host_id": host_id, "has_key": present}
 
 
-@app.delete("/api/hosts/{host_id}/key", summary="Remove a stored key")
+@app.delete(
+    "/api/hosts/{host_id}/key", summary="Remove a stored key", dependencies=_guarded
+)
 def api_delete_host_key(host_id: str) -> dict:
     """Delete stored key bytes (host record kept, flag cleared)."""
     if not get_store().get_host(host_id):
@@ -1057,13 +1145,21 @@ def api_delete_host_key(host_id: str) -> dict:
     return {"host_id": host_id, "has_key": False}
 
 
-@app.get("/api/reports", summary="Persisted scan reports, newest first")
+@app.get(
+    "/api/reports",
+    summary="Persisted scan reports, newest first",
+    dependencies=_guarded,
+)
 def api_list_reports(host_id: str | None = None, limit: int = 50) -> list[dict]:
     """Stored report summaries, optionally filtered by host."""
     return get_store().list_reports(host_id, max(1, min(limit, 200)))
 
 
-@app.get("/api/reports/{report_id}", summary="Fetch one persisted report")
+@app.get(
+    "/api/reports/{report_id}",
+    summary="Fetch one persisted report",
+    dependencies=_guarded,
+)
 def api_get_stored_report(report_id: str) -> dict:
     """Full stored report including the JSON payload."""
     import json as _json
@@ -1078,7 +1174,11 @@ def api_get_stored_report(report_id: str) -> dict:
     return payload
 
 
-@app.delete("/api/reports/{report_id}", summary="Forget a persisted report")
+@app.delete(
+    "/api/reports/{report_id}",
+    summary="Forget a persisted report",
+    dependencies=_guarded,
+)
 def api_delete_stored_report(report_id: str) -> dict:
     """Remove a stored report."""
     if not get_store().delete_report(report_id):
@@ -1086,7 +1186,11 @@ def api_delete_stored_report(report_id: str) -> dict:
     return {"deleted": report_id}
 
 
-@app.get("/api/reports/{report_id}/report", summary="Persisted report re-rendered")
+@app.get(
+    "/api/reports/{report_id}/report",
+    summary="Persisted report re-rendered",
+    dependencies=_guarded,
+)
 def api_get_stored_report_rendered(
     report_id: str, format: str = "json"  # pylint: disable=redefined-builtin
 ) -> Response:
@@ -1107,7 +1211,9 @@ def api_get_stored_report_rendered(
     return Response(content=content, media_type=content_type)
 
 
-@app.get("/api/diff", summary="Diff two reports (fixed vs regressed)")
+@app.get(
+    "/api/diff", summary="Diff two reports (fixed vs regressed)", dependencies=_guarded
+)
 def api_diff_reports(from_id: str, to_id: str) -> dict:
     """Check-by-check progress between two stored reports."""
     import json as _json

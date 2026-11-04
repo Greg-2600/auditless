@@ -38,9 +38,12 @@ class ApiError(Exception):
 class ApiClient:
     """Typed client for every Auditless API endpoint."""
 
-    def __init__(self, base_url: str, timeout: float = 10.0) -> None:
+    def __init__(
+        self, base_url: str, timeout: float = 10.0, token: str | None = None
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.token = token
 
     def _request(
         self,
@@ -57,6 +60,8 @@ class ApiClient:
             raise ApiError(0, f"refusing non-HTTP(S) URL scheme: {scheme!r}")
         data: bytes | None = None
         headers: dict[str, str] = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
         if payload is not None:
             data = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"

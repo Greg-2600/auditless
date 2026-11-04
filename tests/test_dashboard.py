@@ -388,6 +388,42 @@ def test_json_report_carries_package_version():
     assert payload["scan_info"]["version"] == __version__
 
 
+def test_token_auth_flow(client, monkeypatch):
+    """With AUDITLESS_TOKEN set: 401s, header/query acceptance, open pages."""
+    import urllib.request
+
+    from linux_health.client import ApiClient, ApiError
+
+    monkeypatch.setenv("AUDITLESS_TOKEN", "TEST-TOKEN-9z9z")
+    base = client.base_url
+
+    with pytest.raises(ApiError) as exc_info:
+        client.list_scans()
+    assert exc_info.value.status == 401
+
+    authed = ApiClient(base, token="TEST-TOKEN-9z9z")
+    assert authed.list_scans() == []
+    host = authed.create_host("tok", "h", "u")
+    assert host["name"] == "tok"
+
+    with pytest.raises(ApiError) as exc_info:
+        ApiClient(base, token="wrong").list_scans()
+    assert exc_info.value.status == 401
+
+    with urllib.request.urlopen(
+        base + "/api/scans?token=TEST-TOKEN-9z9z", timeout=10
+    ) as resp:
+        assert resp.status == 200
+
+    # Liveness, UI shell, and docs stay public.
+    assert client.health() == {"status": "ok"}
+    with urllib.request.urlopen(base + "/", timeout=10) as resp:
+        html = resp.read().decode()
+        assert "tokbar" in html and "sessionStorage" in html
+    with urllib.request.urlopen(base + "/docs", timeout=10) as resp:
+        assert resp.status == 200
+
+
 def test_cli_serve_flags():
     from linux_health.cli import build_parser
 
