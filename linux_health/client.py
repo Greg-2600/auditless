@@ -299,6 +299,30 @@ class ApiClient:
         result: dict[str, Any] = self._request("POST", "/api/maintenance/backup")
         return result
 
+    def list_remediations(self) -> list[dict[str, Any]]:
+        """Remediation catalog with dry-run scripts (GET /api/remediations)."""
+        result: list[dict[str, Any]] = self._request("GET", "/api/remediations")
+        return result
+
+    def propose_remediations(self, report_id: str) -> list[dict[str, Any]]:
+        """Dry-run fix proposals for a report (POST .../remediations)."""
+        result: list[dict[str, Any]] = self._request(
+            "POST", f"/api/reports/{report_id}/remediations"
+        )
+        return result
+
+    def apply_remediation(
+        self, proposal_id: str, host_id: str, password: str = ""
+    ) -> dict[str, Any]:
+        """Approve + execute a fix, then verify (POST .../apply)."""
+        payload: dict[str, Any] = {"host_id": host_id}
+        if password:
+            payload["password"] = password
+        result: dict[str, Any] = self._request(
+            "POST", f"/api/remediations/{proposal_id}/apply", payload
+        )
+        return result
+
     def host_compliance(self, host_id: str) -> dict[str, Any]:
         """CIS compliance of the host's latest report (GET .../compliance)."""
         result: dict[str, Any] = self._request(

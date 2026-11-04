@@ -380,6 +380,28 @@ curl http://127.0.0.1:8080/api/compliance/controls | head -c 300
   scores, a 0–100 overall score, coverage (mapped vs total), and the
   non-CIS "extended" checks. The UI renders it as score + section bars
   + control table from any saved report.
+
+### Guided remediation (propose → approve → verify)
+
+Failed checks map to reviewable fix scripts (`linux_health/remediations.py`).
+Nothing executes without explicit approval, and every apply triggers a
+verification rescan that proves the flip:
+
+```bash
+# Dry-run proposals for a stored report (scripts shown, nothing runs)
+curl -X POST http://127.0.0.1:8080/api/reports/<id>/remediations
+
+# Approve one (password is write-only; key hosts may omit it)
+curl -X POST http://127.0.0.1:8080/api/remediations/<proposal>/apply \
+  -H 'Content-Type: application/json' \
+  -d '{"host_id": "<host>", "password": "..."}'
+# -> per-command results + verification_job_id; poll it, then diff.
+```
+
+The UI "fix" link on any saved report shows proposals with risk badges
+(`safe` = file writes; `service` = touches sshd + reload) and an
+Approve & apply button with live results. Operators add fixes by
+appending a `Remediation` entry (see `docs/REMEDIATION_AUTHORING.md`).
 - Data lives in `$AUDITLESS_DATA_DIR` (`./data` locally, `/app/data` in
   the container).
 
