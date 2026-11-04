@@ -26,7 +26,7 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "paramiko>=3.0.0",
+    "paramiko>=4.0.0",
     "pyyaml>=6.0",
 ]
 
