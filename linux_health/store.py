@@ -16,7 +16,9 @@ import os
 import sqlite3
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 
 def data_dir() -> Path:
@@ -35,10 +37,19 @@ def _safe_id(host_id: str) -> str:
     return host_id
 
 
-def _connect(db_path: Path) -> sqlite3.Connection:
+@contextmanager
+def _connect(db_path: Path) -> Iterator[sqlite3.Connection]:
+    """Row-factory connection that commits and closes on exit."""
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 _SCHEMA = """
