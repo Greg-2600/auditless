@@ -26,8 +26,6 @@ Welcome to the comprehensive documentation for **Linux Health Security Scanner v
 - **[IMPLEMENTATION_ROADMAP_V3.md](IMPLEMENTATION_ROADMAP_V3.md)** - Comprehensive roadmap for expanding to 70+ checks
 - **[TEST_ID_REFERENCE.md](TEST_ID_REFERENCE.md)** - Lynis-compatible test ID allocation scheme
 
-=======
->>>>>>> origin/master
 ### 📝 Version Information
 
 **Current Version:** 2.0.0 (Latest)  
@@ -41,47 +39,5 @@ Welcome to the comprehensive documentation for **Linux Health Security Scanner v
 - 🆔 **Test ID System** - Lynis-compatible test identifiers for all checks
 - 📊 **JSON Output** - Machine-readable structured reports
 - ⚙️ **Profile System** - YAML-based configuration and test filtering
-<<<<<<< HEAD
 - 🔍 **100+ Security Checks** - Comprehensive coverage across 24 categories
 - 📈 **Hardening Index** - 0-100 score with per-category breakdown
-
-# Linux Health Security Scanner
-
-Enterprise-grade agentless security assessment for Linux infrastructure. Performs 36+ automated checks for malware, vulnerabilities, and compliance. SSH-based, Docker-ready, and Kubernetes-friendly.
-
-## Features
-
-- 36+ security checks (malware, vulnerabilities, compliance)
-- Agentless SSH scanning (no install on target)
-- Docker & Kubernetes ready
-- Text, Markdown, and JSON reports
-- 12 check categories (filesystem, network, packages, etc.)
-- Fast, non-invasive, read-only operations
-- Audit trail: all SSH sessions logged
-
-## Quick Start
-
-```bash
-pip install -r requirements.txt
-python -m linux_health 192.168.1.100 user password
-```
-
-## Docker Usage
-
-```bash
-docker build -t linux-health:dev .
-docker run --rm linux-health:dev 192.168.1.100 user password
-```
-
-## Test Suite
-
-```bash
-pytest tests/ -v
-```
-
-## Documentation
-
-All docs in this folder. See [docs/README.md](docs/README.md) for full details.
-├── FEATURES_ADDED.md              # Detailed v2.0.0 features
-
-└── RELEASE_NOTES_v2.0.0.md       # Release summary

@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Reset command cache for fresh scan results
     from .checks import reset_command_cache
-    reset_command_cache()
+
     reset_command_cache()
 
     try:

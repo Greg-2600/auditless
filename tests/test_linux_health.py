@@ -2110,11 +2110,7 @@ class TestPerformanceOptimizations:
 
     def test_command_cache_stores_results(self):
         """Test that command cache stores and retrieves results."""
-<<<<<<< HEAD
         from linux_health.checks import enable_command_cache
-=======
-        from linux_health.checks import _COMMAND_CACHE, enable_command_cache
->>>>>>> origin/master
 
         enable_command_cache()
         reset_command_cache()
@@ -2126,26 +2122,17 @@ class TestPerformanceOptimizations:
             MagicMock(write=MagicMock(), flush=MagicMock(), close=MagicMock()),
             MagicMock(
                 read=MagicMock(return_value=b"test output"),
-<<<<<<< HEAD
                 channel=MagicMock(
                     exit_status_ready=MagicMock(return_value=True),
                     recv_exit_status=MagicMock(return_value=0),
                 ),
             ),
             MagicMock(read=MagicMock(return_value=b"")),
-=======
-                channel=MagicMock(exit_status_ready=MagicMock(return_value=True), recv_exit_status=MagicMock(return_value=0))
-            ),
-            MagicMock(read=MagicMock(return_value=b""))
->>>>>>> origin/master
         )
 
         # Simulate running a command through _run
         from linux_health.checks import _run
-<<<<<<< HEAD
 
-=======
->>>>>>> origin/master
         cmd = "test command"
         result = _run(mock_ssh, cmd, use_cache=True)
 
@@ -2174,11 +2161,7 @@ class TestEdgeCases:
             os="Ubuntu 22.04",
             kernel="5.15.0",
             uptime="1 day",
-<<<<<<< HEAD
             users="1",
-=======
-            users="1"
->>>>>>> origin/master
         )
 
         # Empty checks list
@@ -2193,11 +2176,7 @@ class TestEdgeCases:
             item="Empty Details Check",
             status="pass",
             details="",
-<<<<<<< HEAD
             recommendation="None",
-=======
-            recommendation="None"
->>>>>>> origin/master
         )
 
         assert check.details == ""
@@ -2211,11 +2190,7 @@ class TestEdgeCases:
             item="Unicode Test: 你好 мир",
             status="pass",
             details=f"Details with special chars: {special_chars}",
-<<<<<<< HEAD
             recommendation="Keep safe",
-=======
-            recommendation="Keep safe"
->>>>>>> origin/master
         )
 
         assert special_chars in check.details
@@ -2229,11 +2204,7 @@ class TestEdgeCases:
             os="Custom-Linux-Distro-v1.2.3",
             kernel="6.0.0-rc1+",
             uptime="365 days, 23 hours",
-<<<<<<< HEAD
             users="0",  # No logged in users
-=======
-            users="0"  # No logged in users
->>>>>>> origin/master
         )
 
         assert len(system.hostname) > 20
