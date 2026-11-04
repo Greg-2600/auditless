@@ -335,7 +335,9 @@ class TestMainScanOrchestration:
         self._patch_all(monkeypatch)
         out = tmp_path / "r.json"
         assert cli.main(["h", "u", "pw", "--format", "json", "--output", str(out)]) == 0
-        assert json.loads(out.read_text())["summary"]["total_checks"] == 1
+        assert (
+            json.loads(out.read_text(encoding="utf-8"))["summary"]["total_checks"] == 1
+        )
 
     def test_main_markdown_scan_writes_file(self, monkeypatch, tmp_path):
         from linux_health import cli
@@ -343,7 +345,7 @@ class TestMainScanOrchestration:
         self._patch_all(monkeypatch)
         out = tmp_path / "r.md"
         assert cli.main(["h", "u", "pw", "--format", "md", "--output", str(out)]) == 0
-        assert out.read_text()
+        assert out.read_text(encoding="utf-8")
 
     def test_main_passes_key_and_strict_flags(self, monkeypatch):
         from linux_health import cli
