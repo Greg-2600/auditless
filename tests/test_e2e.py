@@ -315,7 +315,9 @@ def test_cli_strict_host_key_rejects_unknown(stack):
 def test_api_version_and_profiles(stack):
     """Version + profile discovery through the public client."""
     info = stack["api"].version()
-    assert info["version"] == "2.0.0"
+    from linux_health import __version__
+
+    assert info["version"] == __version__
     assert "ssh-scan" in info["features"]
     assert isinstance(stack["api"].list_profiles(), list)
     spec = stack["api"].openapi_spec()

@@ -1,27 +1,42 @@
-"""Setup configuration for Linux Health Security Scanner."""
+"""Setup configuration for Auditless (Linux Health Security Scanner).
 
-from setuptools import setup, find_packages
+Thin setuptools shim: authoritative metadata lives in pyproject.toml.
+Paths resolve relative to this file so isolated builds (python -m build,
+pip install .) work regardless of the backend's working directory.
+"""
 
-with open("README.md", "r", encoding="utf-8") as fh:
-    long_description = fh.read()
+import re
+from pathlib import Path
 
-with open("requirements.txt", "r", encoding="utf-8") as fh:
-    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+from setuptools import find_packages, setup
+
+ROOT = Path(__file__).resolve().parent
+
+long_description = (ROOT / "README.md").read_text(encoding="utf-8")
+
+requirements = [
+    line.strip()
+    for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    if line.strip() and not line.startswith(("#", "-"))
+]
+
+init_text = (ROOT / "linux_health" / "__init__.py").read_text(encoding="utf-8")
+version = re.search(r'__version__\s*=\s*"([^"]+)"', init_text).group(1)  # type: ignore[union-attr]
 
 setup(
     name="linux-health",
-    version="2.0.0",
-    author="Linux Health Contributors",
-    description="Enterprise-grade security assessment platform for Linux infrastructure",
+    version=version,
+    author="Greg Baker",
+    description="Agentless Linux security assessment with hardening index",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/linux_health",
+    url="https://github.com/Greg-2600/auditless",
     project_urls={
-        "Bug Tracker": "https://github.com/yourusername/linux_health/issues",
-        "Documentation": "https://github.com/yourusername/linux_health#readme",
-        "Source Code": "https://github.com/yourusername/linux_health",
+        "Bug Tracker": "https://github.com/Greg-2600/auditless/issues",
+        "Documentation": "https://github.com/Greg-2600/auditless#readme",
+        "Source Code": "https://github.com/Greg-2600/auditless",
     },
-    packages=find_packages(),
+    packages=find_packages(include=["linux_health", "linux_health.*"]),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Environment :: Console",

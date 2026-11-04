@@ -45,6 +45,11 @@ jobs:
         run: |
           mypy linux_health/
 
+      - name: Build distribution (validates release packaging)
+        run: |
+          pip install build
+          python -m build
+
       - name: Security gate with Bandit (HIGH only)
         run: |
           bandit -r linux_health/ -q -lll
