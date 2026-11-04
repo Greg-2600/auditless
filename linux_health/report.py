@@ -109,13 +109,6 @@ def render_report_text(
     """Render a clean text-based report."""
     checks_list = list(checks)
 
-    # Debug: check for tuples
-    for i, c in enumerate(checks_list):
-        if not isinstance(c, CheckResult):
-            print(
-                f"ERROR: checks_list[{i}] is {type(c).__name__}, not CheckResult: {c}"
-            )
-
     ports_list = list(ports)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
