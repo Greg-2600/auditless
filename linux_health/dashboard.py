@@ -282,10 +282,10 @@ def run_scan(params: dict) -> dict:
 
     out_path = Path(tempfile.mkdtemp(prefix="auditless-")) / "report.json"
     argv += ["--output", str(out_path)]
+    buf = io.StringIO()
     try:
         if not password and not key_path:
             raise RuntimeError("password is required to start a scan")
-        buf = io.StringIO()
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             code = cli_main(argv)
         if code != 0 or not out_path.exists():
@@ -294,7 +294,7 @@ def run_scan(params: dict) -> dict:
         return payload
     except SystemExit as exc:
         raise RuntimeError(
-            f"scan failed: invalid arguments or SSH error ({exc})"
+            f"scan failed (exit {exc.code}): {buf.getvalue()[-500:]}"
         ) from exc
     finally:
         params["password"] = None
@@ -910,6 +910,7 @@ def api_start_scan(data: ScanRequest) -> ScanJobPublic:
     """
     host_id = data.host_id
     overrides = {
+        "port": data.port,
         "timeout": data.timeout,
         "command_timeout": data.command_timeout,
         "scan_ports": data.scan_ports,

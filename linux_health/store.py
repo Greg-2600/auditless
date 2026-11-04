@@ -148,9 +148,11 @@ class Store:
 
     def set_host_key(self, host_id: str, key_text: str) -> None:
         """Store key bytes with owner-only permissions; flag the host."""
-        if not self.get_host(host_id):
+        row = self.get_host(host_id)
+        if row is None:
             raise KeyError(f"unknown host {host_id}")
-        path = self.key_path(host_id)
+        # Path derives from the stored row, never the request value.
+        path = self.key_path(row["id"])
         path.write_text(key_text, encoding="utf-8")
         os.chmod(path, 0o600)
         with _connect(self.db_path) as conn:
@@ -161,8 +163,11 @@ class Store:
 
     def clear_host_key(self, host_id: str) -> None:
         """Remove stored key bytes and clear the flag (idempotent)."""
+        row = self.get_host(host_id)
+        if row is None:
+            return
         try:
-            self.key_path(host_id).unlink()
+            self.key_path(row["id"]).unlink()
         except FileNotFoundError:
             pass
         with _connect(self.db_path) as conn:
@@ -173,7 +178,10 @@ class Store:
 
     def has_host_key(self, host_id: str) -> bool:
         """Whether key bytes exist on disk for the host."""
-        return self.key_path(host_id).exists()
+        row = self.get_host(host_id)
+        if row is None:
+            return False
+        return self.key_path(row["id"]).exists()
 
     # -- reports ------------------------------------------------------
 

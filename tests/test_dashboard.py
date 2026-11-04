@@ -230,6 +230,25 @@ def test_run_scan_builds_cli_argv(monkeypatch):
     assert "--format" in seen["argv"] and "json" in seen["argv"]
 
 
+def test_run_scan_preserves_custom_port(monkeypatch):
+    """Regression: API port must reach the CLI (dropped once by refactor)."""
+    seen = {}
+
+    def fake_main(argv):
+        seen["argv"] = argv
+        out = argv[argv.index("--output") + 1]
+        import pathlib
+
+        pathlib.Path(out).write_text(json.dumps(canned_report()))
+        return 0
+
+    monkeypatch.setattr("linux_health.cli.main", fake_main)
+    dashboard.run_scan(
+        {"hostname": "h", "username": "u", "password": "pw", "port": 2222}
+    )
+    assert seen["argv"][seen["argv"].index("--port") + 1] == "2222"
+
+
 def test_run_scan_requires_password():
     with pytest.raises(RuntimeError, match="password is required"):
         dashboard.run_scan({"hostname": "h", "username": "u", "password": ""})
