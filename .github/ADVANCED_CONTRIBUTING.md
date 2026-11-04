@@ -518,7 +518,7 @@ pytest tests/ -v
 3. Run full test suite: `pytest tests/ -v`
 4. Format all code: `black linux_health/ tests/`
 5. Run pylint: `pylint linux_health/`
-6. Build Docker image: `docker build -t linux-health:vX.X.X .`
+6. Build Docker image: `docker build -t auditless:vX.X.X .`
 7. Tag release: `git tag -a vX.X.X -m "Release vX.X.X"`
 8. Push: `git push origin main --tags`
 

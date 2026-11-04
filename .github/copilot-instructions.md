@@ -78,18 +78,18 @@ pytest tests/ --cov=linux_health --cov-report=term-missing
 
 ### Build
 ```bash
-docker build -t linux-health:dev .
+docker build -t auditless:dev .
 ```
 
 ### Test
 ```bash
-docker run --rm linux-health:dev --help
-docker run --rm linux-health:dev 192.168.1.100 user password
+docker run --rm auditless:dev --help
+docker run --rm auditless:dev 192.168.1.100 user password
 ```
 
 ### Rebuild After Changes
 ```bash
-docker build --no-cache -t linux-health:dev .
+docker build --no-cache -t auditless:dev .
 ```
 
 ## Documentation
@@ -188,7 +188,7 @@ pytest tests/ -vv --tb=long -s
 docker builder prune --all
 
 # Build with verbose output
-docker build -t linux-health:dev . --progress=plain --no-cache
+docker build -t auditless:dev . --progress=plain --no-cache
 ```
 
 ### Import Errors

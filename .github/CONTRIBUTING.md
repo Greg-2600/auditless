@@ -259,10 +259,10 @@ pytest tests/ -s
 ### Docker Testing
 ```bash
 # Build dev image
-docker build -t linux-health:dev .
+docker build -t auditless:dev .
 
 # Test scan
-docker run --rm linux-health:dev --help
+docker run --rm auditless:dev --help
 ```
 
 ### Local Testing Against Real Host

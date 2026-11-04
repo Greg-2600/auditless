@@ -341,16 +341,16 @@ python3 -m linux_health localhost user password --profile test.yaml --format tex
 Build and run:
 
 ```bash
-docker build -t linux-health:latest .
+docker build -t auditless:latest .
 
 # JSON output
-docker run --rm --network host linux-health:latest \
+docker run --rm --network host auditless:latest \
   localhost user password --format json > scan.json
 
 # With profile (mount from host)
 docker run --rm --network host \
   -v ~/.config/linux_health:/root/.config/linux_health \
-  linux-health:latest \
+  auditless:latest \
   localhost user password --profile /root/.config/linux_health/profiles/test.yaml
 ```
 
@@ -361,7 +361,7 @@ docker run --rm --network host \
 ```yaml
 security_scan:
   stage: test
-  image: linux-health:latest
+  image: auditless:latest
   script:
     - >
       python3 -m linux_health $TARGET_HOST $SSH_USER $SSH_PASS
