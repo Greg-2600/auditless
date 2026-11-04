@@ -148,7 +148,7 @@ def stack(tmp_path_factory):
         )
         wait_for_ssh("127.0.0.1", ssh_port, "tester", E2E_PASSWORD)
 
-        docker("build", "-t", "linux-health:e2e", str(REPO_ROOT))
+        docker("build", "-t", "auditless:e2e", str(REPO_ROOT))
         docker("volume", "create", VOLUME, check=False)
         docker(
             "run",
@@ -165,7 +165,7 @@ def stack(tmp_path_factory):
             "AUDITLESS_DATA_DIR=/app/data",
             "-v",
             f"{VOLUME}:/app/data",
-            "linux-health:e2e",
+            "auditless:e2e",
             "--serve",
             "--serve-host",
             "0.0.0.0",
