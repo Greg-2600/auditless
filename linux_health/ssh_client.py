@@ -15,7 +15,7 @@ Example:
 from __future__ import annotations
 
 import paramiko
-from paramiko.client import AutoAddPolicy
+from paramiko.client import AutoAddPolicy, RejectPolicy
 
 
 class SSHSession:
@@ -28,12 +28,14 @@ class SSHSession:
         password: str,
         port: int = 22,
         timeout: float = 5.0,
+        strict_host_key_checking: bool = False,
     ):
         self.hostname = hostname
         self.username = username
         self.password = password
         self.port = port
         self.timeout = timeout
+        self.strict_host_key_checking = strict_host_key_checking
         self._client: paramiko.SSHClient | None = None
 
     def __enter__(self) -> "SSHSession":
@@ -46,8 +48,10 @@ class SSHSession:
     def connect(self) -> None:
         """Establish SSH connection to target host.
 
-        Sets up paramiko SSHClient with auto-add policy for unknown hosts.
-        Uses password authentication with configurable connection timeout.
+        By default uses auto-add policy for unknown host keys (convenient
+        but vulnerable to MITM on first connect). Pass
+        strict_host_key_checking=True (or --strict-host-key-checking) to
+        reject unknown host keys and require a pre-populated known_hosts.
 
         Raises:
             paramiko.AuthenticationException: If credentials are invalid
@@ -55,7 +59,10 @@ class SSHSession:
             socket.gaierror: If hostname cannot be resolved
         """
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(AutoAddPolicy())
+        if self.strict_host_key_checking:
+            client.set_missing_host_key_policy(RejectPolicy())
+        else:
+            client.set_missing_host_key_policy(AutoAddPolicy())
         client.connect(
             hostname=self.hostname,
             port=self.port,

@@ -63,8 +63,6 @@ exclude = '''
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-select = ["E", "F", "W"]
-ignore = ["E501"]  # Line too long (handled by Black)
 exclude = [
     ".git",
     ".venv",
@@ -72,6 +70,10 @@ exclude = [
     "dist",
     "__pycache__",
 ]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]  # Line too long (handled by Black)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

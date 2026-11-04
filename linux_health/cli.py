@@ -130,6 +130,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Prompt for SSH password (ignores positional password if set)",
     )
     parser.add_argument(
+        "--strict-host-key-checking",
+        action="store_true",
+        help="Reject unknown SSH host keys instead of auto-adding them "
+        "(MITM protection; requires pre-populated known_hosts)",
+    )
+    parser.add_argument(
         "--enable-rootkit-scan",
         action="store_true",
         help="Enable rkhunter rootkit scan (if available on target)",
@@ -158,6 +164,12 @@ def main(argv: list[str] | None = None) -> int:
     password = args.password
     if args.ask_password or password == "-":
         password = getpass.getpass("SSH password: ")
+    elif password:
+        print(
+            "Warning: password passed on the command line is visible in "
+            "process listings and shell history; prefer '--ask-password'.",
+            file=sys.stderr,
+        )
 
     # Load profile if specified
     profile = None
@@ -183,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
             password=password,
             port=args.port,
             timeout=args.timeout,
+            strict_host_key_checking=args.strict_host_key_checking,
         ) as ssh:
             system_info = gather_system_info(ssh)
             check_results = run_all_checks(ssh, password)

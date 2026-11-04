@@ -186,6 +186,20 @@ class TestBuildParser:
         )
         assert args.check_package_hygiene is True
 
+    def test_parser_strict_host_key_checking(self):
+        """Test parser recognizes strict-host-key-checking flag"""
+        parser = build_parser()
+        args = parser.parse_args(
+            ["localhost", "root", "password", "--strict-host-key-checking"]
+        )
+        assert args.strict_host_key_checking is True
+
+    def test_parser_strict_host_key_defaults_to_false(self):
+        """Test strict host key checking is disabled by default (compat)"""
+        parser = build_parser()
+        args = parser.parse_args(["localhost", "root", "password"])
+        assert args.strict_host_key_checking is False
+
     def test_parser_package_hygiene_defaults_to_false(self):
         """Test that package hygiene check is disabled by default"""
         parser = build_parser()
@@ -1191,6 +1205,41 @@ class TestSSHSession:
         with pytest.raises(RuntimeError, match="not connected"):
             session.run("ls")
 
+    def test_ssh_session_default_uses_auto_add_policy(self):
+        """Test default host key policy is auto-add (backward compatible)"""
+        from unittest.mock import MagicMock, patch
+
+        from linux_health.ssh_client import SSHSession
+        from paramiko.client import AutoAddPolicy
+
+        with patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+
+            session = SSHSession("host", "user", "pass")
+            assert session.strict_host_key_checking is False
+            session.connect()
+
+            policy_arg = mock_client.set_missing_host_key_policy.call_args[0][0]
+            assert isinstance(policy_arg, AutoAddPolicy)
+
+    def test_ssh_session_strict_uses_reject_policy(self):
+        """Test strict mode rejects unknown host keys (MITM protection)"""
+        from unittest.mock import MagicMock, patch
+
+        from linux_health.ssh_client import SSHSession
+        from paramiko.client import RejectPolicy
+
+        with patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+
+            session = SSHSession("host", "user", "pass", strict_host_key_checking=True)
+            session.connect()
+
+            policy_arg = mock_client.set_missing_host_key_policy.call_args[0][0]
+            assert isinstance(policy_arg, RejectPolicy)
+
 
 class TestPortScanner:
     """Tests for port scanner functionality"""
@@ -1471,7 +1520,7 @@ class TestCommandTimeout:
 
     def test_set_command_timeout(self):
         """Test setting command timeout"""
-        from linux_health.checks import COMMAND_TIMEOUT, set_command_timeout
+        from linux_health.checks import set_command_timeout
 
         set_command_timeout(120.0)
 
@@ -1741,8 +1790,7 @@ class TestConfigurationSystem:
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".yaml", delete=False
             ) as f:
-                f.write(
-                    """
+                f.write("""
 name: "test-profile"
 description: "Test profile"
 skip_tests:
@@ -1752,8 +1800,7 @@ skip_categories:
   - "Malware Detection"
 timeout: 15
 verbose: true
-"""
-                )
+""")
                 profile_path = f.name
 
             try:
@@ -2214,4 +2261,3 @@ class TestEdgeCases:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
