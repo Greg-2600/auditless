@@ -9,7 +9,7 @@ updates:
       time: "03:00"
     open-pull-requests-limit: 5
     reviewers:
-      - gregb
+      - Greg-2600
     labels:
       - dependencies
       - python
@@ -27,7 +27,7 @@ updates:
       day: monday
       time: "04:00"
     reviewers:
-      - gregb
+      - Greg-2600
     labels:
       - dependencies
       - docker
