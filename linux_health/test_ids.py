@@ -1,10 +1,16 @@
-#!/usr/bin/env python3
-"""Script to add test IDs to all check functions in checks.py"""
+"""Canonical Lynis-style test-ID registry (one identifier per check).
 
-import re
+Supersedes scripts/add_test_ids.py (a regex source patcher that was only
+ever applied partially): IDs are attached at runtime by the
+``with_test_id`` decorator in checks.py, driven by this table.
+"""
 
-# Map of check function names to test IDs (Lynis-inspired)
-TEST_ID_MAP = {
+from __future__ import annotations
+
+# Check function name -> test ID. Duplicates are historical (two checks
+# sharing AUTH-9408/FILE-6310/NETW-3032); profile filtering treats them
+# as one identifier, which the compliance mapper also accounts for.
+CHECK_TEST_IDS: dict[str, str] = {
     "check_disk_usage": "STOR-6310",
     "check_memory": "MEM-2914",
     "check_load": "CPU-1620",
@@ -59,60 +65,3 @@ TEST_ID_MAP = {
     "check_php_security": "PHP-2320",
     "check_dns_configuration": "NAME-4016",
 }
-
-
-def add_test_ids_to_file(filepath: str = "linux_health/checks.py"):
-    """Add test_id parameters to all _pass, _warn, _fail calls in checks.py"""
-
-    with open(filepath, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    # Track which function we're in
-    current_function = None
-    lines = content.split("\n")
-    modified_lines = []
-
-    for i, line in enumerate(lines):
-        # Detect function definition
-        func_match = re.match(r"^def (check_\w+)\(", line)
-        if func_match:
-            current_function = func_match.group(1)
-
-        # Check if this line contains _pass, _warn, or _fail
-        if current_function and re.search(r"return _(?:pass|warn|fail)\(", line):
-            # Check if test_id already present
-            if "test_id=" not in line:
-                # Find the test_id for this function
-                test_id = TEST_ID_MAP.get(current_function, "")
-                if test_id:
-                    # Look ahead to find the closing paren
-                    j = i
-                    while j < len(lines) and ")" not in lines[j]:
-                        modified_lines.append(lines[j])
-                        j += 1
-
-                    # Add test_id before the closing paren
-                    if j < len(lines):
-                        close_line = lines[j]
-                        # Insert test_id parameter
-                        close_line = close_line.replace(")", f', test_id="{test_id}")')
-                        modified_lines.append(close_line)
-
-                        # Skip the lines we already processed
-                        for k in range(i, j):
-                            lines[k] = None  # Mark as processed
-                        lines[j] = None
-                        continue
-
-        if lines[i] is not None:
-            modified_lines.append(line)
-
-    # Write back
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write("\n".join(modified_lines))
-
-    print(f"✓ Added test IDs to {filepath}")
-
-
-if __name__ == "__main__":
-    add_test_ids_to_file()

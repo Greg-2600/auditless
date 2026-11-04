@@ -294,6 +294,18 @@ class ApiClient:
         result: list[dict[str, Any]] = self._request("GET", "/api/fleet")
         return result
 
+    def host_compliance(self, host_id: str) -> dict[str, Any]:
+        """CIS compliance of the host's latest report (GET .../compliance)."""
+        result: dict[str, Any] = self._request(
+            "GET", f"/api/hosts/{host_id}/compliance"
+        )
+        return result
+
+    def compliance_controls(self) -> dict[str, Any]:
+        """CIS control catalog (GET /api/compliance/controls)."""
+        result: dict[str, Any] = self._request("GET", "/api/compliance/controls")
+        return result
+
     def wait_for(
         self, job_id: str, deadline: float = 30.0, interval: float = 0.3
     ) -> dict[str, Any]:
