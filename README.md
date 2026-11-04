@@ -255,21 +255,21 @@ python -m linux_health 192.168.1.100 admin password --port 2222
 
 ```bash
 # Build container image
-docker build -t linux-health .
+docker build -t auditless .
 
 # Execute scan against remote host
-docker run --rm linux-health 192.168.1.100 admin password
+docker run --rm auditless 192.168.1.100 admin password
 
 # Generate persistent report
-docker run --rm -v $(pwd):/reports linux-health \
+docker run --rm -v $(pwd):/reports auditless \
   192.168.1.100 admin password --format md --output /reports/scan.md
 
 # Scan localhost from within Docker (use host network mode)
-docker run --rm --network host linux-health \
+docker run --rm --network host auditless \
   localhost username password
 
 # Alternative: Use host.docker.internal (Docker Desktop on Mac/Windows)
-docker run --rm linux-health \
+docker run --rm auditless \
   host.docker.internal username password
 ```
 
@@ -283,7 +283,7 @@ python -m linux_health --serve
 python -m linux_health --serve --serve-port 9000
 
 # In Docker (publish loopback only)
-docker run --rm -p 127.0.0.1:8080:8080 linux-health --serve
+docker run --rm -p 127.0.0.1:8080:8080 auditless --serve
 ```
 
 - UI at `/`, interactive Swagger docs at `/docs` (ReDoc at `/redoc`,
@@ -414,13 +414,13 @@ python -m linux_health --help
 
 ```bash
 # Build production image
-docker build -t linux-health:latest .
+docker build -t auditless:latest .
 
 # Build with specific version tag
-docker build -t linux-health:1.0.0 .
+docker build -t auditless:1.0.0 .
 
 # Verify build
-docker run --rm linux-health --help
+docker run --rm auditless --help
 ```
 
 ### Docker Compose
@@ -430,9 +430,9 @@ docker run --rm linux-health --help
 version: '3.8'
 
 services:
-  linux-health:
+  auditless:
     build: .
-    image: linux-health:latest
+    image: auditless:latest
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
@@ -441,7 +441,7 @@ services:
 
 ```bash
 # Execute via Compose
-docker-compose run --rm linux-health host user password
+docker-compose run --rm auditless host user password
 ```
 
 ---
@@ -1142,37 +1142,37 @@ if profile and HAS_CONFIG:
 
 ```bash
 # Standard build
-docker build -t linux-health:latest .
+docker build -t auditless:latest .
 
 # Multi-architecture build (ARM64 + AMD64)
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t linux-health:latest .
+  -t auditless:latest .
 
 # Build with version tags
 docker build \
-  -t linux-health:latest \
-  -t linux-health:1.0.0 \
-  -t linux-health:stable .
+  -t auditless:latest \
+  -t auditless:1.0.0 \
+  -t auditless:stable .
 ```
 
 ### Container Execution
 
 ```bash
 # Basic scan execution
-docker run --rm linux-health 192.168.1.100 admin password
+docker run --rm auditless 192.168.1.100 admin password
 
 # Persistent report generation
 docker run --rm \
   -v "$(pwd)/reports:/reports" \
-  linux-health 192.168.1.100 admin password \
+  auditless 192.168.1.100 admin password \
   --format md --output /reports/scan-$(date +%Y%m%d).md
 
 # Interactive password entry
-docker run -it --rm linux-health \
+docker run -it --rm auditless \
   192.168.1.100 admin - --ask-password
 
 # Extended timeout configuration
-docker run --rm linux-health \
+docker run --rm auditless \
   192.168.1.100 admin password \
   --timeout 60 --command-timeout 180
 ```
@@ -1183,11 +1183,11 @@ docker run --rm linux-health \
 version: '3.8'
 
 services:
-  linux-health:
+  auditless:
     build:
       context: .
       dockerfile: Dockerfile
-    image: linux-health:latest
+    image: auditless:latest
     container_name: security-scanner
     environment:
       - PYTHONUNBUFFERED=1
@@ -1205,10 +1205,10 @@ networks:
 
 ```bash
 # Execute scan
-docker-compose run --rm linux-health host user password
+docker-compose run --rm auditless host user password
 
 # Generate report
-docker-compose run --rm linux-health \
+docker-compose run --rm auditless \
   host user password \
   --format md --output /app/reports/report.md
 ```
@@ -1219,13 +1219,13 @@ docker-compose run --rm linux-health \
 
 ```bash
 # Unix/Linux/macOS
-docker run --rm -v "$(pwd)/reports:/reports" linux-health ...
+docker run --rm -v "$(pwd)/reports:/reports" auditless ...
 
 # Windows PowerShell
-docker run --rm -v "${PWD}/reports:/reports" linux-health ...
+docker run --rm -v "${PWD}/reports:/reports" auditless ...
 
 # Windows CMD
-docker run --rm -v "%cd%\reports:/reports" linux-health ...
+docker run --rm -v "%cd%\reports:/reports" auditless ...
 ```
 
 #### Environment Variables
@@ -1235,21 +1235,21 @@ docker run --rm \
   -e PYTHONUNBUFFERED=1 \
   -e TIMEOUT=30 \
   -e PORT=2222 \
-  linux-health host user password
+  auditless host user password
 ```
 
 #### Network Configurations
 
 ```bash
 # Host network mode (Linux only) - Required for scanning localhost
-docker run --rm --network host linux-health localhost user password
+docker run --rm --network host auditless localhost user password
 
 # Scanning the host machine from container (macOS/Windows Docker Desktop)
-docker run --rm linux-health host.docker.internal user password
+docker run --rm auditless host.docker.internal user password
 
 # Custom bridge network
 docker network create --driver bridge security-network
-docker run --rm --network security-network linux-health host user password
+docker run --rm --network security-network auditless host user password
 ```
 
 ### Important: Scanning Localhost from Docker Container
@@ -1260,7 +1260,7 @@ When running the scanner in Docker to audit the **host machine itself**, the con
 
 ```bash
 # Use host network mode to access localhost SSH
-docker run --rm --network host linux-health localhost username password
+docker run --rm --network host auditless localhost username password
 
 # The --network host flag shares the host's network stack
 # This allows the container to connect to 127.0.0.1:22 on the host
@@ -1270,7 +1270,7 @@ docker run --rm --network host linux-health localhost username password
 
 ```bash
 # Docker Desktop provides a special DNS name
-docker run --rm linux-health host.docker.internal username password
+docker run --rm auditless host.docker.internal username password
 
 # host.docker.internal resolves to the internal IP of the host machine
 # This works because Docker Desktop runs VMs with special networking
@@ -1290,7 +1290,7 @@ docker run --rm \
   --memory 512m \
   --cpus 1.0 \
   --pids-limit 100 \
-  linux-health host user password
+  auditless host user password
 ```
 
 ### Container Registry Deployment
@@ -1299,16 +1299,16 @@ docker run --rm \
 
 ```bash
 # Tag for registry
-docker tag linux-health:latest username/linux-health:latest
-docker tag linux-health:latest username/linux-health:1.0.0
+docker tag auditless:latest username/auditless:latest
+docker tag auditless:latest username/auditless:1.0.0
 
 # Authenticate and push
 docker login
-docker push username/linux-health:latest
-docker push username/linux-health:1.0.0
+docker push username/auditless:latest
+docker push username/auditless:1.0.0
 
 # Pull on target system
-docker pull username/linux-health:latest
+docker pull username/auditless:latest
 ```
 
 #### GitHub Container Registry (GHCR)
@@ -1318,10 +1318,10 @@ docker pull username/linux-health:latest
 echo $GITHUB_TOKEN | docker login ghcr.io -u $GITHUB_USER --password-stdin
 
 # Tag for GHCR
-docker tag linux-health:latest ghcr.io/$GITHUB_USER/linux-health:latest
+docker tag auditless:latest ghcr.io/$GITHUB_USER/auditless:latest
 
 # Push to registry
-docker push ghcr.io/$GITHUB_USER/linux-health:latest
+docker push ghcr.io/$GITHUB_USER/auditless:latest
 ```
 
 ---
@@ -1700,7 +1700,7 @@ gates run locally via `pre-commit run --all-files`.
 # .gitlab-ci.yml
 security_scan:
   stage: test
-  image: linux-health:latest
+  image: auditless:latest
   variables:
     TARGET_HOST: "${CI_ENVIRONMENT_NAME}.example.com"
   script:
@@ -1867,7 +1867,7 @@ pipeline {
         stage('Security Assessment') {
             agent {
                 docker {
-                    image 'linux-health:latest'
+                    image 'auditless:latest'
                     args '--network host'
                 }
             }
@@ -2198,7 +2198,7 @@ fi
       command: >
         docker run --rm
         -v /tmp:/reports
-        linux-health:latest
+        auditless:latest
         {{ inventory_hostname }}
         {{ ansible_user }}
         {{ ansible_password }}
@@ -2260,8 +2260,8 @@ spec:
       template:
         spec:
           containers:
-          - name: linux-health
-            image: ghcr.io/username/linux-health:latest
+          - name: auditless
+            image: ghcr.io/username/auditless:latest
             args:
               - "target-host.cluster.local"
               - "$(SSH_USER)"
@@ -2369,7 +2369,7 @@ scanuser ALL=(ALL) NOPASSWD: /usr/sbin/rkhunter
 docker builder prune --all
 
 # Build with verbose output
-docker build -t linux-health . --progress=plain --no-cache
+docker build -t auditless . --progress=plain --no-cache
 
 # Check Dockerfile syntax
 docker build --check -f Dockerfile .
@@ -2382,20 +2382,20 @@ docker build --check -f Dockerfile .
 docker logs <container-id>
 
 # Interactive debugging
-docker run -it --rm linux-health /bin/bash
+docker run -it --rm auditless /bin/bash
 
 # Inspect image
-docker inspect linux-health:latest
+docker inspect auditless:latest
 
 # Check entrypoint
-docker inspect linux-health:latest | grep -A 5 Entrypoint
+docker inspect auditless:latest | grep -A 5 Entrypoint
 ```
 
 **Volume mount issues (Windows):**
 
 ```powershell
 # Use absolute paths
-docker run --rm -v "C:\reports:/reports" linux-health ...
+docker run --rm -v "C:\reports:/reports" auditless ...
 
 # Check Docker Desktop settings
 # Settings > Resources > File Sharing

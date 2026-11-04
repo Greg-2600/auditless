@@ -1,8 +1,8 @@
 services:
-  linux-health:
+  auditless:
     build: .
-    image: linux-health:latest
-    container_name: linux-health
+    image: auditless:latest
+    container_name: auditless
     # Persistent UI: serves the dashboard with SQLite + keys on a volume.
     # Bind/port via env (defaults: all interfaces inside the container,
     # published to host loopback only — safe by default):
@@ -32,7 +32,7 @@ services:
       retries: 3
 
   # One-shot CLI scans (no persistence needed):
-  #   docker compose run --rm --no-deps linux-health \
+  #   docker compose run --rm --no-deps auditless \
   #     192.168.1.100 admin password --format md --output /reports/scan.md
 
 volumes:
