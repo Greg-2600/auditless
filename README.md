@@ -273,10 +273,9 @@ docker run --rm linux-health \
   host.docker.internal username password
 ```
 
-### Web Dashboard
+### Web Dashboard & API
 
-A zero-dependency local web UI (stdlib HTTP server, single page, no CDN).
-It reuses the exact CLI scan pipeline — same checks, same JSON reports.
+A local web UI + documented JSON API built on FastAPI:
 
 ```bash
 # Serve on http://127.0.0.1:8080
@@ -287,12 +286,15 @@ python -m linux_health --serve --serve-port 9000
 docker run --rm -p 127.0.0.1:8080:8080 linux-health --serve
 ```
 
-Run scans from the form, watch progress, browse the hardening index,
-per-category breakdown and filterable check table, and download the JSON
-report. The SSH password lives in server memory for the run only — it is
-never stored, logged, or returned by the API. The dashboard binds to
-localhost; do not expose it to untrusted networks without authentication
-and TLS in front.
+- UI at `/`, interactive Swagger docs at `/docs` (ReDoc at `/redoc`,
+  machine-readable schema at `/openapi.json`)
+- `POST /api/scans` starts a scan (same CLI pipeline — same checks,
+  same reports); poll `GET /api/scans/{id}`; `GET .../report?format=md`
+  re-renders finished reports; `GET /api/profiles` lists scan profiles
+- The SSH password is write-only: in server memory for the run only —
+  never stored, logged, or returned by the API. The dashboard binds to
+  localhost; do not expose it to untrusted networks without authentication
+  and TLS in front.
 
 **Important Note for Scanning Localhost:**
 When running the scanner in a Docker container to audit the **host machine itself** (localhost), you must use one of these approaches:

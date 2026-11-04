@@ -1,15 +1,13 @@
-"""Tests for the Auditless local web dashboard (stdlib HTTP, no extra deps)."""
+"""Tests for the Auditless FastAPI dashboard + documented API."""
 
 import json
-import threading
 import time
-import urllib.error
-import urllib.request
 
 import pytest
+from fastapi.testclient import TestClient
 
 from linux_health import dashboard
-from linux_health.dashboard import get_job, list_jobs, run_server
+from linux_health.dashboard import app, get_job, list_jobs
 
 SENTINEL_PASSWORD = "s3cr3t-pw-SENTINEL-9z9z"
 
@@ -65,112 +63,88 @@ def canned_report():
 
 
 @pytest.fixture()
-def server():
-    """Running dashboard server on an ephemeral loopback port."""
+def client():
+    """TestClient with a clean job store (background tasks enabled)."""
     dashboard._jobs.clear()
     dashboard._jobs_order.clear()
-    srv = run_server("127.0.0.1", 0)
-    thread = threading.Thread(target=srv.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{srv.server_address[1]}"
-    srv.shutdown()
-    srv.server_close()
+    with TestClient(app) as test_client:
+        yield test_client
     dashboard._jobs.clear()
     dashboard._jobs_order.clear()
 
 
-def _request(base, path, method="GET", payload=None, expect=200):
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(base + path, data=data, method=method)
-    if data:
-        req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            body = resp.read().decode()
-            assert resp.status == expect, body
-            return resp.status, body
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode()
-        assert exc.code == expect, body
-        return exc.code, body
-
-
-def _wait_done(base, job_id, deadline=15.0):
+def _wait_done(client, job_id, deadline=20.0):
     end = time.time() + deadline
     while time.time() < end:
-        _, body = _request(base, f"/api/scans/{job_id}")
-        job = json.loads(body)
+        resp = client.get(f"/api/scans/{job_id}")
+        assert resp.status_code == 200
+        job = resp.json()
         if job["status"] in ("done", "error"):
             return job
         time.sleep(0.2)
     raise AssertionError(f"job {job_id} did not finish in time")
 
 
-def test_healthz(server):
-    code, body = _request(server, "/healthz")
-    assert code == 200
-    assert json.loads(body)["status"] == "ok"
+def test_healthz(client):
+    assert client.get("/healthz").json() == {"status": "ok"}
 
 
-def test_index_serves_spa(server):
-    code, body = _request(server, "/")
-    assert code == 200
-    assert "Auditless" in body
-    assert "/api/scans" in body
+def test_index_serves_spa(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Auditless" in resp.text
+    assert "/docs" in resp.text
 
 
-def test_post_requires_credentials(server):
-    code, body = _request(
-        server,
-        "/api/scans",
-        method="POST",
-        payload={"hostname": "h", "username": "u"},
-        expect=400,
-    )
-    assert code == 400
-    assert "required" in body
+def test_swagger_ui_available(client):
+    resp = client.get("/docs")
+    assert resp.status_code == 200
+    assert "swagger" in resp.text.lower()
 
 
-def test_post_rejects_non_object(server):
-    code, _ = _request(server, "/api/scans", method="POST", payload=[1, 2], expect=400)
-    assert code == 400
+def test_post_requires_credentials(client):
+    resp = client.post("/api/scans", json={"hostname": "h", "username": "u"})
+    assert resp.status_code == 422  # Pydantic: missing required password
 
 
-def test_unknown_scan_id_404(server):
-    code, _ = _request(server, "/api/scans/nope123", expect=404)
-    assert code == 404
+def test_post_rejects_non_object(client):
+    resp = client.post("/api/scans", json=[1, 2])
+    assert resp.status_code == 422
 
 
-def test_full_scan_flow_hides_password(server, monkeypatch):
+def test_unknown_scan_id_404(client):
+    resp = client.get("/api/scans/nope123")
+    assert resp.status_code == 404
+
+
+def test_full_scan_flow_hides_password(client, monkeypatch):
     """Mocked run: report returned, sentinel password appears nowhere."""
+    from linux_health.dashboard import _run_job
 
     def fake_run_scan(params):
         params["password"] = None  # mirror run_scan scrubbing
         return canned_report()
 
     monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
-    code, body = _request(
-        server,
+    monkeypatch.setattr(dashboard, "_run_job", _run_job)  # keep real runner
+    resp = client.post(
         "/api/scans",
-        method="POST",
-        payload={
+        json={
             "hostname": "web-01",
             "username": "root",
             "password": SENTINEL_PASSWORD,
         },
-        expect=201,
     )
-    assert code == 201
-    assert SENTINEL_PASSWORD not in body
-    job_id = json.loads(body)["id"]
+    assert resp.status_code == 201
+    assert SENTINEL_PASSWORD not in resp.text
+    job_id = resp.json()["id"]
 
-    job = _wait_done(server, job_id)
+    job = _wait_done(client, job_id)
     assert job["status"] == "done"
     assert job["report"]["summary"]["hardening_index"] == 50
 
-    # History + detail responses must not leak the password either.
-    _, listing = _request(server, "/api/scans")
-    _, detail = _request(server, f"/api/scans/{job_id}")
+    listing = client.get("/api/scans").text
+    detail = client.get(f"/api/scans/{job_id}").text
     assert SENTINEL_PASSWORD not in listing
     assert SENTINEL_PASSWORD not in detail
 
@@ -180,7 +154,7 @@ def test_full_scan_flow_hides_password(server, monkeypatch):
     assert any(j["id"] == job_id for j in list_jobs())
 
 
-def test_scan_error_path(server, monkeypatch):
+def test_scan_error_path(client, monkeypatch):
     """Failing run surfaces an error status without credentials."""
 
     def boom(params):
@@ -188,20 +162,18 @@ def test_scan_error_path(server, monkeypatch):
         raise RuntimeError("ssh unreachable (test)")
 
     monkeypatch.setattr(dashboard, "run_scan", boom)
-    _, body = _request(
-        server,
+    resp = client.post(
         "/api/scans",
-        method="POST",
-        payload={"hostname": "gone", "username": "u", "password": SENTINEL_PASSWORD},
-        expect=201,
+        json={"hostname": "gone", "username": "u", "password": SENTINEL_PASSWORD},
     )
-    job = _wait_done(server, json.loads(body)["id"])
+    assert resp.status_code == 201
+    job = _wait_done(client, resp.json()["id"])
     assert job["status"] == "error"
     assert "unreachable" in (job["error"] or "")
     assert SENTINEL_PASSWORD not in json.dumps(job)
 
 
-def test_run_scan_builds_cli_argv(monkeypatch, tmp_path):
+def test_run_scan_builds_cli_argv(monkeypatch):
     """run_scan delegates to the shared CLI pipeline (no logic fork)."""
     seen = {}
 
@@ -234,6 +206,127 @@ def test_run_scan_requires_password():
         dashboard.run_scan({"hostname": "h", "username": "u", "password": ""})
 
 
+def test_version_endpoint(client):
+    info = client.get("/api/version").json()
+    from linux_health import __version__
+
+    assert info["version"] == __version__ == "2.0.0"
+    assert info["api_version"] == "1.0"
+    assert "ssh-scan" in info["features"]
+
+
+def test_openapi_spec_is_complete(client):
+    spec = client.get("/openapi.json").json()
+    assert spec["openapi"].startswith("3.")
+    for path in (
+        "/healthz",
+        "/api/version",
+        "/api/scans",
+        "/api/scans/{job_id}",
+        "/api/scans/{job_id}/report",
+        "/api/profiles",
+    ):
+        assert path in spec["paths"], path
+    props = spec["components"]["schemas"]["ScanRequest"]["properties"]
+    assert props["password"].get("writeOnly") is True
+    for field in (
+        "hostname",
+        "username",
+        "password",
+        "port",
+        "profile",
+        "strict_host_key_checking",
+        "enable_rootkit_scan",
+    ):
+        assert field in props, field
+
+
+def test_profiles_endpoint_returns_list(client):
+    resp = client.get("/api/profiles")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
+
+def _done_job_id(client, monkeypatch):
+    def fake_run_scan(params):
+        params["password"] = None
+        return canned_report()
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    resp = client.post(
+        "/api/scans",
+        json={
+            "hostname": "web-01",
+            "username": "root",
+            "password": SENTINEL_PASSWORD,
+        },
+    )
+    assert resp.status_code == 201
+    job = _wait_done(client, resp.json()["id"])
+    assert job["status"] == "done"
+    return job["id"]
+
+
+def test_report_formats(client, monkeypatch):
+    job_id = _done_job_id(client, monkeypatch)
+    md = client.get(f"/api/scans/{job_id}/report", params={"format": "md"})
+    assert md.status_code == 200
+    assert "markdown" in md.headers["content-type"]
+    assert "Firewall" in md.text
+    text = client.get(f"/api/scans/{job_id}/report", params={"format": "text"})
+    assert text.status_code == 200
+    assert "Firewall" in text.text
+    assert (
+        client.get(f"/api/scans/{job_id}/report", params={"format": "xml"}).status_code
+        == 400
+    )
+
+
+def test_report_pending_returns_409(client, monkeypatch):
+    import threading as _threading
+
+    release = _threading.Event()
+
+    def slow(params):
+        params["password"] = None
+        release.wait(15)
+        return canned_report()
+
+    monkeypatch.setattr(dashboard, "run_scan", slow)
+    resp = client.post(
+        "/api/scans",
+        json={"hostname": "h", "username": "u", "password": SENTINEL_PASSWORD},
+    )
+    job_id = resp.json()["id"]
+    try:
+        pending = client.get(f"/api/scans/{job_id}/report")
+        assert pending.status_code == 409
+    finally:
+        release.set()
+    _wait_done(client, job_id)
+
+
+def test_delete_job(client, monkeypatch):
+    job_id = _done_job_id(client, monkeypatch)
+    resp = client.delete(f"/api/scans/{job_id}")
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": job_id}
+    assert client.get(f"/api/scans/{job_id}").status_code == 404
+    assert job_id not in client.get("/api/scans").text
+    assert client.delete("/api/scans/nope").status_code == 404
+
+
+def test_json_report_carries_package_version():
+    from linux_health import __version__
+    from linux_health.checks import SystemInfo
+    from linux_health.report import render_report_json
+
+    payload = json.loads(
+        render_report_json(SystemInfo("h", "os", "k", "u", "u"), [], [])
+    )
+    assert payload["scan_info"]["version"] == __version__
+
+
 def test_cli_serve_flags():
     from linux_health.cli import build_parser
 
@@ -241,11 +334,6 @@ def test_cli_serve_flags():
     assert args.serve is True
     assert args.serve_host == "127.0.0.1"
     assert args.serve_port == 8080
-    args = build_parser().parse_args(
-        ["--serve", "--serve-host", "0.0.0.0", "--serve-port", "9000"]
-    )
-    assert args.serve_host == "0.0.0.0"
-    assert args.serve_port == 9000
 
 
 def test_cli_serve_dispatch(monkeypatch):

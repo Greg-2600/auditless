@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from . import __version__
 from .checks import CheckResult, DetailedSecurityInfo, SystemInfo
 from .scanner import PortStatus
 
@@ -538,7 +539,7 @@ def render_report_json(
         "scan_info": {
             "generated_at": ts,
             "scanner": "Linux Health Security Scanner",
-            "version": "1.0.0",
+            "version": __version__,
         },
         "system": {
             "hostname": system.hostname,

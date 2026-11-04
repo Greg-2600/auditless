@@ -1,15 +1,17 @@
-"""Local web dashboard for Linux Health Security Scanner.
+"""Local web dashboard + API for Linux Health Security Scanner.
 
-Serves a single-page UI (stdlib only, no extra dependencies) that runs
-security scans from the browser and renders the hardening index,
-per-category breakdown, and filterable check results.
+FastAPI app serving a single-page UI, a documented JSON API, and
+interactive Swagger UI at /docs (ReDoc at /redoc, schema at
+/openapi.json). Scan execution reuses the shared CLI pipeline, so results
+cannot drift from the command line.
 
 Security model:
     - Binds to loopback (127.0.0.1) by default; do not expose to untrusted
       networks without a reverse proxy providing authentication + TLS.
-    - The SSH password lives in memory only for the duration of a scan run
-      and is scrubbed afterwards. It is never written to disk, never stored
-      in job history, and never included in any API response.
+    - The SSH password is write-only: accepted on POST /api/scans, kept in
+      server memory for the duration of the run, then scrubbed. It is never
+      written to disk, never stored in job history, and never serialized
+      into any response (Pydantic SecretStr + explicit response models).
     - Completed JSON reports are saved to ./reports/ (best effort) without
       credentials.
 
@@ -28,10 +30,12 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-MAX_BODY_BYTES = 64 * 1024
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse, Response
+from pydantic import BaseModel, Field, SecretStr
+
 MAX_JOBS = 50
 
 _jobs: dict[str, "ScanJob"] = {}
@@ -67,6 +71,46 @@ class ScanJob:
             "hardening_index": hardening,
             "error": self.error,
         }
+
+
+class ScanRequest(BaseModel):
+    """Parameters for starting a scan. Password is write-only."""
+
+    hostname: str = Field(examples=["192.168.1.100"])
+    username: str = Field(examples=["admin"])
+    password: SecretStr = Field(
+        description="SSH password. Memory-only for the run; never stored or returned."
+    )
+    port: int = 22
+    timeout: float = 5.0
+    command_timeout: float = 60.0
+    scan_ports: str = Field(
+        default="",
+        description="Comma-separated ports; default uses common ports.",
+    )
+    profile: str = Field(
+        default="", description="Profile name or path (see GET /api/profiles)."
+    )
+    enable_rootkit_scan: bool = False
+    check_package_hygiene: bool = False
+    strict_host_key_checking: bool = Field(
+        default=False, description="Reject unknown host keys (MITM protection)."
+    )
+
+
+class ScanJobPublic(BaseModel):
+    """Job record safe for responses (no credentials, no report by default)."""
+
+    id: str
+    hostname: str
+    username: str
+    status: str
+    progress: str
+    created_at: float
+    finished_at: float | None = None
+    hardening_index: int | None = None
+    error: str | None = None
+    report: dict | None = None
 
 
 def _register_job(job: ScanJob) -> None:
@@ -172,7 +216,7 @@ def _run_job(job: ScanJob, params: dict) -> None:
 
 
 def start_scan(params: dict) -> ScanJob:
-    """Validate params, register a job, and run it in a background thread."""
+    """Validate params, register a job, and return it (caller runs it)."""
     hostname = (params.get("hostname") or "").strip()
     username = (params.get("username") or "").strip()
     password = params.get("password") or ""
@@ -180,8 +224,6 @@ def start_scan(params: dict) -> ScanJob:
         raise ValueError("hostname, username and password are required")
     job = ScanJob(id=uuid.uuid4().hex[:12], hostname=hostname, username=username)
     _register_job(job)
-    worker = threading.Thread(target=_run_job, args=(job, dict(params)), daemon=True)
-    worker.start()
     return job
 
 
@@ -196,6 +238,136 @@ def list_jobs() -> list[dict]:
     with _jobs_lock:
         jobs = [_jobs[jid] for jid in reversed(_jobs_order) if jid in _jobs]
     return [job.summary() for job in jobs]
+
+
+def delete_job(job_id: str) -> bool:
+    """Forget a job record. Returns True when a record was removed."""
+    with _jobs_lock:
+        if job_id not in _jobs:
+            return False
+        del _jobs[job_id]
+        if job_id in _jobs_order:
+            _jobs_order.remove(job_id)
+        return True
+
+
+def get_version_info() -> dict:
+    """Scanner + API version metadata."""
+    import platform
+
+    from . import __version__
+
+    return {
+        "scanner": "Linux Health Security Scanner",
+        "version": __version__,
+        "api_version": "1.0",
+        "python": platform.python_version(),
+        "features": [
+            "ssh-scan",
+            "port-scan",
+            "profiles",
+            "hardening-index",
+            "formats-json-md-text",
+            "rootkit-scan",
+            "package-hygiene",
+            "strict-host-key-checking",
+        ],
+    }
+
+
+def list_profiles() -> list[dict]:
+    """Discover scan profiles from conventional locations (names only)."""
+    found: list[dict] = []
+    seen: set[str] = set()
+
+    def add(name: str, path: Path, source: str) -> None:
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            found.append({"name": name, "path": key, "source": source})
+
+    for profiles_dir in (
+        Path.cwd() / "profiles",
+        Path.home() / ".config" / "linux_health" / "profiles",
+        Path("/etc/linux_health/profiles"),
+    ):
+        if profiles_dir.is_dir():
+            for candidate in sorted(profiles_dir.glob("*.yaml")) + sorted(
+                profiles_dir.glob("*.yml")
+            ):
+                add(candidate.stem, candidate, "profiles-dir")
+    try:
+        from .config import get_default_profile_paths
+
+        for candidate in get_default_profile_paths():
+            if candidate.exists():
+                add(candidate.stem, candidate, "auto")
+    except ImportError:
+        pass
+    return found
+
+
+def render_saved_report(job: ScanJob, fmt: str) -> tuple[str, str]:
+    """Re-render a finished scan's stored report in json/md/text.
+
+    Raises:
+        ValueError: If the format is unknown.
+        RuntimeError: If the scan is not finished successfully.
+    """
+    if fmt not in ("json", "md", "text"):
+        raise ValueError(f"unknown format {fmt!r}: use json, md or text")
+    if job.status != "done" or not job.report:
+        raise RuntimeError("scan is not complete")
+    report = job.report
+    if fmt == "json":
+        return json.dumps(report, indent=2), "application/json"
+
+    from .checks import CheckResult, DetailedSecurityInfo, SystemInfo
+    from .report import render_report, render_report_text
+    from .scanner import PortStatus
+
+    system = report.get("system", {})
+    info = SystemInfo(
+        hostname=system.get("hostname", ""),
+        os=system.get("os", ""),
+        kernel=system.get("kernel", ""),
+        uptime=system.get("uptime", ""),
+        users=system.get("logged_in_users", ""),
+    )
+    checks = [
+        CheckResult(
+            category=c.get("category", ""),
+            item=c.get("item", ""),
+            status=c.get("status", ""),
+            details=c.get("details", ""),
+            recommendation=c.get("recommendation", ""),
+            test_id=c.get("test_id", ""),
+        )
+        for c in report.get("checks", [])
+    ]
+    ports = [
+        PortStatus(port=p.get("port", 0), open=True, reason=p.get("reason", ""))
+        for p in report.get("ports", {}).get("open_ports", [])
+    ]
+    findings = report.get("detailed_findings") or {}
+    detailed = DetailedSecurityInfo(
+        **{
+            k: findings.get(k, "")
+            for k in DetailedSecurityInfo.__dataclass_fields__
+            if k not in ("rootkit_scan", "unused_packages")
+        },
+        rootkit_scan=findings.get("rootkit_scan"),
+        unused_packages=findings.get("unused_packages"),
+    )
+    if fmt == "md":
+        return (
+            render_report(info, checks, ports, detailed),
+            "text/markdown; charset=utf-8",
+        )
+    return (
+        render_report_text(info, checks, ports, detailed),
+        "text/plain; charset=utf-8",
+    )
 
 
 INDEX_HTML = """<!DOCTYPE html>
@@ -236,7 +408,7 @@ th{color:var(--dim);font-weight:600}.pass{color:var(--grn)}.warn{color:var(--yel
 <body>
 <div class="wrap">
 <h1>Auditless</h1>
-<div class="sub">Agentless Linux security scanner &mdash; hardening index, checks &amp; remediation</div>
+<div class="sub">Agentless Linux security scanner &mdash; hardening index, checks &amp; remediation &mdash; <a style="color:var(--acc)" href="/docs">API reference (Swagger)</a></div>
 <div class="card">
 <h3 style="margin-top:0">New scan</h3>
 <div class="row">
@@ -261,7 +433,7 @@ Binds to localhost; do not expose without auth + TLS.</div>
 <script>
 let cur=null,timer=null;
 async function api(p,o){const r=await fetch(p,o);const j=await r.json();
-if(!r.ok)throw new Error(j.error||r.status);return j}
+if(!r.ok)throw new Error(j.detail||j.error||r.status);return j}
 async function startScan(){
  const b={hostname:host.value,username:user.value,password:pass.value,
   port:parseInt(port.value||"22",10),
@@ -342,106 +514,155 @@ loadHist();
 """
 
 
-class _Handler(BaseHTTPRequestHandler):
-    """JSON API + embedded SPA. Never logs or returns credentials."""
-
-    server_version = "AuditlessUI/1.0"
-
-    def log_message(self, *args):  # keep test output and logs quiet
-        pass
-
-    def _json(self, code: int, payload: dict) -> None:
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _read_json(self) -> dict | None:
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            return None
-        if length <= 0 or length > MAX_BODY_BYTES:
-            return None
-        try:
-            return json.loads(self.rfile.read(length).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            return None
-
-    def do_GET(self) -> None:
-        if self.path == "/":
-            body = INDEX_HTML.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif self.path == "/healthz":
-            self._json(200, {"status": "ok"})
-        elif self.path == "/api/scans":
-            self._json(200, list_jobs())
-        elif self.path.startswith("/api/scans/"):
-            job = get_job(self.path[len("/api/scans/") :].split("?")[0].split("/")[0])
-            if job is None:
-                self._json(404, {"error": "unknown scan id"})
-                return
-            payload = job.summary()
-            if job.status == "done":
-                payload["report"] = job.report
-            self._json(200, payload)
-        else:
-            self._json(404, {"error": "not found"})
-
-    def do_POST(self) -> None:
-        if self.path != "/api/scans":
-            self._json(404, {"error": "not found"})
-            return
-        data = self._read_json()
-        if not isinstance(data, dict):
-            self._json(400, {"error": "expected a JSON object"})
-            return
-        try:
-            job = start_scan(
-                {
-                    "hostname": data.get("hostname", ""),
-                    "username": data.get("username", ""),
-                    "password": data.get("password", ""),
-                    "port": int(data.get("port") or 22),
-                    "timeout": float(data.get("timeout") or 5.0),
-                    "command_timeout": float(data.get("command_timeout") or 60.0),
-                    "scan_ports": data.get("scan_ports") or "",
-                    "profile": data.get("profile") or "",
-                    "enable_rootkit_scan": bool(data.get("enable_rootkit_scan")),
-                    "check_package_hygiene": bool(data.get("check_package_hygiene")),
-                    "strict_host_key_checking": bool(
-                        data.get("strict_host_key_checking")
-                    ),
-                }
-            )
-        except (ValueError, TypeError) as exc:
-            self._json(400, {"error": str(exc)[:300]})
-            return
-        self._json(201, job.summary())
+def _public_job(job: ScanJob, include_report: bool = False) -> ScanJobPublic:
+    data = job.summary()
+    if include_report and job.status == "done":
+        data["report"] = job.report
+    return ScanJobPublic(**data)
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8080) -> ThreadingHTTPServer:
-    """Create (but not start) the dashboard server.
+app = FastAPI(
+    title="Auditless API",
+    description=(
+        "Local web API for the Auditless Linux security scanner. "
+        "The SSH password is write-only: accepted on POST /api/scans, "
+        "kept in server memory for the run, and never stored or returned."
+    ),
+    version="1.0",
+)
 
-    Binds loopback by default. Call ``serve_forever()`` on the result,
-    or use :func:`serve_forever` below.
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def index() -> str:
+    """Single-page dashboard UI."""
+    return INDEX_HTML
+
+
+@app.get("/healthz", summary="Liveness probe")
+def healthz() -> dict:
+    """Confirm the server is up."""
+    return {"status": "ok"}
+
+
+@app.get("/api/version", summary="Scanner and API version metadata")
+def api_version() -> dict:
+    """Scanner version, API version, and supported feature flags."""
+    return get_version_info()
+
+
+@app.get(
+    "/api/scans",
+    response_model=list[ScanJobPublic],
+    summary="List recent scan jobs (newest first, no credentials)",
+)
+def api_list_scans() -> list[ScanJobPublic]:
+    """Summaries of recent jobs; full reports only via per-job GET."""
+    with _jobs_lock:
+        jobs = [_jobs[jid] for jid in reversed(_jobs_order) if jid in _jobs]
+    return [_public_job(job) for job in jobs]
+
+
+@app.post(
+    "/api/scans",
+    response_model=ScanJobPublic,
+    status_code=201,
+    summary="Start a scan (password is write-only)",
+)
+def api_start_scan(data: ScanRequest) -> ScanJobPublic:
+    """Register a job and run the shared CLI scan pipeline in the background.
+
+    Poll GET /api/scans/{id} until status is done or error.
     """
-    server = ThreadingHTTPServer((host, port), _Handler)
-    server.daemon_threads = True
-    return server
+    try:
+        job = start_scan(
+            {
+                "hostname": data.hostname,
+                "username": data.username,
+                "password": data.password.get_secret_value(),
+                "port": data.port,
+                "timeout": data.timeout,
+                "command_timeout": data.command_timeout,
+                "scan_ports": data.scan_ports,
+                "profile": data.profile,
+                "enable_rootkit_scan": data.enable_rootkit_scan,
+                "check_package_hygiene": data.check_package_hygiene,
+                "strict_host_key_checking": data.strict_host_key_checking,
+            }
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    params = {
+        "hostname": job.hostname,
+        "username": job.username,
+        "password": data.password.get_secret_value(),
+        "port": data.port,
+        "timeout": data.timeout,
+        "command_timeout": data.command_timeout,
+        "scan_ports": data.scan_ports,
+        "profile": data.profile,
+        "enable_rootkit_scan": data.enable_rootkit_scan,
+        "check_package_hygiene": data.check_package_hygiene,
+        "strict_host_key_checking": data.strict_host_key_checking,
+    }
+    # Own thread (not BackgroundTasks): deterministic under both uvicorn
+    # and TestClient, whose background-task timing varies by version.
+    worker = threading.Thread(target=_run_job, args=(job, params), daemon=True)
+    worker.start()
+    return _public_job(job)
+
+
+@app.get(
+    "/api/scans/{job_id}",
+    response_model=ScanJobPublic,
+    summary="Job status; includes the full report once done",
+)
+def api_get_scan(job_id: str) -> ScanJobPublic:
+    """Fetch one job; report field is present only when done."""
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown scan id")
+    return _public_job(job, include_report=True)
+
+
+@app.delete(
+    "/api/scans/{job_id}",
+    summary="Forget a job record",
+)
+def api_delete_scan(job_id: str) -> dict:
+    """Remove a job from history."""
+    if not delete_job(job_id):
+        raise HTTPException(status_code=404, detail="unknown scan id")
+    return {"deleted": job_id}
+
+
+@app.get(
+    "/api/scans/{job_id}/report",
+    summary="Finished report in json, md or text",
+)
+def api_get_report(job_id: str, format: str = "json") -> Response:
+    """Re-render a completed scan's stored report in the requested format."""
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown scan id")
+    try:
+        content, content_type = render_saved_report(job, format)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return Response(content=content, media_type=content_type)
+
+
+@app.get("/api/profiles", summary="Scan profiles discovered on this host")
+def api_list_profiles() -> list[dict]:
+    """Profile names/paths usable as the scan `profile` parameter."""
+    return list_profiles()
 
 
 def serve_forever(host: str = "127.0.0.1", port: int = 8080) -> None:
-    """Run the dashboard until interrupted."""
-    server = run_server(host, port)
-    print(f"Auditless UI on http://{host}:{server.server_address[1]} (Ctrl-C to stop)")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
+    """Run the dashboard with uvicorn until interrupted."""
+    import uvicorn
+
+    print(f"Auditless UI on http://{host}:{port} (Ctrl-C to stop)")
+    print(f"Swagger docs at http://{host}:{port}/docs")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
