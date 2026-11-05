@@ -704,14 +704,20 @@ def test_detection_accuracy_weakened_target(stack):
 
     Runs LAST (file order): it deliberately weakens the shared target.
     Expected verdicts were established by measurement and are locked here.
+    A clean baseline scan first proves the planted findings move the
+    hardening index (guards the scoring pipeline, not just detection):
+    locally measured delta is 3 points, gated at >= 2 for noise margin.
     """
     api = stack["api"]
+    host = api.create_host("e2e-accuracy", SSH_NAME, "tester", port=2222, auth="key")
+    api.put_host_key(host["id"], stack["private_key"])
+    baseline = api.wait_for(
+        api.start_scan(host_id=host["id"])["id"], deadline=420, interval=5.0
+    )
+    assert baseline["status"] == "done"
+    baseline_index = baseline["report"]["summary"]["hardening_index"]
     try:
         _weaken_target()
-        host = api.create_host(
-            "e2e-accuracy", SSH_NAME, "tester", port=2222, auth="key"
-        )
-        api.put_host_key(host["id"], stack["private_key"])
         done = api.wait_for(
             api.start_scan(host_id=host["id"])["id"], deadline=420, interval=5.0
         )
@@ -731,5 +737,13 @@ def test_detection_accuracy_weakened_target(stack):
         # Negative controls: clean areas must stay green.
         assert _finding(report, "MALW-3288", "Reverse")["status"] == "pass"
         assert _finding(report, "NETW-3035", "DNS")["status"] == "pass"
+
+        # The planted findings must move the hardening index, proving
+        # verdicts flow into scoring (not just into the checklist).
+        weakened_index = report["summary"]["hardening_index"]
+        delta = baseline_index - weakened_index
+        assert (
+            delta >= 2
+        ), f"index delta too small: {baseline_index} -> {weakened_index}"
     finally:
         _repair_target()
