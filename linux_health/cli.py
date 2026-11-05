@@ -202,9 +202,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--strict-host-key-checking",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Reject unknown SSH host keys instead of auto-adding them "
-        "(MITM protection; requires pre-populated known_hosts)",
+        "(MITM protection; requires pre-populated known_hosts; "
+        "--no-strict-host-key-checking opts out for labs)",
     )
     parser.add_argument(
         "--enable-rootkit-scan",

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING
+
+- SSH strict host-key checking is now default-on (`--strict-host-key-
+  checking` default `True`; `--no-strict-host-key-checking` opts out;
+  API `strict_host_key_checking` defaults `True`). Scans against
+  unknown hosts now fail closed with `ssh-keyscan` guidance. Populate
+  `~/.ssh/known_hosts` before upgrading (see README “SSH Host Key
+  Management”).
+
 ### Deprecated
 
 - `linux-health` console script: emits a deprecation notice, use

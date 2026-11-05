@@ -41,7 +41,7 @@ class SSHSession:
         password: str,
         port: int = 22,
         timeout: float = 5.0,
-        strict_host_key_checking: bool = False,
+        strict_host_key_checking: bool = True,
         key_path: str | None = None,
         gateway: dict | None = None,
         retries: int = 0,
@@ -105,9 +105,12 @@ class SSHSession:
         if self.strict_host_key_checking:
             client.set_missing_host_key_policy(RejectPolicy())
         else:
-            # Auto-add is the documented default for lab/CI convenience;
-            # --strict-host-key-checking switches to RejectPolicy.
+            # Auto-add is opt-in only (--no-strict-host-key-checking):
+            # convenient for labs, vulnerable to MITM on first connect.
             client.set_missing_host_key_policy(AutoAddPolicy())  # nosec B507
+        # Paramiko no longer auto-loads known_hosts: without this, strict
+        # mode would reject even correctly keyscanned hosts.
+        client.load_system_host_keys()
         sock = None
         if self.gateway:
             sock = self._open_gateway_channel()
@@ -123,12 +126,30 @@ class SSHSession:
                 allow_agent=False,
                 look_for_keys=False,
             )
+        except paramiko.SSHException as exc:
+            if "not found in known_hosts" in str(exc):
+                self._reraise_unknown_host(self.hostname, self.port, exc)
+            with suppress(Exception):
+                client.close()
+            self.close()
+            raise
         except Exception:  # pylint: disable=broad-exception-caught
             with suppress(Exception):
                 client.close()
             self.close()
             raise
         self._client = client
+
+    @staticmethod
+    def _reraise_unknown_host(hostname: str, port: int, exc: Exception) -> None:
+        """Fail closed with key-management guidance (never auto-trust)."""
+        raise RuntimeError(
+            f"SSH host key for '{hostname}:{port}' not found in known_hosts "
+            "(strict checking is on by default). To trust this host, verify "
+            "its fingerprint out of band, then run: "
+            f"ssh-keyscan -p {port} {hostname} >> ~/.ssh/known_hosts "
+            "(or pass --no-strict-host-key-checking for lab use only)."
+        ) from exc
 
     def _open_gateway_channel(self) -> paramiko.Channel:
         """Open a direct-tcpip channel through the bastion host."""
@@ -386,7 +407,7 @@ def pooled_session(
     password: str,
     port: int = 22,
     timeout: float = 5.0,
-    strict_host_key_checking: bool = False,
+    strict_host_key_checking: bool = True,
     key_path: str | None = None,
     gateway: dict | None = None,
     pool: SessionPool | None = None,

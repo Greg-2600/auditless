@@ -106,6 +106,24 @@ def wait_for_ssh(
     raise AssertionError(f"SSH target never came up: {last}")
 
 
+def keyscan_app_host() -> None:
+    """Trust the lab sshd inside the app container (strict is default-on).
+
+    Idempotent: clears then re-adds the entry, so it is safe to call
+    again after a container restart wipes ~/.ssh/known_hosts.
+    """
+    docker(
+        "exec",
+        APP_NAME,
+        "sh",
+        "-c",
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+        " && ssh-keygen -R auditless-e2e-ssh 2>/dev/null || true"
+        " && ssh-keyscan -p 2222 auditless-e2e-ssh >> ~/.ssh/known_hosts"
+        " && chmod 600 ~/.ssh/known_hosts",
+    )
+
+
 @pytest.fixture(scope="module")
 def stack(tmp_path_factory):
     """Build images, boot SSH + app containers on one network, yield handles."""
@@ -199,6 +217,10 @@ def stack(tmp_path_factory):
         else:
             raise AssertionError("app container never became healthy")
 
+        # Strict host-key checking is default-on: trust the lab sshd
+        # inside the app container before any scan runs.
+        keyscan_app_host()
+
         docker(
             "run",
             "-d",
@@ -289,6 +311,7 @@ def test_cli_text_scan(stack):
         str(stack["ssh_port"]),
         "--timeout",
         "10",
+        "--no-strict-host-key-checking",
     )
     assert proc.returncode == 0, proc.stderr[-2000:]
     assert "HARDENING INDEX" in proc.stdout
@@ -306,6 +329,7 @@ def test_cli_json_scan_to_file(stack, tmp_path):
         str(stack["ssh_port"]),
         "--timeout",
         "10",
+        "--no-strict-host-key-checking",
         "--format",
         "json",
         "--output",
@@ -329,6 +353,7 @@ def test_cli_markdown_scan(stack, tmp_path):
         str(stack["ssh_port"]),
         "--timeout",
         "10",
+        "--no-strict-host-key-checking",
         "--format",
         "md",
         "--output",
@@ -349,6 +374,7 @@ def test_cli_key_auth_scan(stack, tmp_path):
         str(stack["ssh_port"]),
         "--timeout",
         "10",
+        "--no-strict-host-key-checking",
         "--key-file",
         str(stack["key_path"]),
         "--format",
@@ -363,7 +389,7 @@ def test_cli_key_auth_scan(stack, tmp_path):
 
 def test_cli_strict_host_key_rejects_unknown(stack):
     """--strict-host-key-checking fails closed on unknown keys (MITM-safe)."""
-    proc = run_cli(
+    strict_argv = [
         stack["ssh_host"],
         stack["username"],
         stack["password"],
@@ -372,9 +398,16 @@ def test_cli_strict_host_key_rejects_unknown(stack):
         "--timeout",
         "10",
         "--strict-host-key-checking",
-    )
+    ]
+    proc = run_cli(*strict_argv)
     assert proc.returncode != 0
     assert E2E_PASSWORD not in proc.stdout
+    # Strict is the default: omitting the flag rejects unknown keys too,
+    # with key-management guidance instead of silent trust.
+    defaulted = run_cli(*strict_argv[:-1])
+    assert defaulted.returncode != 0
+    assert "known_hosts" in defaulted.stderr
+    assert E2E_PASSWORD not in defaulted.stdout
 
 
 def test_api_version_and_profiles(stack):
@@ -532,7 +565,9 @@ def test_bastion_two_hop_scan(stack):
     done = None
     end = time.time() + 300
     while time.time() < end:
-        job = api.start_scan(host_id=via["id"])
+        # Tunneled target is unkeyscannable from the app network, so this
+        # path uses the documented opt-out (both hops auto-add here).
+        job = api.start_scan(host_id=via["id"], strict_host_key_checking=False)
         candidate = api.wait_for(job["id"], deadline=240, interval=5.0)
         if candidate["status"] == "done":
             done = candidate
@@ -556,6 +591,8 @@ def test_api_persistence_across_restart(stack):
             break
         except Exception:
             time.sleep(1)
+    # Restart wipes the container's known_hosts: re-trust for later tests.
+    keyscan_app_host()
     assert any(h["id"] == host["id"] for h in api.list_hosts())
     after = {r["id"] for r in api.list_reports()}
     assert before <= after

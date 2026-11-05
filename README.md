@@ -616,6 +616,32 @@ export SSH_PASS=$(vault read -field=password secret/ssh/admin)
 python -m linux_health server.example.com admin "$SSH_PASS"
 ```
 
+#### SSH Host Key Management
+
+Strict host-key checking is **on by default**: unknown host keys fail
+the scan instead of being silently trusted (MITM protection).
+
+```bash
+# Trust a host once (verify the fingerprint out of band first!)
+ssh-keyscan -p 22 server.example.com >> ~/.ssh/known_hosts
+
+# The failure tells you exactly what to run:
+#   SSH host key for 'server.example.com:22' not found in known_hosts
+#   (strict checking is on by default). To trust this host ...
+```
+
+Notes:
+
+- The scanner reads the standard OpenSSH `~/.ssh/known_hosts` of the
+  user running the scan (or the dashboard process for API scans).
+- In Docker, mount a persistent file so trust survives restarts:
+  `-v ~/.ssh/known_hosts:/home/appuser/.ssh/known_hosts:ro`.
+- Fleet onboarding: collect `ssh-keyscan` output per host, review
+  fingerprints against your CMDB, then distribute one known_hosts file.
+- Labs only: `--no-strict-host-key-checking` restores auto-add (the
+  API equivalent is `"strict_host_key_checking": false`). Never use it
+  for production targets.
+
 #### JSON Output for Automation
 
 ```bash
