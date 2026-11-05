@@ -203,10 +203,18 @@ class TestBuildParser:
         )
         assert args.strict_host_key_checking is True
 
-    def test_parser_strict_host_key_defaults_to_false(self):
-        """Test strict host key checking is disabled by default (compat)"""
+    def test_parser_strict_host_key_defaults_to_true(self):
+        """Strict host key checking is on by default (fail closed)"""
         parser = build_parser()
         args = parser.parse_args(["localhost", "root", "password"])
+        assert args.strict_host_key_checking is True
+
+    def test_parser_strict_host_key_opt_out(self):
+        """Labs can opt out explicitly with --no-strict-host-key-checking"""
+        parser = build_parser()
+        args = parser.parse_args(
+            ["localhost", "root", "password", "--no-strict-host-key-checking"]
+        )
         assert args.strict_host_key_checking is False
 
     def test_parser_package_hygiene_defaults_to_false(self):
@@ -1565,8 +1573,27 @@ class TestSSHSession:
             _, kwargs = session._client.connect.call_args
             assert kwargs["sock"] is None
 
-    def test_ssh_session_default_uses_auto_add_policy(self):
-        """Test default host key policy is auto-add (backward compatible)"""
+    def test_ssh_session_default_uses_reject_policy(self):
+        """Test default host key policy is reject (fail closed)"""
+        from unittest.mock import MagicMock, patch
+
+        from linux_health.ssh_client import SSHSession
+        from paramiko.client import RejectPolicy
+
+        with patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+
+            session = SSHSession("host", "user", "pass")
+            assert session.strict_host_key_checking is True
+            session.connect()
+
+            policy_arg = mock_client.set_missing_host_key_policy.call_args[0][0]
+            assert isinstance(policy_arg, RejectPolicy)
+            mock_client.load_system_host_keys.assert_called_once_with()
+
+    def test_ssh_session_explicit_opt_out_uses_auto_add(self):
+        """--no-strict-host-key-checking restores the old auto-add policy."""
         from unittest.mock import MagicMock, patch
 
         from linux_health.ssh_client import SSHSession
@@ -1576,7 +1603,7 @@ class TestSSHSession:
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
 
-            session = SSHSession("host", "user", "pass")
+            session = SSHSession("host", "user", "pass", strict_host_key_checking=False)
             assert session.strict_host_key_checking is False
             session.connect()
 

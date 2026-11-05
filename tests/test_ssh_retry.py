@@ -19,6 +19,9 @@ class FakeSSHClient:
     def set_missing_host_key_policy(self, policy: Any) -> None:
         pass
 
+    def load_system_host_keys(self, filename: Any = None) -> None:
+        pass
+
     def connect(self, **kwargs: Any) -> None:
         type(self).attempts += 1
         if type(self).outcomes:
@@ -95,6 +98,16 @@ def test_zero_retries_single_attempt() -> None:
     """Default behavior is unchanged: one attempt, immediate raise."""
     FakeSSHClient.outcomes = [socket.timeout("t"), None]
     with pytest.raises(socket.timeout):
+        _session().connect()
+    assert FakeSSHClient.attempts == 1
+
+
+def test_unknown_host_fails_closed_with_guidance() -> None:
+    """RejectPolicy misses fail once, with key-management instructions."""
+    from paramiko.ssh_exception import SSHException
+
+    FakeSSHClient.outcomes = [SSHException("Server 'h' not found in known_hosts")]
+    with pytest.raises(RuntimeError, match="ssh-keyscan"):
         _session().connect()
     assert FakeSSHClient.attempts == 1
 

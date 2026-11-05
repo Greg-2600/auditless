@@ -365,8 +365,10 @@ def run_scan(params: dict) -> dict:
         argv.append("--enable-rootkit-scan")
     if params.get("check_package_hygiene"):
         argv.append("--check-package-hygiene")
-    if params.get("strict_host_key_checking"):
+    if params.get("strict_host_key_checking", True):
         argv.append("--strict-host-key-checking")
+    else:
+        argv.append("--no-strict-host-key-checking")
     if params.get("jobs") is not None:
         argv += ["--jobs", str(params["jobs"])]
     if params.get("check_timeout") is not None:
