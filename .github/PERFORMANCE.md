@@ -153,6 +153,13 @@ python -m linux_health target user "" --use-key ~/.ssh/id_rsa
 
 ### Check Optimization
 
+**CI performance gate:** every PR runs `bench_checks.py --check 2.0`
+(tests.yml `perf` job): the parallel speedup must stay at or above
+2.0x. The ratio — never absolute seconds — is gated, so green means
+the orchestration scales and red means it regressed, on any machine.
+Absolute sequential/parallel times print in the job log for human
+review of workload growth.
+
 **Command-Output Cache:**
 Repeated remote commands within one scan execute once; results are
 keyed by `(hostname, command)` so concurrent fleet scans never share

@@ -189,3 +189,61 @@ def test_run_scan_forwards_jobs(
     assert argv[argv.index("--check-timeout") + 1] == "60"
     assert argv[argv.index("--retries") + 1] == "2"
     assert argv[argv.index("--max-output-bytes") + 1] == "4096"
+
+
+def test_meets_speedup_threshold() -> None:
+    """Gate predicate is a plain comparison (boundary inclusive)."""
+    from scripts.bench_checks import meets_speedup
+
+    assert meets_speedup(2.0, 2.0) is True
+    assert meets_speedup(6.5, 2.0) is True
+    assert meets_speedup(1.9, 2.0) is False
+
+
+def test_bench_check_flag_end_to_end() -> None:
+    """--check wiring: generous floor passes, absurd floor fails nonzero."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    passing = subprocess.run(
+        [
+            sys.executable,
+            "scripts/bench_checks.py",
+            "--latency",
+            "0.01",
+            "--repeats",
+            "1",
+            "--jobs",
+            "8",
+            "--check",
+            "1.5",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=root,
+        timeout=300,
+    )
+    assert passing.returncode == 0, passing.stderr[-1000:]
+    assert "PASS" in passing.stdout
+    failing = subprocess.run(
+        [
+            sys.executable,
+            "scripts/bench_checks.py",
+            "--latency",
+            "0.01",
+            "--repeats",
+            "1",
+            "--jobs",
+            "8",
+            "--check",
+            "1000",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=root,
+        timeout=300,
+    )
+    assert failing.returncode == 1
+    assert "FAIL" in failing.stdout
