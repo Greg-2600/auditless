@@ -732,7 +732,15 @@ class Store:
                 source.backup(target)
             finally:
                 target.close()
-        for old in sorted(dest_dir.glob("auditless-*.db"))[:-keep]:
+        # Prune oldest-first by mtime (names can wrap the ns counter).
+        by_age = sorted(
+            dest_dir.glob("auditless-*.db"),
+            key=lambda candidate: (
+                candidate.stat().st_mtime_ns,
+                candidate.name,
+            ),
+        )
+        for old in by_age[:-keep] if keep else []:
             with contextlib.suppress(OSError):
                 old.unlink()
         return dest
