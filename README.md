@@ -1,9 +1,6 @@
-# Linux Health Security Scanner
+# Auditless
 
-> **Naming:** the product is **Auditless** (agentless Linux security scanner).
-> `Linux Health` remains as the Python import package (`import linux_health`)
-> and in legacy config paths. Canonical naming table:
-> `.github/ARCHITECTURE.md` → "Product Naming (Canonical)"; full backlog: `ROADMAP.md` items 1–20.
+## Agentless Linux security scanner (formerly Linux Health)
 
 ## Enterprise-Grade Security Assessment Platform for Linux Infrastructure
 
@@ -13,7 +10,7 @@
 
 ## Overview
 
-Linux Health Security Scanner is a comprehensive, SSH-based security assessment platform designed for enterprise Linux environments. Delivering **100+ automated security checks** across malware detection, vulnerability assessment, compliance monitoring, database security, filesystem hardening, package management, audit logging, and system health analysis—all without requiring agent installation.
+Auditless is a comprehensive, SSH-based security assessment platform designed for enterprise Linux environments. Delivering **100+ automated security checks** across malware detection, vulnerability assessment, compliance monitoring, database security, filesystem hardening, package management, audit logging, and system health analysis—all without requiring agent installation.
 
 Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+ feature parity** with enterprise-ready capabilities including **test ID tracking**, **JSON output**, **profile-based configuration**, **hardening index scoring**, and **actionable remediation guidance**.
 
