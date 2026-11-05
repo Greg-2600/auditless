@@ -298,7 +298,10 @@ docker run --rm -p 127.0.0.1:8080:8080 auditless --serve
 
 **API authentication:** set `AUDITLESS_TOKEN` to require a bearer token
 on every `/api/*` route (Swagger gets an Authorize button; the UI prompts
-once per tab and keeps it in session storage):
+once per tab and keeps it in session storage). For teams, mint named
+tokens (`POST /api/tokens`, plaintext shown exactly once) with per-token
+last-used tracking and revocation; every mutation lands in the hash-chained
+operator audit trail (`GET /api/audit`, `GET /api/audit/verify`):
 
 ```bash
 export AUDITLESS_TOKEN="$(openssl rand -hex 32)"
@@ -309,6 +312,20 @@ curl -H "Authorization: Bearer $AUDITLESS_TOKEN" http://127.0.0.1:8080/api/scans
 
 Without the variable, the historical behavior applies (loopback-only,
 no auth). `/`, `/docs`, `/openapi.json` and `/healthz` stay public.
+
+### Operator trust: encrypted secrets, audit trail
+
+SSH private keys and webhook URLs are encrypted at rest with Fernet
+(`cryptography`) when `AUDITLESS_MASTER_KEY` is set; without it the
+server runs in legacy plaintext mode. Invalid key? The server refuses
+to boot rather than guessing:
+
+```bash
+export AUDITLESS_MASTER_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+# Migrate an existing plaintext store in place (idempotent):
+curl -X POST http://127.0.0.1:8080/api/maintenance/migrate-secrets
+# Rotate later: POST current + new key, then restart with the new env value.
+```
 
 First-party Python client (`linux_health.client.ApiClient`, stdlib only)
 talks to the app exclusively through the public API — the test suite

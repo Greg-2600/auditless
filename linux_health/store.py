@@ -18,7 +18,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 
 def data_dir() -> Path:
@@ -91,17 +91,38 @@ CREATE TABLE IF NOT EXISTS schedules (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    last_used REAL
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL DEFAULT '',
+    target_id TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT '',
+    prev_hash TEXT NOT NULL DEFAULT '',
+    hash TEXT NOT NULL DEFAULT ''
+);
 """
 
 
 class Store:
     """Small typed wrapper around the auditless SQLite database."""
 
-    def __init__(self, directory: Path | None = None) -> None:
+    def __init__(self, directory: Path | None = None, secrets: Any = None) -> None:
+        from .secrets import SecretBox, load_master_key
+
         self.directory = directory or data_dir()
         self.directory.mkdir(parents=True, exist_ok=True)
         (self.directory / "keys").mkdir(exist_ok=True)
         self.db_path = self.directory / "auditless.db"
+        self.secrets = secrets if secrets is not None else SecretBox(load_master_key())
         with _connect(self.db_path) as conn:
             conn.executescript(_SCHEMA)
 
@@ -173,19 +194,28 @@ class Store:
         return self.directory / "keys" / _safe_id(host_id)
 
     def set_host_key(self, host_id: str, key_text: str) -> None:
-        """Store key bytes with owner-only permissions; flag the host."""
+        """Store key bytes (encrypted when configured) with 0600 perms."""
         row = self.get_host(host_id)
         if row is None:
             raise KeyError(f"unknown host {host_id}")
         # Path derives from the stored row, never the request value.
         path = self.key_path(row["id"])
-        path.write_text(key_text, encoding="utf-8")
+        path.write_text(self.secrets.encrypt(key_text), encoding="utf-8")
         os.chmod(path, 0o600)
         with _connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE hosts SET has_key = 1, updated_at = ? WHERE id = ?",
                 (time.time(), host_id),
             )
+
+    def read_host_key(self, host_id: str) -> str:
+        """Load and decrypt a host key (server-side use only)."""
+        row = self.get_host(host_id)
+        if row is None:
+            raise KeyError(f"unknown host {host_id}")
+        return self.secrets.decrypt(
+            self.key_path(row["id"]).read_text(encoding="utf-8")
+        )
 
     def clear_host_key(self, host_id: str) -> None:
         """Remove stored key bytes and clear the flag (idempotent)."""
@@ -208,6 +238,204 @@ class Store:
         if row is None:
             return False
         return self.key_path(row["id"]).exists()
+
+    def webhook_for(self, schedule: dict) -> str:
+        """Decrypt a schedule's webhook URL (server-side delivery only)."""
+        return self.secrets.decrypt(schedule.get("webhook_url") or "")
+
+    # -- api tokens ---------------------------------------------------
+
+    @staticmethod
+    def _hash_token(token: str) -> str:
+        import hashlib
+
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def create_token(self, name: str) -> dict:
+        """Create a named token; plaintext is returned exactly once."""
+        import secrets as _secrets
+
+        raw = _secrets.token_urlsafe(32)
+        tid = uuid.uuid4().hex[:12]
+        now = time.time()
+        with _connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO api_tokens (id, name, token_hash, created_at,"
+                " last_used) VALUES (?, ?, ?, ?, NULL)",
+                (tid, name, self._hash_token(raw), now),
+            )
+        return {"id": tid, "name": name, "token": raw, "created_at": now}
+
+    def list_tokens(self) -> list[dict]:
+        """Token metadata (hashes and plaintext never exposed)."""
+        with _connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT id, name, created_at, last_used FROM api_tokens"
+                " ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def verify_token(self, token: str) -> dict | None:
+        """Constant-time check; touches last_used on success."""
+        import hmac
+
+        digest = self._hash_token(token)
+        with _connect(self.db_path) as conn:
+            rows = conn.execute("SELECT * FROM api_tokens").fetchall()
+            for row in rows:
+                if hmac.compare_digest(row["token_hash"], digest):
+                    conn.execute(
+                        "UPDATE api_tokens SET last_used = ? WHERE id = ?",
+                        (time.time(), row["id"]),
+                    )
+                    return {
+                        "id": row["id"],
+                        "name": row["name"],
+                        "created_at": row["created_at"],
+                        "last_used": row["last_used"],
+                    }
+        return None
+
+    def delete_token(self, token_id: str) -> bool:
+        """Revoke a token."""
+        with _connect(self.db_path) as conn:
+            cursor: sqlite3.Cursor = conn.execute(
+                "DELETE FROM api_tokens WHERE id = ?", (token_id,)
+            )
+        return cursor.rowcount > 0
+
+    # -- audit log ----------------------------------------------------
+
+    @staticmethod
+    def _audit_hash(
+        prev: str,
+        ts: float,
+        actor: str,
+        action: str,
+        target_type: str,
+        target_id: str,
+        detail: str,
+    ) -> str:
+        import hashlib
+
+        body = "|".join([prev, repr(ts), actor, action, target_type, target_id, detail])
+        return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+    def audit(
+        self,
+        actor: str,
+        action: str,
+        target_type: str = "",
+        target_id: str = "",
+        detail: str = "",
+    ) -> int:
+        """Append a tamper-evident audit record; returns its id."""
+        with _connect(self.db_path) as conn:
+            last = conn.execute(
+                "SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            prev = last["hash"] if last else ""
+            ts = time.time()
+            digest = self._audit_hash(
+                prev, ts, actor, action, target_type, target_id, detail
+            )
+            cursor = conn.execute(
+                "INSERT INTO audit_log (ts, actor, action, target_type,"
+                " target_id, detail, prev_hash, hash)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, actor, action, target_type, target_id, detail, prev, digest),
+            )
+            rowid: int = cursor.lastrowid or 0
+            return rowid
+
+    def list_audit(self, limit: int = 100) -> list[dict]:
+        """Recent audit records, newest first."""
+        with _connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?",
+                (max(1, min(limit, 1000)),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def verify_audit(self) -> dict:
+        """Recompute the hash chain; reports first break, if any."""
+        with _connect(self.db_path) as conn:
+            rows = conn.execute("SELECT * FROM audit_log ORDER BY id ASC").fetchall()
+        prev = ""
+        checked = 0
+        for row in rows:
+            expected = self._audit_hash(
+                prev,
+                row["ts"],
+                row["actor"],
+                row["action"],
+                row["target_type"],
+                row["target_id"],
+                row["detail"],
+            )
+            if row["prev_hash"] != prev or row["hash"] != expected:
+                return {"ok": False, "checked": checked, "broken_at": row["id"]}
+            prev = row["hash"]
+            checked += 1
+        return {"ok": True, "checked": checked, "broken_at": None}
+
+    # -- secret migration & rotation ----------------------------------
+
+    def migrate_secrets(self) -> dict:
+        """Encrypt any plaintext secrets in place (idempotent)."""
+        keys = webhooks = 0
+        for host in self.list_hosts():
+            if host["has_key"]:
+                raw = self.key_path(host["id"]).read_text(encoding="utf-8")
+                if self.secrets.enabled and not self.secrets.is_encrypted(raw):
+                    self.set_host_key(host["id"], self.secrets.decrypt(raw))
+                    keys += 1
+        with _connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT id, webhook_url FROM schedules WHERE webhook_url != ''"
+            ).fetchall()
+        for row in rows:
+            if self.secrets.enabled and not self.secrets.is_encrypted(
+                row["webhook_url"]
+            ):
+                with _connect(self.db_path) as conn:
+                    conn.execute(
+                        "UPDATE schedules SET webhook_url = ?, updated_at = ?"
+                        " WHERE id = ?",
+                        (
+                            self.secrets.encrypt(row["webhook_url"]),
+                            time.time(),
+                            row["id"],
+                        ),
+                    )
+                webhooks += 1
+        return {"keys": keys, "webhooks": webhooks}
+
+    def rotate_secrets(self, old_box: Any, new_box: Any) -> dict:
+        """Re-encrypt every stored secret (caller swaps the env key after)."""
+        keys = webhooks = 0
+        for host in self.list_hosts():
+            if host["has_key"]:
+                raw = self.key_path(host["id"]).read_text(encoding="utf-8")
+                plain = old_box.decrypt(raw)
+                self.key_path(host["id"]).write_text(
+                    new_box.encrypt(plain), encoding="utf-8"
+                )
+                keys += 1
+        with _connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT id, webhook_url FROM schedules WHERE webhook_url != ''"
+            ).fetchall()
+        for row in rows:
+            plain = old_box.decrypt(row["webhook_url"])
+            with _connect(self.db_path) as conn:
+                conn.execute(
+                    "UPDATE schedules SET webhook_url = ?, updated_at = ?"
+                    " WHERE id = ?",
+                    (new_box.encrypt(plain), time.time(), row["id"]),
+                )
+            webhooks += 1
+        return {"keys": keys, "webhooks": webhooks}
 
     # -- reports ------------------------------------------------------
 

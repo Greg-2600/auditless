@@ -7,6 +7,7 @@ public API surface exactly as users see it.
 
 import json
 import socket
+from pathlib import Path
 
 import pytest
 
@@ -259,6 +260,13 @@ def test_openapi_spec_is_complete(client):
         "/api/remediations",
         "/api/reports/{report_id}/remediations",
         "/api/remediations/{proposal_id}/apply",
+        "/api/tokens",
+        "/api/tokens/{token_id}",
+        "/api/audit",
+        "/api/audit/verify",
+        "/api/maintenance/backup",
+        "/api/maintenance/migrate-secrets",
+        "/api/maintenance/rotate-key",
     ):
         assert path in spec["paths"], path
     props = spec["components"]["schemas"]["ScanRequest"]["properties"]
@@ -414,7 +422,7 @@ def test_run_schedule_now_triggers_scan(client, monkeypatch):
 
     seen = {}
 
-    def fake_scan_host(host_id, overrides):
+    def fake_scan_host(host_id, overrides, actor="scheduler"):
         seen.update(host_id=host_id, overrides=overrides)
         job = dashboard.ScanJob(id="manual1", hostname="h", username="u", status="done")
         job.report = canned_report()
@@ -644,7 +652,9 @@ def test_scan_saved_key_host_uses_stored_key(client, monkeypatch):
     job = client.start_scan(host_id=host["id"])  # no password needed
     done = client.wait_for(job["id"])
     assert done["status"] == "done"
-    assert seen["key_path"].endswith(host["id"])
+    # Key materializes to a 0600 temp file for the run, then is unlinked.
+    assert "auditless-key-" in seen["key_path"]
+    assert not Path(seen["key_path"]).exists()
     assert SENTINEL_PASSWORD not in json.dumps(done)
 
 

@@ -26,6 +26,7 @@ import contextlib
 import dataclasses
 import io
 import json
+import os
 import tempfile
 import threading
 import time
@@ -48,27 +49,38 @@ _auth_scheme = HTTPBearer(auto_error=False)
 def require_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_auth_scheme),
-) -> None:
-    """Enforce bearer auth on API routes when AUDITLESS_TOKEN is set.
+) -> str:
+    """Enforce bearer auth on API routes; returns the actor name.
 
-    Unset token preserves the historical behavior (loopback-only, no auth).
-    Accepts Authorization: Bearer <token> or ?token= for convenience.
+    Accepts the AUDITLESS_TOKEN fallback (actor "env-token") or a named
+    API token from the store (actor "token:<name>"). Unset env token and
+    no stored tokens preserves the historical behavior (loopback-only,
+    no auth, actor "anonymous").
     """
     import hmac
-    import os
 
-    expected = os.environ.get("AUDITLESS_TOKEN", "")
-    if not expected:
-        return
     provided = credentials.credentials if credentials else ""
     if not provided:
         provided = request.query_params.get("token", "")
-    if not provided or not hmac.compare_digest(provided, expected):
-        raise HTTPException(
-            status_code=401,
-            detail="missing or invalid API token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    if not provided:
+        if os.environ.get("AUDITLESS_TOKEN", ""):
+            raise HTTPException(
+                status_code=401,
+                detail="missing or invalid API token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return "anonymous"
+    expected = os.environ.get("AUDITLESS_TOKEN", "")
+    if expected and hmac.compare_digest(provided, expected):
+        return "env-token"
+    row = get_store().verify_token(provided)
+    if row is not None:
+        return f"token:{row['name']}"
+    raise HTTPException(
+        status_code=401,
+        detail="missing or invalid API token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 _guarded = [Depends(require_token)]
@@ -359,14 +371,14 @@ def run_scan(params: dict) -> dict:
             out_path.unlink()
 
 
-def _persist_job(job: ScanJob, host_id: str | None) -> None:
+def _persist_job(job: ScanJob, host_id: str | None, status: str | None = None) -> None:
     """Best-effort persistence (must never break status reporting)."""
     try:
         get_store().save_report(
             job.id,
             job.hostname,
             job.username,
-            job.status,
+            status or job.status,
             job.report,
             job.error,
             host_id,
@@ -377,9 +389,12 @@ def _persist_job(job: ScanJob, host_id: str | None) -> None:
         pass
 
 
-def _run_job(job: ScanJob, params: dict, host_id: str | None = None) -> None:
-    # NOTE: terminal status flips only AFTER persisting, so pollers that
-    # observe done/error are guaranteed a stored row (no save race).
+def _run_job(
+    job: ScanJob, params: dict, host_id: str | None = None, actor: str = "unknown"
+) -> None:
+    # NOTE: the stored row is written with its terminal status BEFORE the
+    # in-memory flag flips, so pollers that observe done/error are
+    # guaranteed a matching stored row (no save race).
     job.status = "running"
     job.progress = "connecting over SSH and gathering checks"
     try:
@@ -387,14 +402,28 @@ def _run_job(job: ScanJob, params: dict, host_id: str | None = None) -> None:
         job.progress = "complete"
         _save_report_copy(job.hostname, job.report)
         job.finished_at = time.time()
+        _scrub_temp_key(params)
+        _persist_job(job, host_id, status="done")
         job.status = "done"
-        _persist_job(job, host_id)
+        score = (job.report.get("summary") or {}).get("hardening_index")
+        _audit(actor, "scan.completed", "scan", job.id, f"index={score}")
     except Exception as exc:  # keep the job record, report the failure
-        job.error = str(exc)[:1000]
         job.progress = "failed"
+        job.error = str(exc)[:1000]
         job.finished_at = time.time()
+        _persist_job(job, host_id, status="error")
         job.status = "error"
-        _persist_job(job, host_id)
+        _audit(actor, "scan.failed", "scan", job.id, job.error[:200])
+    finally:
+        _scrub_temp_key(params)
+
+
+def _scrub_temp_key(params: dict) -> None:
+    """Unlink materialized key bytes (idempotent backstop)."""
+    temp_key = params.get("_temp_key") or ""
+    if temp_key:
+        with contextlib.suppress(OSError):
+            Path(temp_key).unlink()
 
 
 def start_scan(params: dict) -> ScanJob:
@@ -424,10 +453,17 @@ def resolve_host_scan(host_id: str, overrides: dict) -> tuple[dict, dict]:
         raise KeyError(f"unknown host {host_id}")
     password = overrides.get("password") or ""
     key_path = ""
+    key_temp = ""
     if host["auth"] == "key":
         if not get_store().has_host_key(host_id):
             raise ValueError("host uses key auth but no key is stored")
-        key_path = str(get_store().key_path(host_id))
+        # Materialize decrypted key bytes to a 0600 temp file; the caller
+        # passes _temp_key through so _run_job can unlink it afterwards.
+        fd, key_temp = tempfile.mkstemp(prefix="auditless-key-")
+        os.chmod(key_temp, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(get_store().read_host_key(host_id))
+        key_path = key_temp
     elif not password:
         raise ValueError("password is required for this host")
     base = {
@@ -442,6 +478,7 @@ def resolve_host_scan(host_id: str, overrides: dict) -> tuple[dict, dict]:
         "enable_rootkit_scan": bool(overrides.get("enable_rootkit_scan")),
         "check_package_hygiene": bool(overrides.get("check_package_hygiene")),
         "strict_host_key_checking": bool(overrides.get("strict_host_key_checking")),
+        "_temp_key": key_temp,
     }
     return base, {**base, "password": password}
 
@@ -727,6 +764,15 @@ Binds to localhost; do not expose without auth + TLS.</div>
 <div id="status" style="margin-top:10px"></div>
 </div>
 <div class="card"><h3 style="margin-top:0">Recent scans (this session)</h3><div id="hist" class="hist">loading&hellip;</div></div>
+<div class="card"><h3 style="margin-top:0">API tokens</h3>
+<div class="toolbar"><input id="tokname" placeholder="token name (e.g. ci-pipe)"></div>
+<button style="margin:0" onclick="addToken()">Create token</button>
+<div id="tokout" class="hist" style="margin-top:8px"></div>
+<div id="toks" class="hist" style="margin-top:8px">loading&hellip;</div></div>
+<div class="card"><h3 style="margin-top:0">Audit trail</h3>
+<div class="toolbar"><button style="margin:0" onclick="loadAudit()">Refresh</button>
+<button style="margin:0" onclick="verifyAudit()">Verify chain</button></div>
+<div id="audstat" class="hist"></div><div id="audit" class="hist">loading&hellip;</div></div>
 <div class="card"><h3 style="margin-top:0">Fleet overview</h3>
 <div class="toolbar"><button style="margin:0" onclick="loadFleet()">Refresh</button></div>
 <div id="fleet" class="hist">loading&hellip;</div>
@@ -846,6 +892,31 @@ async function putKey(){
   keytext.value="";loadHosts();status("key stored (0600, never readable back)");}
  catch(e){status('<span class="err">'+esc(e.message)+"</span>")}}
 async function delKey(){await api("/api/hosts/"+keyhost.value+"/key",{method:"DELETE"});loadHosts()}
+async function loadTokens(){
+ try{const t=await api("/api/tokens");
+  document.getElementById("toks").innerHTML=t.length?t.map(x=>
+   `<div>${esc(x.name)} &mdash; last used: ${x.last_used?new Date(x.last_used*1000).toLocaleString():"never"} `+
+   `<a onclick="delToken('${x.id}')">revoke</a></div>`).join(""):"no named tokens";}
+ catch(e){document.getElementById("toks").textContent="unavailable"}}
+async function addToken(){
+ const t=await api("/api/tokens",{method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({name:tokname.value})});
+ document.getElementById("tokout").innerHTML=
+  `<b>Copy now — shown exactly once:</b> <code>${esc(t.token)}</code>`;
+ tokname.value="";loadTokens()}
+async function delToken(id){await api("/api/tokens/"+id,{method:"DELETE"});loadTokens()}
+async function loadAudit(){
+ try{const a=await api("/api/audit?limit=50");
+  document.getElementById("audit").innerHTML=a.length?a.map(x=>
+   `<div>${new Date(x.ts*1000).toLocaleString()} &mdash; <b>${esc(x.actor)}</b> `+
+   `${esc(x.action)} ${esc(x.target_type)}:${esc(x.target_id)} `+
+   `<span style="color:var(--dim)">${esc((x.detail||"").slice(0,80))}</span></div>`).join(""):"no audit records";}
+ catch(e){document.getElementById("audit").textContent="unavailable"}}
+async function verifyAudit(){
+ const v=await api("/api/audit/verify");
+ document.getElementById("audstat").innerHTML=v.ok?
+  `<span class="pass">chain valid (${v.checked} records)</span>`:
+  `<span class="err">BROKEN at record ${v.broken_at} (${v.checked} verified)</span>`}
 async function loadFleet(){
  try{const f=await api("/api/fleet");
   document.getElementById("fleet").innerHTML=f.length?("<table><tr><th>Host</th>"+
@@ -1000,10 +1071,26 @@ loadHosts();
 loadReports();
 loadFleet();
 loadScheds();
+loadTokens();
+loadAudit();
 </script>
 </body>
 </html>
 """
+
+
+def _audit(
+    actor: str,
+    action: str,
+    target_type: str = "",
+    target_id: str = "",
+    detail: str = "",
+) -> None:
+    """Best-effort operator audit record (never breaks the request)."""
+    try:
+        get_store().audit(actor, action, target_type, target_id, detail)
+    except Exception:
+        pass
 
 
 def _public_job(job: ScanJob, include_report: bool = False) -> ScanJobPublic:
@@ -1064,7 +1151,9 @@ def api_list_scans() -> list[ScanJobPublic]:
     status_code=201,
     summary="Start a scan (password is write-only)",
 )
-def api_start_scan(data: ScanRequest) -> ScanJobPublic:
+def api_start_scan(
+    data: ScanRequest, actor: str = Depends(require_token)
+) -> ScanJobPublic:
     """Register a job and run the shared CLI scan pipeline in the background.
 
     Poll GET /api/scans/{id} until status is done or error. Pass host_id
@@ -1105,7 +1194,9 @@ def api_start_scan(data: ScanRequest) -> ScanJobPublic:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     # Own thread (not BackgroundTasks): deterministic under both uvicorn
     # and TestClient, whose background-task timing varies by version.
-    worker = threading.Thread(target=_run_job, args=(job, params, host_id), daemon=True)
+    worker = threading.Thread(
+        target=_run_job, args=(job, params, host_id, actor), daemon=True
+    )
     worker.start()
     return _public_job(job)
 
@@ -1129,10 +1220,11 @@ def api_get_scan(job_id: str) -> ScanJobPublic:
     dependencies=_guarded,
     summary="Forget a job record",
 )
-def api_delete_scan(job_id: str) -> dict:
+def api_delete_scan(job_id: str, actor: str = Depends(require_token)) -> dict:
     """Remove a job from history."""
     if not delete_job(job_id):
         raise HTTPException(status_code=404, detail="unknown scan id")
+    _audit(actor, "scan.delete", "scan", job_id)
     return {"deleted": job_id}
 
 
@@ -1167,11 +1259,13 @@ def api_list_profiles() -> list[dict]:
     return list_profiles()
 
 
-def scan_host_now(host_id: str, overrides: dict) -> tuple[ScanJob, dict | None]:
+def scan_host_now(
+    host_id: str, overrides: dict, actor: str = "scheduler"
+) -> tuple[ScanJob, dict | None]:
     """Run a saved-host scan synchronously with persistence (scheduler path)."""
     base, run_params = resolve_host_scan(host_id, overrides)
     job = start_scan({**base, "password": run_params.get("password", "")})
-    _run_job(job, run_params, host_id)
+    _run_job(job, run_params, host_id, actor)
     return job, (job.report if job.status == "done" else None)
 
 
@@ -1272,7 +1366,9 @@ def api_list_hosts() -> list[HostPublic]:
     status_code=201,
     summary="Register a host",
 )
-def api_create_host(data: HostCreate) -> HostPublic:
+def api_create_host(
+    data: HostCreate, actor: str = Depends(require_token)
+) -> HostPublic:
     """Save a host for key auth and report history."""
     if data.auth not in ("password", "key"):
         raise HTTPException(status_code=400, detail="auth must be 'password' or 'key'")
@@ -1282,6 +1378,7 @@ def api_create_host(data: HostCreate) -> HostPublic:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _audit(actor, "host.create", "host", row["id"], row["hostname"])
     return _host_public(row)
 
 
@@ -1305,7 +1402,9 @@ def api_get_host(host_id: str) -> HostPublic:
     summary="Update a host",
     dependencies=_guarded,
 )
-def api_update_host(host_id: str, data: HostUpdate) -> HostPublic:
+def api_update_host(
+    host_id: str, data: HostUpdate, actor: str = Depends(require_token)
+) -> HostPublic:
     """Partial host update; changing auth to password drops nothing else."""
     row = get_store().get_host(host_id)
     if row is None:
@@ -1320,16 +1419,18 @@ def api_update_host(host_id: str, data: HostUpdate) -> HostPublic:
         data.auth or row["auth"],
         host_id=host_id,
     )
+    _audit(actor, "host.update", "host", host_id)
     return _host_public(updated)
 
 
 @app.delete(
     "/api/hosts/{host_id}", summary="Delete a host and its key", dependencies=_guarded
 )
-def api_delete_host(host_id: str) -> dict:
+def api_delete_host(host_id: str, actor: str = Depends(require_token)) -> dict:
     """Remove a host record and any stored key material."""
     if not get_store().delete_host(host_id):
         raise HTTPException(status_code=404, detail="unknown host")
+    _audit(actor, "host.delete", "host", host_id)
     return {"deleted": host_id}
 
 
@@ -1338,7 +1439,9 @@ def api_delete_host(host_id: str) -> dict:
     summary="Store a host private key",
     dependencies=_guarded,
 )
-def api_put_host_key(host_id: str, data: KeyUpload) -> dict:
+def api_put_host_key(
+    host_id: str, data: KeyUpload, actor: str = Depends(require_token)
+) -> dict:
     """Save key bytes with owner-only permissions (write-only endpoint)."""
     if not get_store().get_host(host_id):
         raise HTTPException(status_code=404, detail="unknown host")
@@ -1348,6 +1451,7 @@ def api_put_host_key(host_id: str, data: KeyUpload) -> dict:
         get_store().set_host_key(host_id, data.key)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown host") from exc
+    _audit(actor, "key.store", "host", host_id)
     return {"host_id": host_id, "has_key": True}
 
 
@@ -1370,7 +1474,7 @@ def api_get_host_key(host_id: str) -> dict:
 @app.delete(
     "/api/hosts/{host_id}/key", summary="Remove a stored key", dependencies=_guarded
 )
-def api_delete_host_key(host_id: str) -> dict:
+def api_delete_host_key(host_id: str, actor: str = Depends(require_token)) -> dict:
     """Delete stored key bytes (host record kept, flag cleared)."""
     if not get_store().get_host(host_id):
         raise HTTPException(status_code=404, detail="unknown host")
@@ -1378,6 +1482,7 @@ def api_delete_host_key(host_id: str) -> dict:
         get_store().clear_host_key(host_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown host") from exc
+    _audit(actor, "key.delete", "host", host_id)
     return {"host_id": host_id, "has_key": False}
 
 
@@ -1415,10 +1520,13 @@ def api_get_stored_report(report_id: str) -> dict:
     summary="Forget a persisted report",
     dependencies=_guarded,
 )
-def api_delete_stored_report(report_id: str) -> dict:
+def api_delete_stored_report(
+    report_id: str, actor: str = Depends(require_token)
+) -> dict:
     """Remove a stored report."""
     if not get_store().delete_report(report_id):
         raise HTTPException(status_code=404, detail="unknown report")
+    _audit(actor, "report.delete", "report", report_id)
     return {"deleted": report_id}
 
 
@@ -1485,7 +1593,9 @@ def api_list_schedules() -> list[SchedulePublic]:
     summary="Create a scan schedule",
     dependencies=_guarded,
 )
-def api_create_schedule(data: ScheduleCreate) -> SchedulePublic:
+def api_create_schedule(
+    data: ScheduleCreate, actor: str = Depends(require_token)
+) -> SchedulePublic:
     """Schedule recurring scans for a saved host (cron validated)."""
     try:
         row = get_store().create_schedule(
@@ -1502,6 +1612,7 @@ def api_create_schedule(data: ScheduleCreate) -> SchedulePublic:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _audit(actor, "schedule.create", "schedule", row["id"], row["name"])
     return _schedule_public(row)
 
 
@@ -1525,7 +1636,9 @@ def api_get_schedule(schedule_id: str) -> SchedulePublic:
     summary="Update a schedule",
     dependencies=_guarded,
 )
-def api_update_schedule(schedule_id: str, data: ScheduleUpdate) -> SchedulePublic:
+def api_update_schedule(
+    schedule_id: str, data: ScheduleUpdate, actor: str = Depends(require_token)
+) -> SchedulePublic:
     """Partial update; changing cron recomputes the next run."""
     try:
         row = get_store().update_schedule(
@@ -1536,16 +1649,18 @@ def api_update_schedule(schedule_id: str, data: ScheduleUpdate) -> SchedulePubli
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="unknown schedule")
+    _audit(actor, "schedule.update", "schedule", schedule_id)
     return _schedule_public(row)
 
 
 @app.delete(
     "/api/schedules/{schedule_id}", summary="Delete a schedule", dependencies=_guarded
 )
-def api_delete_schedule(schedule_id: str) -> dict:
+def api_delete_schedule(schedule_id: str, actor: str = Depends(require_token)) -> dict:
     """Remove an unattended schedule."""
     if not get_store().delete_schedule(schedule_id):
         raise HTTPException(status_code=404, detail="unknown schedule")
+    _audit(actor, "schedule.delete", "schedule", schedule_id)
     return {"deleted": schedule_id}
 
 
@@ -1556,13 +1671,17 @@ def api_delete_schedule(schedule_id: str) -> dict:
     summary="Trigger a scheduled scan now",
     dependencies=_guarded,
 )
-def api_run_schedule_now(schedule_id: str) -> ScanJobPublic:
+def api_run_schedule_now(
+    schedule_id: str, actor: str = Depends(require_token)
+) -> ScanJobPublic:
     """Run a schedule's host immediately (same pipeline, persisted)."""
     row = get_store().get_schedule(schedule_id)
     if row is None:
         raise HTTPException(status_code=404, detail="unknown schedule")
     try:
-        job, _ = scan_host_now(row["host_id"], {"profile": row.get("profile") or ""})
+        job, _ = scan_host_now(
+            row["host_id"], {"profile": row.get("profile") or ""}, actor
+        )
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _public_job(job, include_report=True)
@@ -1594,9 +1713,10 @@ def api_host_trend(host_id: str, limit: int = 100) -> list[dict]:
     summary="Snapshot the database",
     dependencies=_guarded,
 )
-def api_backup() -> dict:
+def api_backup(actor: str = Depends(require_token)) -> dict:
     """Best-effort SQLite snapshot (pruned server-side)."""
     dest = get_store().backup()
+    _audit(actor, "maintenance.backup", "backup", dest.name)
     return {"path": dest.name, "bytes": dest.stat().st_size}
 
 
@@ -1666,7 +1786,9 @@ def api_propose_remediations(report_id: str) -> list[dict]:
     summary="Approve and execute a fix, then verify",
     dependencies=_guarded,
 )
-def api_apply_remediation(proposal_id: str, data: RemediationApply) -> dict:
+def api_apply_remediation(
+    proposal_id: str, data: RemediationApply, actor: str = Depends(require_token)
+) -> dict:
     """Execute the proposal script over SSH, then start a verify rescan.
 
     Returns per-command results plus the verification job id; poll the
@@ -1715,9 +1837,18 @@ def api_apply_remediation(proposal_id: str, data: RemediationApply) -> dict:
         raise HTTPException(status_code=502, detail=f"apply failed: {exc}") from exc
 
     job = start_scan({**base, "password": password})
-    worker = threading.Thread(target=_run_job, args=(job, {**run_params}, data.host_id))
+    worker = threading.Thread(
+        target=_run_job, args=(job, {**run_params}, data.host_id, actor)
+    )
     worker.daemon = True
     worker.start()
+    _audit(
+        actor,
+        "remediation.apply",
+        "remediation",
+        proposal_id,
+        proposal["remediation_id"],
+    )
     return {"results": results, "verification_job_id": job.id}
 
 
@@ -1744,6 +1875,108 @@ def api_fleet() -> list[dict]:
     return fleet
 
 
+class TokenCreate(BaseModel):
+    """Name for a new API token (plaintext returned exactly once)."""
+
+    name: str = Field(examples=["ci-pipeline"])
+
+
+class RotateRequest(BaseModel):
+    """Rotate data encryption to a new master key (both write-only)."""
+
+    current_key: SecretStr = Field(description="Key the data is under now.")
+    new_key: SecretStr = Field(description="Key to re-encrypt everything to.")
+
+
+@app.post(
+    "/api/tokens",
+    summary="Create a named API token",
+    dependencies=_guarded,
+)
+def api_create_token(data: TokenCreate, actor: str = Depends(require_token)) -> dict:
+    """Mint a token; the plaintext shows exactly once — store it now."""
+    if not data.name.strip():
+        raise HTTPException(status_code=400, detail="name is required")
+    created = get_store().create_token(data.name.strip())
+    _audit(actor, "token.create", "token", created["id"], created["name"])
+    return created
+
+
+@app.get(
+    "/api/tokens",
+    summary="List API tokens (metadata only)",
+    dependencies=_guarded,
+)
+def api_list_tokens() -> list[dict]:
+    """Token metadata; hashes and plaintext never exposed."""
+    return get_store().list_tokens()
+
+
+@app.delete(
+    "/api/tokens/{token_id}", summary="Revoke an API token", dependencies=_guarded
+)
+def api_delete_token(token_id: str, actor: str = Depends(require_token)) -> dict:
+    """Revoke a token immediately."""
+    if not get_store().delete_token(token_id):
+        raise HTTPException(status_code=404, detail="unknown token")
+    _audit(actor, "token.delete", "token", token_id)
+    return {"deleted": token_id}
+
+
+@app.get(
+    "/api/audit",
+    summary="Operator audit trail",
+    dependencies=_guarded,
+)
+def api_list_audit(limit: int = 100) -> list[dict]:
+    """Recent audit records, newest first."""
+    return get_store().list_audit(limit)
+
+
+@app.get(
+    "/api/audit/verify",
+    summary="Verify the audit hash chain",
+    dependencies=_guarded,
+)
+def api_verify_audit() -> dict:
+    """Recompute the chain; reports the first break, if any."""
+    return get_store().verify_audit()
+
+
+@app.post(
+    "/api/maintenance/migrate-secrets",
+    summary="Encrypt plaintext secrets in place",
+    dependencies=_guarded,
+)
+def api_migrate_secrets(actor: str = Depends(require_token)) -> dict:
+    """Idempotent migration to encrypted storage (needs master key set)."""
+    result = get_store().migrate_secrets()
+    _audit(actor, "maintenance.migrate", "maintenance", "secrets", str(result))
+    return result
+
+
+@app.post(
+    "/api/maintenance/rotate-key",
+    summary="Re-encrypt all secrets under a new key",
+    dependencies=_guarded,
+)
+def api_rotate_key(data: RotateRequest, actor: str = Depends(require_token)) -> dict:
+    """Rotate data encryption. Restart with the new AUDITLESS_MASTER_KEY after."""
+    from .secrets import SecretBox
+
+    try:
+        old_box, new_box = SecretBox(data.current_key.get_secret_value()), SecretBox(
+            data.new_key.get_secret_value()
+        )
+        # Validate the new key parses before touching any data.
+        assert new_box.decrypt(new_box.encrypt("rotate-check")) == "rotate-check"
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"invalid key: {exc}") from exc
+    result = get_store().rotate_secrets(old_box, new_box)
+    _audit(actor, "maintenance.rotate", "maintenance", "secrets", str(result))
+    return result
+
+
 def serve_forever(
     host: str = "127.0.0.1", port: int = 8080, scheduler: bool = True
 ) -> None:
@@ -1751,6 +1984,14 @@ def serve_forever(
     import sys
 
     import uvicorn
+
+    from .secrets import require_master_key
+
+    require_master_key()  # refuse to boot on a misconfigured master key
+
+    from .secrets import require_master_key
+
+    require_master_key()  # refuse to boot on a misconfigured master key
 
     stop_event: threading.Event | None = None
     if scheduler:
