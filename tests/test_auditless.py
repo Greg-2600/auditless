@@ -525,6 +525,63 @@ class TestMainScanOrchestration:
         finally:
             disable_command_cache()
 
+    def test_main_aborts_on_sudo_failure(self, monkeypatch, capsys):
+        """Wrong sudo password fails fast with a clear, secret-free error."""
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+        monkeypatch.setattr(cli, "_preflight_sudo", lambda ssh, pw: False)
+        with pytest.raises(SystemExit) as exc_info:
+            cli.main(["h", "u", "pw"])
+        assert exc_info.value.code == 2
+        err = capsys.readouterr().err
+        assert "sudo authentication failed" in err
+        assert "--ask-password" in err
+
+    def test_main_proceeds_on_sudo_success(self, monkeypatch):
+        """Verified sudo continues into the normal scan."""
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+        monkeypatch.setattr(cli, "_preflight_sudo", lambda ssh, pw: True)
+        assert cli.main(["h", "u", "pw"]) == 0
+
+    def test_main_skips_preflight_without_password(self, monkeypatch):
+        """Key-auth scans never probe sudo (nothing to verify)."""
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+
+        def boom(ssh: object, password: str) -> bool:
+            raise AssertionError("preflight must not run without a password")
+
+        monkeypatch.setattr(cli, "_preflight_sudo", boom)
+        assert cli.main(["h", "u", "", "--key-file", "/k"]) == 0
+
+    def test_preflight_sudo_paths(self, monkeypatch):
+        """Probe truth table: success, failure, and inconclusive sessions."""
+        from unittest.mock import MagicMock, Mock
+
+        from linux_health import cli
+
+        def session_for(outputs):
+            ssh = Mock()
+            ssh._client = None
+            ssh.run = MagicMock(side_effect=list(outputs))
+            return ssh
+
+        assert cli._preflight_sudo(session_for([(0, "", "")]), "pw") is True
+        assert cli._preflight_sudo(session_for([(1, "", "")]), "pw") is False
+        assert cli._preflight_sudo(session_for([(0, "", "")]), "") is True
+
+        def boom(command, timeout=10.0):
+            raise RuntimeError("transport gone")
+
+        odd = Mock()
+        odd._client = None
+        odd.run = boom
+        assert cli._preflight_sudo(odd, "pw") is True
+
     def test_main_json_scan_writes_file(self, monkeypatch, tmp_path):
         import json
 

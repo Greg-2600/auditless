@@ -617,6 +617,12 @@ export SSH_PASS=$(vault read -field=password secret/ssh/admin)
 python -m linux_health server.example.com admin "$SSH_PASS"
 ```
 
+> **Sudo preflight:** when a password is given, the scanner verifies
+> `sudo` up front and aborts with a clear error if it fails — no
+> silent per-check degradation, and nothing ever blocks on a password
+> prompt mid-scan (all remote sudo uses non-interactive `-S`). Omit
+> the password for an unprivileged assessment.
+
 #### SSH Host Key Management
 
 Strict host-key checking is **on by default**: unknown host keys fail
