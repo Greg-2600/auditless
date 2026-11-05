@@ -73,7 +73,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 37 — [P1] Profile validation (`auditless profile lint`) with JSON-schema + unknown-ID suggestions. `config` (effort: M)
 - [x] 38 — [P1] Deterministic check ordering + stable JSON key order (diff-friendly reports). `report` (effort: S)
 - [x] 39 — [P1] Structured `unknown`/`skipped` status distinct from `warn` (tool missing ≠ vulnerable); update hardening-index math + docs. `report` (effort: M)
-- [ ] 40 — [P1] Benchmark script (`scripts/bench_fleet.py`) promoted to CI perf gate (fail on >10% scan-time regression). `perf` (effort: M)
+- [x] 40 — [P1] Benchmark script (`scripts/bench_fleet.py`) promoted to CI perf gate (fail on >10% scan-time regression). `perf` (effort: M)
 
 ---
 

@@ -1,10 +1,19 @@
 """Wall-time benchmark: sequential vs parallel core-check suite.
 
 Uses a latency-injecting fake SSH session (no network) over the REAL
-55-thunk suite, so the comparison isolates orchestration overhead from
+thunk suite, so the comparison isolates orchestration overhead from
 target speed. Stdlib only.
 
     .venv/bin/python scripts/bench_checks.py [--latency 0.05] [--jobs 8]
+
+CI performance gate (see .github/workflows/tests.yml `perf` job)::
+
+    .venv/bin/python scripts/bench_checks.py --check 2.0
+
+exits nonzero when the parallel speedup drops below the threshold,
+which is how orchestration regressions (not workload growth) fail
+the build. The ratio — not absolute seconds — is gated so results
+are comparable across machines.
 """
 
 from __future__ import annotations
@@ -50,11 +59,22 @@ def _time(fn: object, *args: object, repeats: int = 3) -> float:
     return statistics.median(samples)
 
 
+def meets_speedup(actual: float, required: float) -> bool:
+    """Whether a measured speedup satisfies the gate threshold."""
+    return actual >= required
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--latency", type=float, default=0.05)
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument(
+        "--check",
+        type=float,
+        default=None,
+        help="exit nonzero unless parallel speedup reaches this ratio",
+    )
     args = parser.parse_args()
 
     disable_command_cache()  # measure execution, not cache hits
@@ -67,11 +87,18 @@ def main() -> int:
         repeats=args.repeats,
     )
     total = len(run_all_checks(LatencySSH(0.0)))
+    speedup = seq / par if par > 0 else float("inf")
     print(f"checks in suite : {total}")
     print(f"per-call latency: {args.latency * 1000:.0f}ms (simulated RTT)")
     print(f"sequential      : {seq:.2f}s")
     print(f"parallel({args.jobs})   : {par:.2f}s")
-    print(f"speedup         : {seq / par:.1f}x")
+    print(f"speedup         : {speedup:.1f}x")
+    if args.check is not None:
+        if meets_speedup(speedup, args.check):
+            print(f"gate: speedup {speedup:.1f}x >= {args.check:g}x: PASS")
+            return 0
+        print(f"gate: speedup {speedup:.1f}x < {args.check:g}x: FAIL")
+        return 1
     return 0
 
 

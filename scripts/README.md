@@ -26,6 +26,37 @@ python scripts/test_json_output.py [options]
 
 **Requirements:** Python 3.11+
 
+### bench_checks.py
+**Purpose:** Hermetic core-suite benchmark + CI performance gate (stdlib only).
+
+**Usage:**
+```bash
+# Manual timing with simulated 50ms RTT
+.venv/bin/python scripts/bench_checks.py --latency 0.05 --jobs 8
+
+# CI gate: fail unless parallel speedup reaches 2.0x
+.venv/bin/python scripts/bench_checks.py --check 2.0
+```
+
+The gate asserts the sequential/parallel **ratio**, not absolute
+seconds, so results are comparable across machines (no rotting
+baseline, no shared-runner flake). It catches orchestration
+regressions (serialized pools, per-scan serial overhead); deliberate
+workload growth (more checks) is versioned, not gated.
+
+### bench_fleet.py
+**Purpose:** Manual fleet benchmark (sequential vs parallel fleet scans).
+
+**Usage:**
+```bash
+python scripts/bench_fleet.py [targets=3]
+```
+
+Stays **manual**: it boots throwaway containers and pulls registry
+images, which is too heavy and flaky for a per-PR gate. Run it
+locally before fleet-scale changes; the per-PR gate is
+`bench_checks.py --check` (above).
+
 ## Running During Development
 
 ```bash
