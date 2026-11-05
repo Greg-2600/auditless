@@ -931,8 +931,8 @@ Machine-readable structured output for automation and tool integration:
     "scanned": 7,
     "open": 5,
     "open_ports": [
-      {"port": 22, "state": "open", "reason": "ssh"},
-      {"port": 80, "state": "open", "reason": "http"}
+      {"port": 22, "state": "open", "reason": "ssh", "service": "ssh", "version": "9.6p1", "banner": "SSH-2.0-OpenSSH_9.6p1"},
+      {"port": 80, "state": "open", "reason": "http", "service": "http", "version": null, "banner": null}
     ]
   }
 }
