@@ -54,9 +54,9 @@ relative to this skill's directory).
 
 ## Pacing
 
-End every iteration by scheduling the next run **3600s (1 hour)**
+End every iteration by scheduling the next run **14400s (4 hours)**
 later (user-ordered standing pacing). Only `stop_loop` (done or
 blocked) ends the loop instead. In scheduler terms: call
-`schedule_next_run` with `delay_seconds: 3600`, or `stop_loop`
+`schedule_next_run` with `delay_seconds: 14400`, or `stop_loop`
 with a short reason — never leave a turn without one of the two,
 or the loop ends silently.
