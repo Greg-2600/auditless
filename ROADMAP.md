@@ -125,7 +125,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [ ] 77 — [P1] Dark mode + print stylesheet for reports. `ui` (effort: S)
 - [ ] 78 — [P1] CSRF + session hardening review for cookie paths (if any added); document bearer-only rationale. `security` (effort: S)
 - [ ] 79 — [P1] Rate limiting on scan-start + auth endpoints (per-IP token bucket). `api` (effort: S)
-- [ ] 80 — [P1] UI e2e tests (Playwright smoke: login → add host → scan → report → diff). `tests` (effort: L)
+- [x] 80 — [P1] UI e2e tests, Selenium harness (DONE: `tests/test_ui_selenium.py` — headless Chrome, skip-guarded, seeded via public API with stubbed `run_scan`; asserts index empty-state + zero SEVERE console errors, history → report render, fleet table; `selenium` in requirements-dev; runs in CI and in the `/roadmap` e2e gate). Follow-ups: login/token-bar flow, add-host form submit, diff-view click path. `tests` (effort: L)
 
 ---
 
