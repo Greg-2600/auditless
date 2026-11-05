@@ -65,6 +65,7 @@ CHECK_TEST_IDS: dict[str, str] = {
     "check_php_security": "PHP-2320",
     "check_dns_configuration": "NAME-4016",
     "check_sudoers_d_auditing": "AUTH-9341",
+    "check_pam_faillock": "AUTH-9350",
     # Accounting & audit module (checks_audit.py)
     "check_process_accounting": "ACCT-5000",
     "check_auditd_service": "ACCT-5001",

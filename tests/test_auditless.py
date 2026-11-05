@@ -3072,3 +3072,106 @@ class TestCheckSudoersDAuditing:
         )
         result = check_sudoers_d_auditing(ssh, "pw")
         assert result.status == "pass"
+
+
+class TestCheckPamFaillock:
+    """Tests for PAM faillock / pwquality completeness (AUTH-9350)."""
+
+    _host_seq = 0
+
+    def _session(self, routes):
+        from unittest.mock import Mock
+
+        TestCheckPamFaillock._host_seq += 1
+        hostname = f"pam-test-{TestCheckPamFaillock._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            for key, response in routes:
+                if key in command:
+                    return response
+            return 1, "", ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    def test_faillock_absent_warns(self):
+        """No pam_faillock in stacks means no throttling (warn)."""
+        from linux_health.checks import check_pam_faillock
+
+        ssh = self._session([("pam_faillock.so", (0, "", ""))])
+        result = check_pam_faillock(ssh, "")
+        assert result.status == "warn"
+        assert "not enabled" in result.details.lower()
+
+    def test_complete_config_passes(self):
+        """Explicit deny/unlock_time/retry is clean."""
+        from linux_health.checks import check_pam_faillock
+
+        ssh = self._session(
+            [
+                ("pam_faillock.so", (0, "auth required pam_faillock.so preauth", "")),
+                (
+                    "faillock.conf",
+                    (0, "deny = 3\nunlock_time = 600\n", ""),
+                ),
+                ("pwquality", (0, "retry = 2\nminlen = 14\n", "")),
+            ]
+        )
+        result = check_pam_faillock(ssh, "")
+        assert result.status == "pass"
+
+    def test_generous_deny_warns(self):
+        """deny above 5 is called out."""
+        from linux_health.checks import check_pam_faillock
+
+        ssh = self._session(
+            [
+                ("pam_faillock.so", (0, "auth required pam_faillock.so preauth", "")),
+                (
+                    "faillock.conf",
+                    (0, "deny = 10\nunlock_time = 600\n", ""),
+                ),
+                ("pwquality", (0, "retry = 2\n", "")),
+            ]
+        )
+        result = check_pam_faillock(ssh, "")
+        assert result.status == "warn"
+        assert "deny=10" in result.details
+
+    def test_missing_values_warn(self):
+        """Implicit defaults are flagged for explicitness."""
+        from linux_health.checks import check_pam_faillock
+
+        ssh = self._session(
+            [
+                ("pam_faillock.so", (0, "auth required pam_faillock.so preauth", "")),
+                ("faillock.conf", (0, "even_deny_root\n", "")),
+                ("pwquality", (0, "minlen = 14\n", "")),
+            ]
+        )
+        result = check_pam_faillock(ssh, "")
+        assert result.status == "warn"
+        assert "deny" in result.details.lower()
+        assert "unlock_time" in result.details.lower()
+        assert "retry" in result.details.lower()
+
+    def test_excessive_retry_warns(self):
+        """retry above 3 aids guessing."""
+        from linux_health.checks import check_pam_faillock
+
+        ssh = self._session(
+            [
+                ("pam_faillock.so", (0, "auth required pam_faillock.so preauth", "")),
+                (
+                    "faillock.conf",
+                    (0, "deny = 3\nunlock_time = 600\n", ""),
+                ),
+                ("pwquality", (0, "retry = 9\n", "")),
+            ]
+        )
+        result = check_pam_faillock(ssh, "")
+        assert result.status == "warn"
+        assert "retry=9" in result.details
