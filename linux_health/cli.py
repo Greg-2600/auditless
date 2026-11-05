@@ -10,6 +10,7 @@ import argparse
 import getpass
 import os
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -204,6 +205,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _warn_if_deprecated_alias() -> None:
+    """Note the linux-health entry-point deprecation (kept through v3.x)."""
+    invoked = os.path.splitext(
+        os.path.basename((sys.argv[0] or "").replace("\\", "/"))
+    )[0]
+    if invoked == "linux-health":
+        message = (
+            "The 'linux-health' command is deprecated, use 'auditless' "
+            "instead (removal slated for v4.0)."
+        )
+        warnings.warn(message, DeprecationWarning, stacklevel=3)
+        print(f"warning: {message}", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Execute the security scan orchestration from CLI arguments.
 
@@ -213,6 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Exit code (0 for success, 1 for errors)
     """
+    _warn_if_deprecated_alias()
     parser = build_parser()
     args = parser.parse_args(argv)
 

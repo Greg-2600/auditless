@@ -1,5 +1,7 @@
 import json
+import sys
 import tempfile
+import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
@@ -30,7 +32,7 @@ from linux_health.checks import (
     reset_command_cache,
     run_all_checks,
 )
-from linux_health.cli import build_parser, parse_ports
+from linux_health.cli import build_parser, main, parse_ports
 from linux_health.report import render_report, render_report_json, render_report_text
 from linux_health.scanner import COMMON_PORTS, PortStatus
 
@@ -212,6 +214,38 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["localhost", "root", "password"])
         assert args.check_package_hygiene is False
+
+
+class TestAliasDeprecation:
+    """linux-health entry point warns but keeps working through v3.x"""
+
+    def test_alias_emits_warning_and_stderr(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Invoking as linux-health warns (both channels) yet still parses."""
+        monkeypatch.setattr(sys, "argv", ["linux-health"])
+        with pytest.warns(DeprecationWarning, match="deprecated"):
+            with pytest.raises(SystemExit):
+                main([])
+        assert "deprecated" in capsys.readouterr().err
+
+    def test_alias_exe_suffix_warns(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Windows linux-health.exe triggers the same notice."""
+        monkeypatch.setattr(sys, "argv", [r"C:\tools\linux-health.exe"])
+        with pytest.warns(DeprecationWarning, match="v4.0"):
+            with pytest.raises(SystemExit):
+                main([])
+        capsys.readouterr()
+
+    def test_primary_name_is_silent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Invoking as auditless emits no deprecation warning."""
+        monkeypatch.setattr(sys, "argv", ["auditless"])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(SystemExit):
+                main([])
 
 
 class TestCheckTestIdRegistry:
