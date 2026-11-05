@@ -45,11 +45,20 @@ def test_release_signs_and_verifies():
     build = jobs["publish-docker"]["steps"]
     assert any("provenance" in str(s) for s in build)
     assert any("sbom" in str(s).lower() for s in build)
+    sign_steps = jobs["sign-image"]["steps"]
+    sign_blob = " ".join(str(s) for s in sign_steps)
+    # cosign needs registry credentials to push the signature.
+    assert "login" in sign_blob.lower()
+    assert "cosign attest" in sign_blob
     verify_steps = jobs["verify-release"]["steps"]
     blob = " ".join(str(s) for s in verify_steps)
     assert "cosign verify" in blob
+    # Buildx provenance is verified with slsa-verifier, not cosign.
+    assert "slsa-verifier verify-image" in blob
     assert "verify-attestation" in blob
     assert "download sbom" in blob
+    # verify job must see the publish digest output it references.
+    assert "publish-docker" in str(jobs["verify-release"].get("needs"))
 
 
 def test_docker_workflow_uses_pinned_trivy():
