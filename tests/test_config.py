@@ -22,6 +22,8 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point cwd and home at an empty dir so real user files can't leak in."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path))
+    # Windows resolves Path.home() from USERPROFILE, not HOME.
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
 
 def test_canonical_paths_precede_legacy() -> None:
