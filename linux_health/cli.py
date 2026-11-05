@@ -345,6 +345,9 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Exit code (0 for success, 1 for errors)
     """
+    raw = argv if argv is not None else sys.argv[1:]
+    if len(raw) >= 2 and raw[0] == "profile" and raw[1] in ("lint", "-h", "--help"):
+        return _profile_cli(list(raw[1:]))
     _warn_if_deprecated_alias()
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -558,6 +561,34 @@ def main(argv: list[str] | None = None) -> int:
         stdout: Any = sys.stdout
         stdout.reconfigure(encoding="utf-8")
         print(report)
+    return 0
+
+
+def _profile_cli(args: list[str]) -> int:
+    """Handle `auditless profile lint FILE` (returns the exit code)."""
+    if not args or args[0] in ("-h", "--help"):
+        print("usage: auditless profile lint PROFILE.YAML")
+        print()
+        print("Validate a scan profile: unknown settings, value types,")
+        print("and unknown test IDs (with suggestions). Exit 0 when clean,")
+        print("1 when problems are found, 2 on misuse.")
+        return 0
+    if len(args) != 2 or args[0] != "lint":
+        print("usage: auditless profile lint PROFILE.YAML", file=sys.stderr)
+        return 2
+    if not HAS_CONFIG:
+        print("profile support requires PyYAML (pip install pyyaml)", file=sys.stderr)
+        return 2
+    from .config import lint_profile_file
+
+    errors, warns = lint_profile_file(args[1])
+    for warning in warns:
+        print(f"warning: {warning}")
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        return 1
+    print(f"profile OK: {args[1]}")
     return 0
 
 

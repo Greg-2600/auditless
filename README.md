@@ -702,6 +702,25 @@ python -m linux_health server.example.com admin password \
   --output /reports/scan-$(date +%Y%m%d).md
 ```
 
+Validate a profile before scanning (unknown settings, value types,
+and unknown test IDs with did-you-mean suggestions):
+
+```bash
+auditless profile lint ~/.config/linux_health/profiles/production.yaml
+# profile OK: .../production.yaml   (exit 0)
+# error: unknown test ID 'STOR-631' ... (did you mean: STOR-6310?)  (exit 1)
+```
+
+CLI flags layer over profiles without editing YAML (`--only-tests`
+intersects profile `only_tests`, `--skip-tests` adds to `skip_tests`):
+
+```bash
+python -m linux_health server.example.com admin password \
+  --only-tests STOR-6310,AUTH-9328
+python -m linux_health server.example.com admin password \
+  --profile quick-scan.yaml --skip-tests USB-1000
+```
+
 #### Custom Port Scanning
 
 ```bash
