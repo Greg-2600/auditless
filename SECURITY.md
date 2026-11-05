@@ -14,9 +14,12 @@ If you discover a security vulnerability in Auditless, please report it
 **privately** — never through a public issue, social media, or chat:
 
 1. Go to the repository's **Security** tab and choose
-   **Report a vulnerability** (private vulnerability reporting).
+   **Report a vulnerability** (private vulnerability reporting —
+   [how it works](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)).
 2. Describe the issue, steps to reproduce, potential impact, and a
-   suggested fix if you have one.
+   suggested fix if you have one. See also our
+   [supported versions](#supported-versions) and
+   [security considerations](#security-considerations) below.
 3. Allow reasonable time (30 days) for a patch and coordinate disclosure.
 
 ### What to Expect
@@ -55,6 +58,30 @@ We actively monitor dependencies for vulnerabilities via:
 - Manual security audits
 
 Report dependency vulnerabilities using the process above.
+
+## Supply Chain (what each release artifact proves)
+
+Every `v*` tag builds multi-arch images with attestations, then signs
+and verifies them before the release counts as good:
+
+- **SLSA provenance** — `provenance: true` on the image build records
+  exactly which commit and workflow produced the image.
+- **SBOM** — `sbom: true` attaches a software bill of materials.
+- **Signatures** — keyless Sigstore/OIDC signing; no long-lived keys.
+- **Verification gate** — the release workflow itself runs
+  `cosign verify`, `verify-attestation`, an SBOM download, and a boot
+  smoke test of the image *by digest*. Trivy scans upload SARIF.
+
+Verify any release yourself (no secrets needed):
+
+```bash
+IMG=ghcr.io/Greg-2600/auditless:2.4.0
+cosign verify \
+  --certificate-identity-regexp "https://github.com/Greg-2600/auditless/.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$IMG"
+cosign download sbom "$IMG" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['packages']), 'packages')"
+```
 
 ---
 

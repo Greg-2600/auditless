@@ -26,11 +26,11 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "paramiko>=4.0.0",
+    "paramiko>=4.0.1",
     "pyyaml>=6.0",
     "fastapi>=0.110.0",
     "uvicorn>=0.29.0",
-    "cryptography>=44.0.0",
+    "cryptography>=50.0.0",
 ]
 
 [project.urls]
