@@ -5,6 +5,25 @@ All notable changes to Linux Health Security Scanner are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-11-05
+
+### Added
+
+**Operator trust**
+- Fernet-encrypted secrets at rest (SSH keys, webhook URLs) with
+  migration, rotation, and boot refusal on invalid keys
+- Named API tokens with last-used tracking; hash-chained operator
+  audit trail with verifier (API + UI)
+
+**Fleet scale**
+- Bastion jump hosts (direct-tcpip tunnels, per-type keys, 2-hop e2e)
+- Parallel fleet scans over a bounded pool (3.0x measured), fleet
+  benchmark script, CLI jump flags
+
+**Compliance expansion**
+- CIS Debian 12 + RHEL 9 mappings, PCI-DSS 4.0 overlay, distro
+  auto-detection, per-framework API/UI/client support
+
 ## [2.3.0] - 2026-11-04
 
 ### Added
