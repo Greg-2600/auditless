@@ -62,7 +62,7 @@ pytest tests/ --cov=linux_health --cov-report=term-missing
 
 2. **Register check** in `run_all_checks()` function
 
-3. **Write tests** in `tests/test_linux_health.py`
+3. **Write tests** in `tests/test_auditless.py`
    - Test pass/warn/fail scenarios
    - Test error handling
    - Mock SSH responses
@@ -176,7 +176,7 @@ Types: feat, fix, docs, test, refactor, perf, chore
 ### Tests Failing
 ```bash
 # Run specific test
-pytest tests/test_linux_health.py::TestCheckDiskUsage -v
+pytest tests/test_auditless.py::TestCheckDiskUsage -v
 
 # Show full output
 pytest tests/ -vv --tb=long -s

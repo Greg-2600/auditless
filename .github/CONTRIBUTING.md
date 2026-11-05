@@ -119,7 +119,7 @@ make coverage
 - Test error handling
 - Aim for >70% new code coverage
 
-**Test file location:** `tests/test_linux_health.py`
+**Test file location:** `tests/test_auditless.py`
 
 ```python
 class TestMyFeature:
@@ -260,7 +260,7 @@ Expect 3-7 days for initial review during business hours.
 ### Running Specific Tests
 ```bash
 # Test specific class
-pytest tests/test_linux_health.py::TestMyFeature -v
+pytest tests/test_auditless.py::TestMyFeature -v
 
 # Test matching pattern
 pytest tests/ -k "crypto" -v
