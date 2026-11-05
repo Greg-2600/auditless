@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import warnings
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -250,3 +251,106 @@ def should_skip_test(test_id: str, category: str, profile: ScanProfile | None) -
         return True
 
     return False
+
+
+#: Profile top-level keys with their expected value types. Categories are
+#: intentionally absent: they are free-form strings with no central
+#: registry, so only their element type is checked.
+_PROFILE_FIELD_TYPES: dict[str, tuple[type, ...]] = {
+    "name": (str,),
+    "description": (str,),
+    "skip_tests": (list,),
+    "only_tests": (list,),
+    "skip_categories": (list,),
+    "enable_rootkit_scan": (bool,),
+    "enable_package_hygiene": (bool,),
+    "timeout": (int,),
+    "command_timeout": (int,),
+    "show_warnings_only": (bool,),
+    "verbose": (bool,),
+    "custom_settings": (dict,),
+}
+
+
+def _suggest_test_id(bad_id: str) -> str:
+    """Closest registry IDs for an unknown test ID (may be empty)."""
+    from .test_ids import CHECK_TEST_IDS
+
+    candidates = sorted(set(CHECK_TEST_IDS.values()))
+    matches = difflib.get_close_matches(bad_id.upper(), candidates, n=3, cutoff=0.6)
+    if not matches:
+        return ""
+    return " (did you mean: " + ", ".join(matches) + "?)"
+
+
+def lint_profile(data: object) -> tuple[list[str], list[str]]:
+    """Validate parsed profile data, returning (errors, warnings).
+
+    Checks unknown keys (likely typos), value types, and unknown test
+    IDs (with suggestions). Pure function: parsing/file errors belong
+    to lint_profile_file.
+    """
+    from .test_ids import CHECK_TEST_IDS
+
+    errors: list[str] = []
+    warns: list[str] = []
+    if not isinstance(data, dict):
+        return ["profile must be a mapping of settings"], []
+    known_ids = set(CHECK_TEST_IDS.values())
+    for key in data:
+        if key not in _PROFILE_FIELD_TYPES:
+            errors.append(f"unknown setting {key!r} (possible typo)")
+    for key, types in _PROFILE_FIELD_TYPES.items():
+        if key not in data:
+            continue
+        value = data[key]
+        # bool is an int subclass: reject booleans for int fields explicitly.
+        if not isinstance(value, types) or (
+            isinstance(value, bool) and bool not in types
+        ):
+            expected = "/".join(t.__name__ for t in types)
+            errors.append(f"{key!r} must be {expected}")
+            continue
+        if key in ("skip_tests", "only_tests") and isinstance(value, list):
+            bad_items = [v for v in value if not isinstance(v, str)]
+            if bad_items:
+                errors.append(f"{key!r} entries must be strings")
+            for entry in [v for v in value if isinstance(v, str)]:
+                if entry not in known_ids:
+                    errors.append(
+                        f"unknown test ID {entry!r} in {key!r}"
+                        + _suggest_test_id(entry)
+                    )
+        if key == "skip_categories" and isinstance(value, list):
+            bad_items = [v for v in value if not isinstance(v, str)]
+            if bad_items:
+                errors.append(f"{key!r} entries must be strings")
+    skip = data.get("skip_tests") or []
+    only = data.get("only_tests") or []
+    if isinstance(skip, list) and isinstance(only, list):
+        overlap = {v for v in skip if isinstance(v, str)} & {
+            v for v in only if isinstance(v, str)
+        }
+        if overlap:
+            warns.append(
+                "tests in both only_tests and skip_tests "
+                f"(skip wins): {sorted(overlap)}"
+            )
+    return errors, warns
+
+
+def lint_profile_file(path: str | Path) -> tuple[list[str], list[str]]:
+    """Lint a profile file, returning (errors, warnings)."""
+    profile_path = Path(path)
+    if not profile_path.exists():
+        return [f"profile not found: {path}"], []
+    if not YAML_AVAILABLE:
+        return ["PyYAML is required for profile support"], []
+    try:
+        with open(profile_path, encoding="utf-8") as handle:
+            data = yaml.safe_load(handle)
+    except yaml.YAMLError as exc:
+        return [f"invalid YAML in {path}: {exc}"], []
+    if data is None:
+        return [], []
+    return lint_profile(data)

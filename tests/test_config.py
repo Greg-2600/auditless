@@ -173,3 +173,89 @@ def test_merge_intersects_only_unions_skip() -> None:
     assert merged.only_tests == {"A-2"}
     assert merged.skip_tests == {"B-1", "B-2"}
     assert merged.name == "prod"
+
+
+def test_lint_valid_profile(tmp_path: Path) -> None:
+    """A well-formed profile lints clean."""
+    from linux_health.config import lint_profile_file
+
+    profile = tmp_path / "good.yaml"
+    profile.write_text(
+        "name: test\nskip_tests: [STOR-6310]\ntimeout: 10\nverbose: false\n",
+        encoding="utf-8",
+    )
+    assert lint_profile_file(profile) == ([], [])
+
+
+def test_lint_catches_schema_problems() -> None:
+    """Unknown keys and wrong types are errors naming the culprit."""
+    from linux_health.config import lint_profile
+
+    errors, warnings = lint_profile(
+        {"name": "t", "skip_test": ["STOR-6310"], "timeout": "soon"}
+    )
+    assert any("skip_test" in e for e in errors)
+    assert any("timeout" in e for e in errors)
+    assert warnings == []
+
+
+def test_lint_unknown_ids_suggest(tmp_path: Path) -> None:
+    """Unknown test IDs error, with did-you-mean for close matches."""
+    from linux_health.config import lint_profile
+
+    errors, _ = lint_profile(
+        {
+            "skip_tests": ["STOR-6310"],
+            "only_tests": ["STOR-6310", "STOR-631", "stor-6310", "NOPE-0"],
+        }
+    )
+    assert not any("STOR-6310'" in e and "unknown" in e for e in errors)
+    suggest = next(e for e in errors if "'STOR-631'" in e)
+    assert "STOR-6310" in suggest and "did you mean" in suggest
+    lowered = next(e for e in errors if "'stor-6310'" in e)
+    assert "STOR-6310" in lowered
+    assert any("skip wins" in w for w in _warnings_for_overlap())
+    assert any("'NOPE-0'" in e and "did you mean" not in e for e in errors)
+
+
+def _warnings_for_overlap() -> list:
+    """Overlap warning helper sharing the overlap fixture profile."""
+    from linux_health.config import lint_profile
+
+    _, warnings = lint_profile(
+        {"skip_tests": ["STOR-6310"], "only_tests": ["STOR-6310"]}
+    )
+    return warnings
+
+
+def test_lint_file_problems(tmp_path: Path) -> None:
+    """Missing files and broken YAML are errors, never tracebacks."""
+    from linux_health.config import lint_profile_file
+
+    errors, _ = lint_profile_file(tmp_path / "missing.yaml")
+    assert any("not found" in e for e in errors)
+    broken = tmp_path / "broken.yaml"
+    broken.write_text("name: [unclosed\n", encoding="utf-8")
+    errors, _ = lint_profile_file(broken)
+    assert any("invalid YAML" in e for e in errors)
+
+
+def test_profile_lint_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """auditless profile lint exits 0/1/2 for clean/bad/misuse."""
+    from linux_health import cli
+
+    good = tmp_path / "good.yaml"
+    good.write_text("name: t\nskip_tests: [STOR-6310]\n", encoding="utf-8")
+    assert cli.main(["profile", "lint", str(good)]) == 0
+    assert "profile OK" in capsys.readouterr().out
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("name: t\nskip_test: [STOR-6310]\n", encoding="utf-8")
+    assert cli.main(["profile", "lint", str(bad)]) == 1
+    assert "skip_test" in capsys.readouterr().err
+
+    assert cli.main(["profile", "lint"]) == 2
+    assert cli.main(["profile", "--help"]) == 0
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["profile", "bogus"])
+    assert exc_info.value.code == 2
