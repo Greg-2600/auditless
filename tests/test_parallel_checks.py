@@ -193,11 +193,17 @@ def test_run_scan_forwards_jobs(
 
 def test_meets_speedup_threshold() -> None:
     """Gate predicate is a plain comparison (boundary inclusive)."""
-    from scripts.bench_checks import meets_speedup
+    import importlib.util
 
-    assert meets_speedup(2.0, 2.0) is True
-    assert meets_speedup(6.5, 2.0) is True
-    assert meets_speedup(1.9, 2.0) is False
+    script = Path(__file__).resolve().parent.parent / "scripts" / "bench_checks.py"
+    spec = importlib.util.spec_from_file_location("bench_checks_gate", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.meets_speedup(2.0, 2.0) is True
+    assert module.meets_speedup(6.5, 2.0) is True
+    assert module.meets_speedup(1.9, 2.0) is False
 
 
 def test_bench_check_flag_end_to_end() -> None:
