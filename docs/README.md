@@ -1,6 +1,7 @@
-# 📚 Linux Health Security Scanner - Documentation
+# 📚 Auditless - Documentation
 
-Welcome to the comprehensive documentation for **Linux Health Security Scanner v2.0.0**.
+Welcome to the comprehensive documentation for **Auditless**
+(agentless Linux security scanner; formerly Linux Health).
 
 ## Quick Navigation
 
@@ -21,7 +22,7 @@ Welcome to the comprehensive documentation for **Linux Health Security Scanner v
 - **[../.github/CODE_OF_CONDUCT.md](../.github/CODE_OF_CONDUCT.md)** - Community code of conduct
 
 #### Planning & Roadmap (v3.0+)
-- **[ANALYSIS_SUMMARY.md](ANALYSIS_SUMMARY.md)** - Executive summary of Linux Health vs Lynis analysis
+- **[ANALYSIS_SUMMARY.md](ANALYSIS_SUMMARY.md)** - Executive summary of Auditless vs Lynis analysis (written under the former Linux Health name)
 - **[LYNIS_COMPARISON.md](LYNIS_COMPARISON.md)** - Detailed feature-by-feature comparison with Lynis
 - **[IMPLEMENTATION_ROADMAP_V3.md](IMPLEMENTATION_ROADMAP_V3.md)** - Comprehensive roadmap for expanding to 70+ checks
 - **[TEST_ID_REFERENCE.md](TEST_ID_REFERENCE.md)** - Lynis-compatible test ID allocation scheme
