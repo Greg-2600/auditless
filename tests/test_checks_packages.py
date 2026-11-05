@@ -72,6 +72,11 @@ class TestCheckYumSecurityPlugin:
         """Should pass when YUM/DNF not installed (Debian-based system)"""
         ssh = mock_ssh_exec(
             [
+                (
+                    0,
+                    "ID=ubuntu\nID_LIKE=debian\n",
+                    "",
+                ),  # cat os-release (debian family)
                 (1, "", ""),  # which yum dnf
             ]
         )
@@ -83,6 +88,7 @@ class TestCheckYumSecurityPlugin:
         """Should pass when yum-plugin-security is installed"""
         ssh = mock_ssh_exec(
             [
+                (0, "ID=rhel\nID_LIKE=fedora\n", ""),  # cat os-release (rhel family)
                 (0, "/usr/bin/yum", ""),  # which yum dnf
                 (0, "yum-plugin-security-1.1.31-54.el7", ""),  # yum list | grep plugin
             ]
@@ -95,6 +101,7 @@ class TestCheckYumSecurityPlugin:
         """Should pass when DNF is installed (has built-in security features)"""
         ssh = mock_ssh_exec(
             [
+                (0, "ID=rhel\nID_LIKE=fedora\n", ""),  # cat os-release (rhel family)
                 (0, "/usr/bin/dnf", ""),  # which yum dnf
                 (
                     0,
@@ -116,6 +123,7 @@ class TestCheckYumSecurityPlugin:
         """Should fail when YUM installed but no security plugin"""
         ssh = mock_ssh_exec(
             [
+                (0, "ID=rhel\nID_LIKE=fedora\n", ""),  # cat os-release (rhel family)
                 (0, "/usr/bin/yum", ""),  # which yum dnf
                 (1, "", ""),  # yum list | grep plugin - not found
             ]
@@ -132,6 +140,7 @@ class TestCheckAptSecurityUpdates:
         """Should pass when APT not installed (RHEL-based system)"""
         ssh = mock_ssh_exec(
             [
+                (0, "ID=rhel\nID_LIKE=fedora\n", ""),  # cat os-release (rhel family)
                 (1, "", ""),  # which apt-get
             ]
         )
@@ -143,6 +152,7 @@ class TestCheckAptSecurityUpdates:
         """Should pass when Debian security sources configured"""
         ssh = mock_ssh_exec(
             [
+                (0, "ID=debian\n", ""),  # cat os-release (debian family)
                 (0, "/usr/bin/apt-get", ""),  # which apt-get apt
                 (
                     0,
@@ -160,6 +170,11 @@ class TestCheckAptSecurityUpdates:
         """Should pass when Ubuntu security sources configured"""
         ssh = mock_ssh_exec(
             [
+                (
+                    0,
+                    "ID=ubuntu\nID_LIKE=debian\n",
+                    "",
+                ),  # cat os-release (debian family)
                 (0, "/usr/bin/apt-get", ""),  # which apt-get apt
                 (
                     0,
@@ -177,6 +192,11 @@ class TestCheckAptSecurityUpdates:
         """Should fail when APT installed but no security sources"""
         ssh = mock_ssh_exec(
             [
+                (
+                    0,
+                    "ID=ubuntu\nID_LIKE=debian\n",
+                    "",
+                ),  # cat os-release (debian family)
                 (0, "/usr/bin/apt-get", ""),  # which apt-get
                 (1, "", ""),  # grep security - nothing found
             ]
