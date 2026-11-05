@@ -217,9 +217,13 @@ class SSHSession:
         _, stdout, stderr = self._client.exec_command(  # nosec B601
             command, timeout=timeout
         )
-        exit_status = stdout.channel.recv_exit_status()
-        out = stdout.read().decode("utf-8", errors="replace").strip()
-        err = stderr.read().decode("utf-8", errors="replace").strip()
+        try:
+            exit_status = stdout.channel.recv_exit_status()
+            out = stdout.read().decode("utf-8", errors="replace").strip()
+            err = stderr.read().decode("utf-8", errors="replace").strip()
+        finally:
+            with suppress(Exception):
+                stdout.channel.close()
         return exit_status, out, err
 
     def is_healthy(self) -> bool:

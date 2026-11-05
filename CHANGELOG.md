@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `~/.ssh/known_hosts` before upgrading (see README “SSH Host Key
   Management”).
 
+### Changed
+
+- Unprivileged scans (non-root, no sudo, no password) now mark the
+  four root-only checks (stale/recent accounts, sudo usage, privilege
+  vectors) as unknown WARNs under a Privilege category instead of
+  reporting PASS on unreadable sources. Privileged scans unchanged.
+
 ### Deprecated
 
 - `linux-health` console script: emits a deprecation notice, use

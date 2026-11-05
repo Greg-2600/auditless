@@ -6,11 +6,14 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, cast
 
 from .ssh_client import SSHSession
 from .test_ids import CHECK_TEST_IDS
+
+from paramiko.ssh_exception import ChannelException
 
 COMMAND_TIMEOUT: float = 60.0
 # Output cache keyed by (hostname, command): concurrent fleet scans of
@@ -173,9 +176,22 @@ def _run(
         and not isinstance(ssh._client, type(None))
     ):
         try:
-            stdin, stdout, stderr = ssh._client.exec_command(
-                command, timeout=effective_timeout
-            )
+            # Burst channel opens occasionally fail on small targets
+            # (parallel scans); retry twice before giving up so one
+            # flake never aborts a whole scan.
+            channel_error: Exception | None = None
+            for attempt in range(3):
+                try:
+                    stdin, stdout, stderr = ssh._client.exec_command(
+                        command, timeout=effective_timeout
+                    )
+                    channel_error = None
+                    break
+                except (ChannelException, EOFError) as exc:
+                    channel_error = exc
+                    time.sleep(0.5 * (attempt + 1))
+            if channel_error is not None:
+                raise channel_error
 
             # If password provided and command uses sudo -S, write password to stdin
             if password and "sudo -S" in command:
@@ -192,8 +208,12 @@ def _run(
                 time.sleep(0.001)
 
             exit_status = stdout.channel.recv_exit_status()
-            out = stdout.read().decode("utf-8", errors="replace").strip()
-            err = stderr.read().decode("utf-8", errors="replace").strip()
+            try:
+                out = stdout.read().decode("utf-8", errors="replace").strip()
+                err = stderr.read().decode("utf-8", errors="replace").strip()
+            finally:
+                with suppress(Exception):
+                    stdout.channel.close()
             result = (exit_status, out, err)
             # Cache result for future use (if caching is enabled)
             if use_cache:
@@ -3369,10 +3389,15 @@ _CheckThunk = Callable[[], "CheckResult | list[CheckResult]"]
 def _check_thunks(ssh: SSHSession, password: str = "") -> list[tuple[str, _CheckThunk]]:
     """Named zero-argument check closures (canonical order).
 
-    Names are the check function names, used for timeout placeholders
-    and test-ID resolution.
+    Names are the check function names, used for timeout placeholders,
+    privilege gating, and test-ID resolution. Checks in NEEDS_ELEVATION
+    degrade to unknown-marked WARN results when the session provably
+    lacks elevation, instead of reporting PASS on unreadable sources.
     """
-    return [
+    privilege = get_privilege(ssh)
+    elevated = _session_elevated(privilege, password)
+    gated: list[tuple[str, _CheckThunk]] = []
+    for name, thunk in [
         # Original checks
         ("check_disk_usage", lambda: check_disk_usage(ssh)),
         ("check_memory", lambda: check_memory(ssh)),
@@ -3481,7 +3506,12 @@ def _check_thunks(ssh: SSHSession, password: str = "") -> list[tuple[str, _Check
         ),
         ("check_php_security", lambda: check_php_security(ssh, password)),
         ("check_dns_configuration", lambda: check_dns_configuration(ssh, password)),
-    ]
+    ]:
+        if not elevated and name in NEEDS_ELEVATION:
+            gated.append((name, _gated_thunk(name)))
+        else:
+            gated.append((name, cast("_CheckThunk", thunk)))
+    return gated
 
 
 def _flatten(items: list[CheckResult | list[CheckResult]]) -> List[CheckResult]:
@@ -3510,6 +3540,84 @@ def _timeout_placeholder(name: str, check_timeout: float) -> CheckResult:
         recommendation="Re-run with a higher --check-timeout if this check matters.",
         test_id=CHECK_TEST_IDS.get(name, ""),
     )
+
+
+@dataclass(frozen=True)
+class PrivilegeInfo:
+    """Session privilege facts (unknown fields stay falsy/empty)."""
+
+    is_root: bool = False
+    sudo_no_password: bool = False
+    uid: str = ""
+
+
+#: Core checks whose verdict is meaningless without elevation: denied
+#: reads (lastlog, home-dir stats, sudoers, auth logs) surface as empty
+#: output these checks would otherwise report as PASS. Gated in
+#: _check_thunks when the session provably lacks elevation (numeric
+#: non-root uid, no sudo, no password); ambiguous signals fail open.
+NEEDS_ELEVATION: frozenset[str] = frozenset(
+    {
+        "check_stale_user_accounts",
+        "check_recently_created_accounts",
+        "check_unexpected_sudo_usage",
+        "check_privilege_escalation_vectors",
+    }
+)
+
+
+def get_privilege(ssh: SSHSession) -> PrivilegeInfo:
+    """Detect session privilege (never raises; unknown on any failure)."""
+    try:
+        _, uid_out, _ = _run(ssh, "id -u")
+        uid = uid_out.strip()
+    except Exception:
+        return PrivilegeInfo()
+    try:
+        ret, _, _ = _run(ssh, "sudo -n true 2>/dev/null")
+        sudo_no_password = ret == 0
+    except Exception:
+        sudo_no_password = False
+    return PrivilegeInfo(is_root=uid == "0", sudo_no_password=sudo_no_password, uid=uid)
+
+
+def _session_elevated(info: PrivilegeInfo, password: str) -> bool:
+    """Whether the session can plausibly elevate (fail-open on ambiguity).
+
+    Only a proven non-root numeric uid without sudo and without a
+    password gates checks; anything uncertain runs them as before.
+    """
+    if info.is_root or info.sudo_no_password or bool(password):
+        return True
+    uid = info.uid
+    if isinstance(uid, str) and uid.isdigit() and uid != "0":
+        return False
+    return True
+
+
+def _privilege_placeholder(name: str) -> CheckResult:
+    """WARN result marking an unevaluable check as unknown (not a PASS)."""
+    return CheckResult(
+        category="Privilege",
+        item=f"{name} skipped (unprivileged)",
+        status="warn",
+        details=(
+            "unknown: this check needs elevated privileges (root or sudo) "
+            "for a meaningful verdict; re-run with --ask-password, "
+            "--key-file plus sudo access, or as root."
+        ),
+        recommendation="Re-run privileged to assess this area.",
+        test_id=CHECK_TEST_IDS.get(name, ""),
+    )
+
+
+def _gated_thunk(name: str) -> _CheckThunk:
+    """Placeholder thunk replacing an unevaluable check (same shape)."""
+
+    def run() -> CheckResult:
+        return _privilege_placeholder(name)
+
+    return run
 
 
 def run_all_checks_parallel(
