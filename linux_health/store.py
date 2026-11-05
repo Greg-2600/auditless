@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS hosts (
     username TEXT NOT NULL,
     auth TEXT NOT NULL DEFAULT 'password',
     has_key INTEGER NOT NULL DEFAULT 0,
+    jump_hostname TEXT NOT NULL DEFAULT '',
+    jump_port INTEGER NOT NULL DEFAULT 22,
+    jump_username TEXT NOT NULL DEFAULT '',
+    jump_auth TEXT NOT NULL DEFAULT 'password',
+    has_jump_key INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
