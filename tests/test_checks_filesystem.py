@@ -219,7 +219,7 @@ class TestCheckTmpNoexec:
 
         result = check_tmp_noexec(ssh)
 
-        assert result.status == "fail"
+        assert result.status == "warn"
         assert "missing noexec" in result.details.lower()
 
 

@@ -700,7 +700,7 @@ def check_accounts(ssh: SSHSession) -> CheckResult:
         )
     accounts = [line.strip() for line in out.splitlines() if line.strip()]
     if len(accounts) > 1:
-        return _warn(
+        return _fail(
             "Root accounts",
             f"Multiple UID 0 accounts: {', '.join(accounts)}",
             "Limit UID 0 to root; remove or demote extra accounts",

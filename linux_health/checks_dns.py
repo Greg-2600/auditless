@@ -118,7 +118,7 @@ def check_dnssec_configured(ssh: SSHSession, password: str = "") -> CheckResult:
         dnssec_found.append("Unbound DNSSEC validation")
 
     if not dnssec_found:
-        return _fail(
+        return _warn(
             "DNSSEC Configuration",
             "DNSSEC not configured",
             "Enable DNSSEC validation: set dnssec-validation to auto in named.conf",
