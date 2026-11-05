@@ -37,3 +37,12 @@ def test_live_docs_use_auditless() -> None:
         text = (ROOT / rel).read_text(encoding="utf-8")
         assert "Auditless" in text, rel
         assert "Linux Health Security Scanner" not in text, rel
+
+
+def test_security_verify_example_parameterized() -> None:
+    """Release verify snippet takes VERSION (no hardcoded stale release)."""
+    text = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    assert "VERSION=${VERSION" in text
+    assert "auditless:${VERSION}" in text
+    assert '"v${VERSION}"' in text
+    assert "auditless:2.5.2" not in text

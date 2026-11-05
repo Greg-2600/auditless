@@ -48,7 +48,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 17 — [P0] Standardize report/artifact prefix on `auditless-*` (reports dir already does; verify JSON/MD exporters + scheduler snapshots + backup filenames all match). `reports` (effort: S)
 - [x] 18 — [P0] Audit `docs/*.md` + `scripts/` for `linux_health` vs `auditless` references; add a `docs/NAMING.md` alias table and fix titles (keep `IMPLEMENTATION_ROADMAP_V3.md` as historical, superseded-by pointer to this file). `docs` (effort: M)
 - [x] 19 — [P0] Deprecation policy for the `linux-health` console script: emit `DeprecationWarning`/stderr note, keep through v3.x, removal slated v4.0; document in `CHANGELOG.md` + `README.md`. `cli` (effort: S)
-- [ ] 20 — [P0] Docker/GHCR naming pass: `Dockerfile`, `docker-compose.yml`, `SECURITY.md` verify-example (`2.5.2` → parameterized `VERSION`), service/container names all `auditless`; no `linux_health` image tag remains. `docker` (effort: S)
+- [x] 20 — [P0] Docker/GHCR naming pass: `Dockerfile`, `docker-compose.yml`, `SECURITY.md` verify-example (`2.5.2` → parameterized `VERSION`), service/container names all `auditless`; no `linux_health` image tag remains. `docker` (effort: S)
 
 ---
 
