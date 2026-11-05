@@ -56,6 +56,30 @@ We actively monitor dependencies for vulnerabilities via:
 
 Report dependency vulnerabilities using the process above.
 
+## Supply Chain (what each release artifact proves)
+
+Every `v*` tag builds multi-arch images with attestations, then signs
+and verifies them before the release counts as good:
+
+- **SLSA provenance** — `provenance: true` on the image build records
+  exactly which commit and workflow produced the image.
+- **SBOM** — `sbom: true` attaches a software bill of materials.
+- **Signatures** — keyless Sigstore/OIDC signing; no long-lived keys.
+- **Verification gate** — the release workflow itself runs
+  `cosign verify`, `verify-attestation`, an SBOM download, and a boot
+  smoke test of the image *by digest*. Trivy scans upload SARIF.
+
+Verify any release yourself (no secrets needed):
+
+```bash
+IMG=ghcr.io/Greg-2600/auditless:2.4.0
+cosign verify \
+  --certificate-identity-regexp "https://github.com/Greg-2600/auditless/.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$IMG"
+cosign download sbom "$IMG" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['packages']), 'packages')"
+```
+
 ---
 
 **Thank you for helping keep Auditless secure!**

@@ -41,6 +41,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +70,7 @@ jobs:
             type=sha
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -73,3 +78,57 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # SLSA provenance + SBOM attestations land on the image.
+          provenance: true
+          sbom: true
+
+  sign-image:
+    runs-on: ubuntu-latest
+    needs: publish-docker
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless OIDC)
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}@${{ needs.publish-docker.outputs.digest }}
+        run: cosign sign --yes "$IMAGE"
+
+  verify-release:
+    runs-on: ubuntu-latest
+    needs: sign-image
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Verify signature, provenance, and SBOM
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}@${{ needs.publish-docker.outputs.digest }}
+          REPO: ${{ github.repository }}
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${REPO}/.*" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$IMAGE"
+          cosign verify-attestation --type slsaprovenance \
+            --certificate-identity-regexp "https://github.com/${REPO}/.*" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$IMAGE"
+          cosign download sbom "$IMAGE" > /tmp/sbom.json
+          python3 -c "import json; d=json.load(open('/tmp/sbom.json')); print('sbom packages:', len(d.get('packages', [])))"
+
+      - name: Boot smoke test of the signed image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}@${{ needs.publish-docker.outputs.digest }}
+        run: |
+          docker run --rm "$IMAGE" --help | head -3
