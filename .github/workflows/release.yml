@@ -113,7 +113,7 @@ jobs:
 
   verify-release:
     runs-on: ubuntu-latest
-    needs: sign-image
+    needs: [publish-docker, sign-image]
     permissions:
       contents: read
       packages: read
