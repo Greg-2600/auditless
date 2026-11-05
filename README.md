@@ -4,7 +4,7 @@
 
 ## Enterprise-Grade Security Assessment Platform for Linux Infrastructure
 
-[![Production Ready](https://img.shields.io/badge/status-production%20ready-success)](https://github.com) [![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com) [![Tests](https://img.shields.io/badge/tests-334%2F334%20passing-success)](https://github.com) [![Coverage](https://img.shields.io/badge/coverage-76%25-green)](https://github.com) [![Code Quality](https://img.shields.io/badge/linting-0%20errors-success)](https://github.com) [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org) [![Docker](https://img.shields.io/badge/docker-supported-blue)](https://docker.com) [![Lynis Parity](https://img.shields.io/badge/lynis%20parity-95%25-brightgreen)](https://github.com)
+[![Production Ready](https://img.shields.io/badge/status-production%20ready-success)](https://github.com) [![Version](https://img.shields.io/badge/version-2.5.3-blue)](https://github.com) [![Tests](https://img.shields.io/badge/tests-507%20passing-success)](https://github.com) [![Coverage](https://img.shields.io/badge/coverage-87%25-green)](https://github.com) [![Code Quality](https://img.shields.io/badge/linting-0%20errors-success)](https://github.com) [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org) [![Docker](https://img.shields.io/badge/docker-supported-blue)](https://docker.com) [![Lynis Parity](https://img.shields.io/badge/lynis%20parity-95%25-brightgreen)](https://github.com)
 
 ---
 
