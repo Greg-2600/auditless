@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from linux_health.config import (
+    get_config_dirs,
     get_default_profile_paths,
     is_legacy_profile_path,
     load_profile_auto,
@@ -94,3 +95,43 @@ def test_no_profile_returns_none(
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert load_profile_auto() is None
+
+
+def test_get_config_dirs_canonical_first() -> None:
+    """Shared base dirs: every auditless dir precedes its legacy twin."""
+    dirs = get_config_dirs()
+    home = Path.home()
+    pairs = [
+        (
+            home / ".config" / "auditless",
+            home / ".config" / "linux_health",
+        ),
+        (home / ".auditless", home / ".linux_health"),
+        (Path("/etc/auditless"), Path("/etc/linux_health")),
+    ]
+    for canonical, legacy in pairs:
+        assert dirs.index(canonical) < dirs.index(legacy)
+
+
+def test_default_paths_built_from_config_dirs() -> None:
+    """Non-cwd profile paths are exactly config_dirs + profile.yaml."""
+    dirs = get_config_dirs()
+    tails = [p.parent for p in get_default_profile_paths() if p.name == "profile.yaml"]
+    assert tails == dirs
+
+
+def test_list_profiles_uses_shared_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard discovers profiles in canonical and legacy profile dirs."""
+    from linux_health.dashboard import list_profiles
+
+    _isolate(tmp_path, monkeypatch)
+    (tmp_path / "profiles").mkdir()
+    (tmp_path / "profiles" / "quick.yaml").write_text("name: quick\n", encoding="utf-8")
+    legacy_dir = tmp_path / ".config" / "linux_health" / "profiles"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "old.yaml").write_text("name: old\n", encoding="utf-8")
+    found = {entry["name"]: entry for entry in list_profiles()}
+    assert found["quick"]["source"] == "profiles-dir"
+    assert found["old"]["source"] == "profiles-dir"

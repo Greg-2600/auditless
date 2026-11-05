@@ -143,6 +143,23 @@ def is_legacy_profile_path(path: str | Path) -> bool:
     )
 
 
+def get_config_dirs() -> list[Path]:
+    """Base config directories, canonical ``auditless`` first, legacy last.
+
+    Shared by :func:`get_default_profile_paths` (appends ``profile.yaml``)
+    and the dashboard profile-directory scan (appends ``profiles``).
+    """
+    home = Path.home()
+    return [
+        home / ".config" / "auditless",
+        home / ".auditless",
+        Path("/etc/auditless"),
+        home / ".config" / "linux_health",
+        home / ".linux_health",
+        Path("/etc/linux_health"),
+    ]
+
+
 def get_default_profile_paths() -> list[Path]:
     """Get default profile search paths (canonical first, legacy last)."""
     paths = []
@@ -157,16 +174,7 @@ def get_default_profile_paths() -> list[Path]:
     for stem in stems:
         paths.append(Path.cwd() / stem)
 
-    # Home directory
-    home = Path.home()
-    paths.append(home / ".config" / "auditless" / "profile.yaml")
-    paths.append(home / ".auditless" / "profile.yaml")
-    paths.append(home / ".config" / "linux_health" / "profile.yaml")
-    paths.append(home / ".linux_health" / "profile.yaml")
-
-    # System-wide
-    paths.append(Path("/etc/auditless/profile.yaml"))
-    paths.append(Path("/etc/linux_health/profile.yaml"))
+    paths.extend(config_dir / "profile.yaml" for config_dir in get_config_dirs())
 
     return paths
 

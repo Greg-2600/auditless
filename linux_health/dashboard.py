@@ -670,24 +670,22 @@ def list_profiles() -> list[dict]:
             seen.add(key)
             found.append({"name": name, "path": key, "source": source})
 
-    for profiles_dir in (
-        Path.cwd() / "profiles",
-        Path.home() / ".config" / "linux_health" / "profiles",
-        Path("/etc/linux_health/profiles"),
-    ):
+    try:
+        from .config import get_config_dirs, get_default_profile_paths
+    except ImportError:
+        return found
+
+    for profiles_dir in [Path.cwd() / "profiles"] + [
+        config_dir / "profiles" for config_dir in get_config_dirs()
+    ]:
         if profiles_dir.is_dir():
             for candidate in sorted(profiles_dir.glob("*.yaml")) + sorted(
                 profiles_dir.glob("*.yml")
             ):
                 add(candidate.stem, candidate, "profiles-dir")
-    try:
-        from .config import get_default_profile_paths
-
-        for candidate in get_default_profile_paths():
-            if candidate.exists():
-                add(candidate.stem, candidate, "auto")
-    except ImportError:
-        pass
+    for candidate in get_default_profile_paths():
+        if candidate.exists():
+            add(candidate.stem, candidate, "auto")
     return found
 
 
