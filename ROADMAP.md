@@ -36,7 +36,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 5 — [P0] Fix `README.md` badges: version `2.0.0` → `2.5.3` (or dynamic), tests `334/334` → `499`, coverage `76%` → actual. `docs` (effort: S)
 - [x] 6 — [P0] Unify `linux_health/dashboard.py` strings: module docstring + FastAPI `title/description` + `<title>`/`<h1>` currently mix `Linux Health Security Scanner` and `Auditless`. Canonical: `Auditless`. `dashboard` (effort: S)
 - [x] 7 — [P0] Unify `linux_health/report.py` + JSON `scan_info.scanner` (`Linux Health Security Scanner` → `Auditless`, keep `scanner_version`). Add test asserting the string. `report` (effort: S)
-- [ ] 8 — [P0] Unify CLI help/epilog (`cli.py`, `--help` output, Docker `HEALTHCHECK`) on `auditless` as primary, `linux-health` noted as alias. `cli` (effort: S)
+- [x] 8 — [P0] Unify CLI help/epilog (`cli.py`, `--help` output, Docker `HEALTHCHECK`) on `auditless` as primary, `linux-health` noted as alias. `cli` (effort: S)
 - [ ] 9 — [P0] Add `auditless` import alias for the `linux_health` package (shim module + `sys.modules` fallback) so `import auditless` and `python -m auditless` work; keep `linux_health` working. `packaging` (effort: M)
 - [ ] 10 — [P0] Dual config-path discovery: check `~/.config/auditless/`, `/etc/auditless/`, `auditless.yaml` **first**, fall back to existing `linux_health` paths with a one-time deprecation warning (no silent break). `config` (effort: M)
 - [ ] 11 — [P0] Migrate `dashboard.py` profile search path (`~/.config/linux_health/profiles`) to the same dual-path helper as item 10; extract one shared `get_config_dirs()` used by both. `config` (effort: S)

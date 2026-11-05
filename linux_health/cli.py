@@ -84,7 +84,13 @@ def build_parser() -> argparse.ArgumentParser:
     Returns:
         Configured argparse.ArgumentParser instance
     """
-    parser = argparse.ArgumentParser(description="Linux host health checker over SSH")
+    parser = argparse.ArgumentParser(
+        prog="auditless",
+        description="Auditless — agentless Linux security assessment over SSH",
+        epilog="Entry points: auditless (primary), linux-health (deprecated "
+        "alias through v3.x), python -m linux_health. "
+        "Docs: https://github.com/Greg-2600/auditless",
+    )
     parser.add_argument("hostname", nargs="?", default=None, help="Target host")
     parser.add_argument("username", nargs="?", default=None, help="SSH username")
     parser.add_argument(
