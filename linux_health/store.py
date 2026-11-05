@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS hosts (
     username TEXT NOT NULL,
     auth TEXT NOT NULL DEFAULT 'password',
     has_key INTEGER NOT NULL DEFAULT 0,
+    jump_hostname TEXT NOT NULL DEFAULT '',
+    jump_port INTEGER NOT NULL DEFAULT 22,
+    jump_username TEXT NOT NULL DEFAULT '',
+    jump_auth TEXT NOT NULL DEFAULT 'password',
+    has_jump_key INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
@@ -125,6 +130,16 @@ class Store:
         self.secrets = secrets if secrets is not None else SecretBox(load_master_key())
         with _connect(self.db_path) as conn:
             conn.executescript(_SCHEMA)
+            existing = {row[1] for row in conn.execute("PRAGMA table_info(hosts)")}
+            for column, ddl in (
+                ("jump_hostname", "TEXT NOT NULL DEFAULT ''"),
+                ("jump_port", "INTEGER NOT NULL DEFAULT 22"),
+                ("jump_username", "TEXT NOT NULL DEFAULT ''"),
+                ("jump_auth", "TEXT NOT NULL DEFAULT 'password'"),
+                ("has_jump_key", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if column not in existing:
+                    conn.execute(f"ALTER TABLE hosts ADD COLUMN {column} {ddl}")
 
     # -- hosts --------------------------------------------------------
 
@@ -136,24 +151,48 @@ class Store:
         port: int = 22,
         auth: str = "password",
         host_id: str | None = None,
+        jump_hostname: str = "",
+        jump_port: int = 22,
+        jump_username: str = "",
+        jump_auth: str = "password",
     ) -> dict:
         """Create or replace a host record (key material untouched)."""
         if auth not in ("password", "key"):
             raise ValueError("auth must be 'password' or 'key'")
+        if jump_auth not in ("password", "key"):
+            raise ValueError("jump_auth must be 'password' or 'key'")
         now = time.time()
         hid = host_id or uuid.uuid4().hex[:12]
         with _connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT has_key FROM hosts WHERE id = ?", (hid,)
+                "SELECT has_key, has_jump_key FROM hosts WHERE id = ?", (hid,)
             ).fetchone()
             has_key = row["has_key"] if row else 0
+            has_jump_key = row["has_jump_key"] if row else 0
             conn.execute(
                 "INSERT OR REPLACE INTO hosts"
                 " (id, name, hostname, port, username, auth, has_key,"
-                " created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE("
+                " jump_hostname, jump_port, jump_username, jump_auth,"
+                " has_jump_key, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE("
                 "  (SELECT created_at FROM hosts WHERE id = ?), ?), ?)",
-                (hid, name, hostname, port, username, auth, has_key, hid, now, now),
+                (
+                    hid,
+                    name,
+                    hostname,
+                    port,
+                    username,
+                    auth,
+                    has_key,
+                    jump_hostname,
+                    jump_port,
+                    jump_username,
+                    jump_auth,
+                    has_jump_key,
+                    hid,
+                    now,
+                    now,
+                ),
             )
         result = self.get_host(hid)
         assert result is not None
@@ -176,7 +215,7 @@ class Store:
         return [dict(row) for row in rows]
 
     def delete_host(self, host_id: str) -> bool:
-        """Delete a host and its stored key material."""
+        """Delete a host and all its stored key material."""
         with _connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT id FROM hosts WHERE id = ?", (host_id,)
@@ -184,60 +223,75 @@ class Store:
             if row is None:
                 return False
             self.clear_host_key(host_id)
+            self.clear_host_key(host_id, kind="jump")
             conn.execute("DELETE FROM hosts WHERE id = ?", (host_id,))
         return True
 
     # -- keys (bytes on disk, 0600, write-only via API) ----------------
 
-    def key_path(self, host_id: str) -> Path:
-        """Filesystem location for a host's private key (guarded)."""
-        return self.directory / "keys" / _safe_id(host_id)
+    @staticmethod
+    def _key_kind(kind: str) -> str:
+        if kind not in ("host", "jump"):
+            raise ValueError("kind must be 'host' or 'jump'")
+        return kind
 
-    def set_host_key(self, host_id: str, key_text: str) -> None:
+    def key_path(self, host_id: str, kind: str = "host") -> Path:
+        """Filesystem location for a key (guarded; jump keys get .jump)."""
+        safe = _safe_id(host_id)
+        self._key_kind(kind)
+        name = safe if kind == "host" else f"{safe}.jump"
+        return self.directory / "keys" / name
+
+    def _key_flag(self, kind: str) -> str:
+        return "has_key" if kind == "host" else "has_jump_key"
+
+    def set_host_key(self, host_id: str, key_text: str, kind: str = "host") -> None:
         """Store key bytes (encrypted when configured) with 0600 perms."""
         row = self.get_host(host_id)
         if row is None:
             raise KeyError(f"unknown host {host_id}")
         # Path derives from the stored row, never the request value.
-        path = self.key_path(row["id"])
+        path = self.key_path(row["id"], kind)
         path.write_text(self.secrets.encrypt(key_text), encoding="utf-8")
         os.chmod(path, 0o600)
         with _connect(self.db_path) as conn:
             conn.execute(
-                "UPDATE hosts SET has_key = 1, updated_at = ? WHERE id = ?",
+                f"UPDATE hosts SET {self._key_flag(kind)} = 1, updated_at = ?"
+                " WHERE id = ?",
                 (time.time(), host_id),
             )
 
-    def read_host_key(self, host_id: str) -> str:
+    def read_host_key(self, host_id: str, kind: str = "host") -> str:
         """Load and decrypt a host key (server-side use only)."""
         row = self.get_host(host_id)
         if row is None:
             raise KeyError(f"unknown host {host_id}")
         return self.secrets.decrypt(
-            self.key_path(row["id"]).read_text(encoding="utf-8")
+            self.key_path(row["id"], kind).read_text(encoding="utf-8")
         )
 
-    def clear_host_key(self, host_id: str) -> None:
+    def clear_host_key(self, host_id: str, kind: str = "host") -> None:
         """Remove stored key bytes and clear the flag (idempotent)."""
         row = self.get_host(host_id)
         if row is None:
             return
         try:
-            self.key_path(row["id"]).unlink()
+            self.key_path(row["id"], kind).unlink()
         except FileNotFoundError:
             pass
         with _connect(self.db_path) as conn:
             conn.execute(
-                "UPDATE hosts SET has_key = 0, updated_at = ? WHERE id = ?",
+                f"UPDATE hosts SET {self._key_flag(kind)} = 0, updated_at = ?"
+                " WHERE id = ?",
                 (time.time(), host_id),
             )
 
-    def has_host_key(self, host_id: str) -> bool:
+    def has_host_key(self, host_id: str, kind: str = "host") -> bool:
         """Whether key bytes exist on disk for the host."""
         row = self.get_host(host_id)
         if row is None:
             return False
-        return self.key_path(row["id"]).exists()
+        return self.key_path(row["id"], kind).exists()
 
     def webhook_for(self, schedule: dict) -> str:
         """Decrypt a schedule's webhook URL (server-side delivery only)."""
@@ -385,10 +439,12 @@ class Store:
         """Encrypt any plaintext secrets in place (idempotent)."""
         keys = webhooks = 0
         for host in self.list_hosts():
-            if host["has_key"]:
-                raw = self.key_path(host["id"]).read_text(encoding="utf-8")
+            for kind, flag in (("host", "has_key"), ("jump", "has_jump_key")):
+                if not host[flag]:
+                    continue
+                raw = self.key_path(host["id"], kind).read_text(encoding="utf-8")
                 if self.secrets.enabled and not self.secrets.is_encrypted(raw):
-                    self.set_host_key(host["id"], self.secrets.decrypt(raw))
+                    self.set_host_key(host["id"], self.secrets.decrypt(raw), kind=kind)
                     keys += 1
         with _connect(self.db_path) as conn:
             rows = conn.execute(
@@ -415,10 +471,12 @@ class Store:
         """Re-encrypt every stored secret (caller swaps the env key after)."""
         keys = webhooks = 0
         for host in self.list_hosts():
-            if host["has_key"]:
-                raw = self.key_path(host["id"]).read_text(encoding="utf-8")
+            for kind, flag in (("host", "has_key"), ("jump", "has_jump_key")):
+                if not host[flag]:
+                    continue
+                raw = self.key_path(host["id"], kind).read_text(encoding="utf-8")
                 plain = old_box.decrypt(raw)
-                self.key_path(host["id"]).write_text(
+                self.key_path(host["id"], kind).write_text(
                     new_box.encrypt(plain), encoding="utf-8"
                 )
                 keys += 1

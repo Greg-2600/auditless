@@ -30,6 +30,7 @@ class SSHSession:
         timeout: float = 5.0,
         strict_host_key_checking: bool = False,
         key_path: str | None = None,
+        gateway: dict | None = None,
     ):
         self.hostname = hostname
         self.username = username
@@ -38,7 +39,11 @@ class SSHSession:
         self.timeout = timeout
         self.strict_host_key_checking = strict_host_key_checking
         self.key_path = key_path
+        # Optional bastion: {"hostname":..,"port":22,"username":..,
+        #   "password":..,"key_path":..} — tunneled via direct-tcpip.
+        self.gateway = gateway or {}
         self._client: paramiko.SSHClient | None = None
+        self._gateway_transport: paramiko.Transport | None = None
 
     def __enter__(self) -> "SSHSession":
         self.connect()
@@ -67,6 +72,9 @@ class SSHSession:
             # Auto-add is the documented default for lab/CI convenience;
             # --strict-host-key-checking switches to RejectPolicy.
             client.set_missing_host_key_policy(AutoAddPolicy())  # nosec B507
+        sock = None
+        if self.gateway:
+            sock = self._open_gateway_channel()
         client.connect(
             hostname=self.hostname,
             port=self.port,
@@ -74,16 +82,53 @@ class SSHSession:
             password=self.password or None,
             timeout=self.timeout,
             key_filename=self.key_path,
+            sock=sock,
             allow_agent=False,
             look_for_keys=False,
         )
         self._client = client
+
+    def _open_gateway_channel(self) -> paramiko.Channel:
+        """Open a direct-tcpip channel through the bastion host."""
+        gw_host = self.gateway.get("hostname", "")
+        gw_port = int(self.gateway.get("port", 22) or 22)
+        transport = paramiko.Transport((gw_host, gw_port))
+        transport.set_keepalive(30)
+        transport.connect(
+            username=self.gateway.get("username", ""),
+            password=self.gateway.get("password") or None,
+            pkey=self._load_gateway_key(),
+        )
+        self._gateway_transport = transport
+        return transport.open_channel(
+            "direct-tcpip", (self.hostname, self.port), ("127.0.0.1", 0)
+        )
+
+    def _load_gateway_key(self) -> paramiko.PKey | None:
+        """Load a bastion private key file, any supported type."""
+        key_path = self.gateway.get("key_path") or ""
+        if not key_path:
+            return None
+        last_error = None
+        for key_class in (
+            paramiko.RSAKey,
+            paramiko.Ed25519Key,
+            paramiko.ECDSAKey,
+        ):
+            try:
+                return key_class.from_private_key_file(key_path)
+            except Exception as exc:  # wrong type or encrypted: try next
+                last_error = exc
+        raise ValueError(f"unreadable gateway key {key_path!r}: {last_error}")
 
     def close(self) -> None:
         """Close SSH connection and cleanup resources."""
         if self._client:
             self._client.close()
             self._client = None
+        if self._gateway_transport is not None:
+            self._gateway_transport.close()
+            self._gateway_transport = None
 
     def run(self, command: str, timeout: float = 10.0) -> tuple[int, str, str]:
         """Execute remote command on target system.

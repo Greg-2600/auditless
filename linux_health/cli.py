@@ -140,6 +140,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="SSH private key file for key auth (password then only used for sudo)",
     )
     parser.add_argument(
+        "--jump-host",
+        type=str,
+        default="",
+        help="Bastion host to tunnel through (empty = direct connection)",
+    )
+    parser.add_argument("--jump-port", type=int, default=22, help="Bastion SSH port")
+    parser.add_argument("--jump-user", type=str, default="", help="Bastion username")
+    parser.add_argument(
+        "--jump-password",
+        type=str,
+        default="",
+        help="Bastion password (prefer key auth; use with --jump-key-file)",
+    )
+    parser.add_argument(
+        "--jump-key-file", type=str, default="", help="Bastion private key file"
+    )
+    parser.add_argument(
         "--strict-host-key-checking",
         action="store_true",
         help="Reject unknown SSH host keys instead of auto-adding them "
@@ -208,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     password = args.password or ""
     if args.ask_password or password == "-":
         password = getpass.getpass("SSH password: ")
-    elif password:
+    elif password or args.jump_password:
         print(
             "Warning: password passed on the command line is visible in "
             "process listings and shell history; prefer '--ask-password'.",
@@ -233,6 +250,15 @@ def main(argv: list[str] | None = None) -> int:
     reset_command_cache()
 
     try:
+        gateway = None
+        if args.jump_host:
+            gateway = {
+                "hostname": args.jump_host,
+                "port": args.jump_port,
+                "username": args.jump_user,
+                "password": args.jump_password,
+                "key_path": args.jump_key_file or "",
+            }
         with SSHSession(
             hostname=args.hostname,
             username=args.username,
@@ -241,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
             timeout=args.timeout,
             strict_host_key_checking=args.strict_host_key_checking,
             key_path=args.key_file,
+            gateway=gateway,
         ) as ssh:
             system_info = gather_system_info(ssh)
             check_results = run_all_checks(ssh, password)

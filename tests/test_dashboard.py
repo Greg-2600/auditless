@@ -390,6 +390,136 @@ def test_hostile_ids_never_touch_disk(client):
         assert exc_info.value.status == 404
 
 
+def test_jump_key_lifecycle(client):
+    """Jump keys store apart, never readable, delete cleanly."""
+    host = client.create_host(
+        "via",
+        "inner",
+        "u",
+        jump_hostname="bastion",
+        jump_username="b",
+        jump_auth="key",
+    )
+    assert host["has_jump_key"] == 0
+    assert client.put_host_key(host["id"], "JUMP-PEM", kind="jump")["has_key"] is True
+    assert client.get_host_key(host["id"], kind="jump")["has_key"] is True
+    assert "JUMP-PEM" not in json.dumps(client.get_host(host["id"]))
+    assert client.delete_host_key(host["id"], kind="jump")["has_key"] is False
+    # Host key surface untouched by jump operations.
+    assert client.get_host_key(host["id"])["has_key"] is False
+
+
+def test_resolve_assembles_gateway(client):
+    """Saved jump config becomes session gateway params with temp keys."""
+    from linux_health import dashboard
+
+    host = client.create_host(
+        "via2",
+        "inner",
+        "u",
+        auth="password",
+        jump_hostname="bastion",
+        jump_port=2222,
+        jump_username="b",
+        jump_auth="key",
+    )
+    client.put_host_key(host["id"], "JUMP-PEM-2", kind="jump")
+    base, run_params = dashboard.resolve_host_scan(host["id"], {"password": "pw"})
+    gw = base["gateway"]
+    assert gw["hostname"] == "bastion"
+    assert gw["port"] == 2222
+    assert gw["username"] == "b"
+    assert gw["key_path"].endswith(".jump") or "auditless-key-" in gw["key_path"]
+    assert Path(gw["key_path"]).exists()
+    dashboard._scrub_temp_key(run_params)
+    assert not Path(gw["key_path"]).exists()
+
+
+def test_resolve_jump_password_required(client):
+    """Password jump hosts demand a jump password per scan."""
+    from linux_health import dashboard
+
+    host = client.create_host(
+        "via3",
+        "inner",
+        "u",
+        auth="password",
+        jump_hostname="bastion",
+        jump_username="b",
+        jump_auth="password",
+    )
+    with pytest.raises(ValueError, match="jump password"):
+        dashboard.resolve_host_scan(host["id"], {"password": "pw"})
+    base, _ = dashboard.resolve_host_scan(
+        host["id"], {"password": "pw", "jump_password": "jp"}
+    )
+    assert base["gateway"]["password"] == "jp"
+
+
+def test_fleet_scan_runs_bounded_and_parallel(client, monkeypatch):
+    """Fleet endpoint launches per-host scans with capped concurrency."""
+    import threading as _threading
+
+    from linux_health import dashboard
+
+    hosts = [
+        client.create_host(f"f{i}", f"10.9.9.{i}", "u", auth="password")
+        for i in range(3)
+    ]
+    gate = _threading.Barrier(3, timeout=15)
+    peak, lock, current = [0], _threading.Lock(), [0]
+
+    def fake_run_job(job, params, host_id=None, actor="unknown"):
+        with lock:
+            current[0] += 1
+            peak[0] = max(peak[0], current[0])
+        try:
+            gate.wait(timeout=15)  # all three must overlap to proceed
+        finally:
+            with lock:
+                current[0] -= 1
+        job.status = "done"
+
+    monkeypatch.setattr(dashboard, "_run_job", fake_run_job)
+    result = client.fleet_scan(
+        host_ids=[h["id"] for h in hosts], password="pw", max_concurrent=3
+    )
+    assert sorted(j["host_id"] for j in result["jobs"]) == sorted(
+        h["id"] for h in hosts
+    )
+    assert peak[0] == 3  # genuinely parallel, not sequential
+
+    with pytest.raises(ApiError) as exc_info:
+        client.fleet_scan(host_ids=["missing"], password="pw")
+    assert exc_info.value.status == 404
+    with pytest.raises(ApiError) as exc_info:
+        client.fleet_scan(host_ids=[hosts[0]["id"]])
+    assert exc_info.value.status == 400
+
+
+def test_cli_jump_flags():
+    from linux_health.cli import build_parser
+
+    args = build_parser().parse_args(
+        [
+            "h",
+            "u",
+            "pw",
+            "--jump-host",
+            "b",
+            "--jump-user",
+            "bu",
+            "--jump-port",
+            "2222",
+            "--jump-key-file",
+            "/k",
+        ]
+    )
+    assert args.jump_host == "b"
+    assert args.jump_port == 2222
+    assert args.jump_key_file == "/k"
+
+
 def test_schedules_crud_and_validation(client):
     host = client.create_host("sched", "10.9.9.9", "u")
     with pytest.raises(ApiError) as exc_info:
