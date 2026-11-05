@@ -32,6 +32,7 @@ from .checks import (
     gather_top_processes,
     gather_unused_packages,
     run_all_checks,
+    run_all_checks_parallel,
     set_command_timeout,
 )
 from .checks_audit import run_all_audit_checks
@@ -110,6 +111,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--timeout", type=float, default=5.0, help="SSH connect timeout seconds"
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=4,
+        help="Concurrent check workers per host (1=sequential, max 32)",
     )
     parser.add_argument(
         "--command-timeout",
@@ -292,7 +299,12 @@ def main(argv: list[str] | None = None) -> int:
             gateway=gateway,
         ) as ssh:
             system_info = gather_system_info(ssh)
-            check_results = run_all_checks(ssh, password)
+            if args.jobs > 1:
+                check_results = run_all_checks_parallel(
+                    ssh, password, max_workers=args.jobs
+                )
+            else:
+                check_results = run_all_checks(ssh, password)
 
             # Run new Phase 1 checks (Database & Audit)
             database_results = run_all_database_checks(ssh, password)

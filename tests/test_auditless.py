@@ -260,7 +260,7 @@ class TestCheckTestIdRegistry:
         from linux_health.test_ids import CHECK_TEST_IDS
 
         called = set(
-            re.findall(r"(check_\w+)\(", inspect.getsource(checks_mod.run_all_checks))
+            re.findall(r"\b(check_\w+)\(", inspect.getsource(checks_mod._check_thunks))
         )
         missing = {
             fn for fn in called if fn.startswith("check_") and fn not in CHECK_TEST_IDS
@@ -323,6 +323,9 @@ class TestMainScanOrchestration:
         monkeypatch.setattr(cli, "SSHSession", FakeSession)
         monkeypatch.setattr(cli, "gather_system_info", lambda ssh: info)
         monkeypatch.setattr(cli, "run_all_checks", lambda ssh, pw: [check])
+        monkeypatch.setattr(
+            cli, "run_all_checks_parallel", lambda ssh, pw, max_workers=8: [check]
+        )
         for name in (
             "run_all_database_checks",
             "run_all_audit_checks",
@@ -367,6 +370,26 @@ class TestMainScanOrchestration:
         self._patch_all(monkeypatch)
         assert cli.main(["h", "u", "pw"]) == 0
         assert "h" in capsys.readouterr().out
+
+    def test_main_jobs_flag_selects_runner(self, monkeypatch):
+        """--jobs 1 runs sequential, default/>1 runs the parallel pool."""
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+        calls: list[str] = []
+        check = CheckResult("C", "Item", "pass", "d", "r", test_id="T-1")
+        monkeypatch.setattr(
+            cli, "run_all_checks", lambda ssh, pw: calls.append("seq") or [check]
+        )
+        monkeypatch.setattr(
+            cli,
+            "run_all_checks_parallel",
+            lambda ssh, pw, max_workers=8: calls.append("par") or [check],
+        )
+        assert cli.main(["h", "u", "pw", "--jobs", "1"]) == 0
+        assert cli.main(["h", "u", "pw"]) == 0
+        assert cli.main(["h", "u", "pw", "--jobs", "8"]) == 0
+        assert calls == ["seq", "par", "par"]
 
     def test_main_json_scan_writes_file(self, monkeypatch, tmp_path):
         import json

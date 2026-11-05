@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import functools
 import re
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, List, Tuple
 
@@ -14,6 +16,7 @@ COMMAND_TIMEOUT: float = 60.0
 # Performance optimization: Cache command outputs during session
 # Note: Cache is cleared between test runs and sessions to prevent stale data
 _COMMAND_CACHE: dict[str, tuple[int, str, str]] = {}
+_CACHE_LOCK = threading.Lock()
 _USE_CACHE: bool = True  # Can be disabled for testing
 
 
@@ -30,7 +33,8 @@ def reset_command_cache() -> None:
     stale data when running multiple scans in the same process.
     """
     global _COMMAND_CACHE
-    _COMMAND_CACHE.clear()
+    with _CACHE_LOCK:
+        _COMMAND_CACHE.clear()
 
 
 def disable_command_cache() -> None:
@@ -106,8 +110,10 @@ def _run(
     """
     # Check cache first (optimization for repeated commands)
     cache_key = command
-    if use_cache and _USE_CACHE and cache_key in _COMMAND_CACHE:
-        return _COMMAND_CACHE[cache_key]
+    if use_cache and _USE_CACHE:
+        with _CACHE_LOCK:
+            if cache_key in _COMMAND_CACHE:
+                return _COMMAND_CACHE[cache_key]
 
     # Run command on SSH session with a hard timeout, sending sudo password when needed.
     effective_timeout = command_timeout or COMMAND_TIMEOUT
@@ -142,19 +148,22 @@ def _run(
             result = (exit_status, out, err)
             # Cache result for future use (if caching is enabled)
             if _USE_CACHE:
-                _COMMAND_CACHE[cache_key] = result
+                with _CACHE_LOCK:
+                    _COMMAND_CACHE[cache_key] = result
             return result
         except (TypeError, AttributeError):
             # Fall back to using ssh.run() for mock objects
             result = ssh.run(command, timeout=effective_timeout)
             if _USE_CACHE:
-                _COMMAND_CACHE[cache_key] = result
+                with _CACHE_LOCK:
+                    _COMMAND_CACHE[cache_key] = result
             return result
     else:
         # Use the normal ssh.run() method
         result = ssh.run(command, timeout=effective_timeout)
         if _USE_CACHE:
-            _COMMAND_CACHE[cache_key] = result
+            with _CACHE_LOCK:
+                _COMMAND_CACHE[cache_key] = result
         return result
 
 
@@ -3306,67 +3315,107 @@ def _attach_test_ids() -> None:
 _attach_test_ids()
 
 
-def run_all_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
-    results: list[CheckResult] = []
-    # Original checks
-    results.append(check_disk_usage(ssh))
-    results.append(check_memory(ssh))
-    results.append(check_load(ssh))
-    results.append(check_reboot_required(ssh))
-    results.append(check_updates(ssh, password))
-    results.extend(check_ssh_config(ssh, password))
-    results.append(check_firewall(ssh, password))
-    results.append(check_time_sync(ssh))
-    results.append(check_accounts(ssh))
-    results.append(check_stale_user_accounts(ssh))
-    results.append(check_auth_failures(ssh, password))
-    results.append(check_root_logins(ssh))
-    results.append(check_listening_services(ssh))
-    results.append(check_abnormal_network_processes(ssh))
-    results.append(check_suspicious_process_locations(ssh))
-    results.append(check_unexpected_sudo_usage(ssh, password))
-    results.append(check_recently_created_accounts(ssh))
-    results.append(check_system_binary_modifications(ssh))
-    results.append(check_failed_login_spike(ssh, password))
-    results.append(check_suid_files(ssh))
-    results.append(check_cron_and_timers(ssh))
-    results.append(check_process_resource_usage(ssh))
+# One thunk per check, in canonical report order. Shared by the sequential
+# and parallel runners so the two can never drift apart.
+_CheckThunk = Callable[[], "CheckResult | list[CheckResult]"]
 
-    # New comprehensive security checks
-    results.append(check_suspicious_network_connections(ssh))
-    results.append(check_hidden_files_in_system_dirs(ssh))
-    results.append(check_kernel_module_integrity(ssh, password))
-    results.append(check_active_reverse_shells(ssh))
-    results.append(check_weak_password_policy(ssh, password))
-    results.append(check_container_escape_indicators(ssh))
-    results.append(check_arp_spoofing(ssh))
-    results.append(check_dns_tampering(ssh))
-    results.append(check_crypto_miners(ssh))
-    results.append(check_file_integrity_critical_binaries(ssh))
-    results.append(check_log_tampering(ssh, password))
-    results.append(check_privilege_escalation_vectors(ssh, password))
-    results.append(check_world_writable_system_files(ssh))
-    results.append(check_deleted_file_handles(ssh))
 
-    # Lynis-inspired feature additions
-    results.append(check_boot_loader_password(ssh, password))
-    results.append(check_kernel_hardening(ssh))
-    results.append(check_file_integrity_tools(ssh))
-    results.append(check_package_manager_security(ssh))
-    results.append(check_logging_and_auditing(ssh, password))
-    results.append(check_selinux_apparmor(ssh))
-    results.append(check_security_tools(ssh))
-    results.append(check_filesystem_mounts(ssh))
-    results.append(check_shell_security(ssh))
-    results.append(check_compiler_presence(ssh))
-    results.append(check_legacy_services(ssh))
-    results.append(check_usb_storage(ssh, password))
+def _check_thunks(ssh: SSHSession, password: str = "") -> list[_CheckThunk]:
+    """Zero-argument check closures bound to one session (canonical order)."""
+    return [
+        # Original checks
+        lambda: check_disk_usage(ssh),
+        lambda: check_memory(ssh),
+        lambda: check_load(ssh),
+        lambda: check_reboot_required(ssh),
+        lambda: check_updates(ssh, password),
+        lambda: check_ssh_config(ssh, password),
+        lambda: check_firewall(ssh, password),
+        lambda: check_time_sync(ssh),
+        lambda: check_accounts(ssh),
+        lambda: check_stale_user_accounts(ssh),
+        lambda: check_auth_failures(ssh, password),
+        lambda: check_root_logins(ssh),
+        lambda: check_listening_services(ssh),
+        lambda: check_abnormal_network_processes(ssh),
+        lambda: check_suspicious_process_locations(ssh),
+        lambda: check_unexpected_sudo_usage(ssh, password),
+        lambda: check_recently_created_accounts(ssh),
+        lambda: check_system_binary_modifications(ssh),
+        lambda: check_failed_login_spike(ssh, password),
+        lambda: check_suid_files(ssh),
+        lambda: check_cron_and_timers(ssh),
+        lambda: check_process_resource_usage(ssh),
+        # New comprehensive security checks
+        lambda: check_suspicious_network_connections(ssh),
+        lambda: check_hidden_files_in_system_dirs(ssh),
+        lambda: check_kernel_module_integrity(ssh, password),
+        lambda: check_active_reverse_shells(ssh),
+        lambda: check_weak_password_policy(ssh, password),
+        lambda: check_container_escape_indicators(ssh),
+        lambda: check_arp_spoofing(ssh),
+        lambda: check_dns_tampering(ssh),
+        lambda: check_crypto_miners(ssh),
+        lambda: check_file_integrity_critical_binaries(ssh),
+        lambda: check_log_tampering(ssh, password),
+        lambda: check_privilege_escalation_vectors(ssh, password),
+        lambda: check_world_writable_system_files(ssh),
+        lambda: check_deleted_file_handles(ssh),
+        # Lynis-inspired feature additions
+        lambda: check_boot_loader_password(ssh, password),
+        lambda: check_kernel_hardening(ssh),
+        lambda: check_file_integrity_tools(ssh),
+        lambda: check_package_manager_security(ssh),
+        lambda: check_logging_and_auditing(ssh, password),
+        lambda: check_selinux_apparmor(ssh),
+        lambda: check_security_tools(ssh),
+        lambda: check_filesystem_mounts(ssh),
+        lambda: check_shell_security(ssh),
+        lambda: check_compiler_presence(ssh),
+        lambda: check_legacy_services(ssh),
+        lambda: check_usb_storage(ssh, password),
+        # Server and application security checks
+        lambda: check_web_server_security(ssh, password),
+        lambda: check_database_security(ssh, password),
+        lambda: check_mail_server_security(ssh, password),
+        lambda: check_php_security(ssh, password),
+        lambda: check_dns_configuration(ssh, password),
+    ]
 
-    # Server and application security checks
-    results.append(check_web_server_security(ssh, password))
-    results.append(check_database_security(ssh, password))
-    results.append(check_mail_server_security(ssh, password))
-    results.append(check_php_security(ssh, password))
-    results.append(check_dns_configuration(ssh, password))
 
+def _flatten(items: list[CheckResult | list[CheckResult]]) -> List[CheckResult]:
+    """Flatten per-thunk results (most checks return one CheckResult)."""
+    results: List[CheckResult] = []
+    for item in items:
+        if isinstance(item, list):
+            results.extend(item)
+        else:
+            results.append(item)
     return results
+
+
+def run_all_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
+    """Run every core check sequentially (canonical order)."""
+    return _flatten([thunk() for thunk in _check_thunks(ssh, password)])
+
+
+def run_all_checks_parallel(
+    ssh: SSHSession, password: str = "", max_workers: int = 8
+) -> List[CheckResult]:
+    """Run every core check via a bounded thread pool (canonical order).
+
+    Checks are read-only remote reads, so they parallelize over one
+    shared SSH session (paramiko multiplexes channels; the output cache
+    is lock-guarded). Results return in the same order as
+    :func:`run_all_checks`; a failing check raises on collection just as
+    the sequential runner raises inline. ``max_workers`` is clamped to
+    1..32; 1 delegates to the sequential runner.
+    """
+    workers = min(max(1, int(max_workers)), 32)
+    if workers == 1:
+        return run_all_checks(ssh, password)
+    with ThreadPoolExecutor(
+        max_workers=workers, thread_name_prefix="auditless-check"
+    ) as pool:
+        futures = [pool.submit(thunk) for thunk in _check_thunks(ssh, password)]
+        return _flatten([future.result() for future in futures])

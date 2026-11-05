@@ -54,7 +54,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 
 ## P1 — Core scan engine & detection accuracy (21–40)
 
-- [ ] 21 — [P1] Parallelize per-host SSH checks with bounded worker pool (configurable `--jobs`); measure wall-time on 100-check host, target ≥2× speedup. `engine` (effort: M)
+- [x] 21 — [P1] Parallelize per-host SSH checks with bounded worker pool (configurable `--jobs`); measure wall-time on 100-check host, target ≥2× speedup. `engine` (effort: M)
 - [ ] 22 — [P1] SSH multiplexing / persistent connection reuse across checks (no connect-per-check); fall back cleanly. `ssh` (effort: M)
 - [ ] 23 — [P1] Per-check timeouts + global scan deadline with partial-report output (never lose completed checks on one hang). `engine` (effort: M)
 - [ ] 24 — [P1] Retry with backoff for transient SSH failures (auth vs network distinguished); `--retries` flag. `ssh` (effort: S)

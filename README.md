@@ -573,6 +573,7 @@ python -m linux_health <hostname> <username> <password> [options]
 | `--port PORT` | 22 | SSH service port |
 | `--timeout SECONDS` | 5.0 | SSH connection timeout |
 | `--command-timeout SECONDS` | 60.0 | Per-command execution timeout |
+| `--jobs N` | 4 | Concurrent check workers per host (1=sequential, max 32) |
 | `--format {text\|md\|json}` | text | Report output format (text, Markdown, or JSON) |
 | `--output PATH` | stdout | Report file destination |
 | `--scan-ports PORTS` | 22,80,443,3306,5432 | Comma-separated port list for scanning |
