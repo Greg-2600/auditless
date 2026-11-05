@@ -11,6 +11,7 @@ import getpass
 import os
 import sys
 import warnings
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +45,7 @@ from .checks_packages import run_all_package_management_checks
 from .checks_webserver import run_all_webserver_checks
 from .report import render_report, render_report_json, render_report_text
 from .scanner import COMMON_PORTS, scan_ports
-from .ssh_client import SSHSession
+from .ssh_client import SSHSession, pooled_session
 
 try:
     from .config import load_profile, should_skip_test
@@ -117,6 +118,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=4,
         help="Concurrent check workers per host (1=sequential, max 32)",
+    )
+    parser.add_argument(
+        "--reuse-session",
+        action="store_true",
+        help="Reuse a healthy pooled SSH session across scans in this "
+        "process (dashboard/scheduler); one-shot scans connect fresh",
     )
     parser.add_argument(
         "--command-timeout",
@@ -226,6 +233,33 @@ def _warn_if_deprecated_alias() -> None:
         print(f"warning: {message}", file=sys.stderr)
 
 
+def _open_session(
+    args: argparse.Namespace, password: str, gateway: dict | None
+) -> AbstractContextManager[SSHSession]:
+    """Open the scan session, pooled when --reuse-session is passed."""
+    if args.reuse_session:
+        return pooled_session(
+            hostname=args.hostname,
+            username=args.username,
+            password=password,
+            port=args.port,
+            timeout=args.timeout,
+            strict_host_key_checking=args.strict_host_key_checking,
+            key_path=args.key_file,
+            gateway=gateway,
+        )
+    return SSHSession(
+        hostname=args.hostname,
+        username=args.username,
+        password=password,
+        port=args.port,
+        timeout=args.timeout,
+        strict_host_key_checking=args.strict_host_key_checking,
+        key_path=args.key_file,
+        gateway=gateway,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Execute the security scan orchestration from CLI arguments.
 
@@ -288,16 +322,7 @@ def main(argv: list[str] | None = None) -> int:
                 "password": args.jump_password,
                 "key_path": args.jump_key_file or "",
             }
-        with SSHSession(
-            hostname=args.hostname,
-            username=args.username,
-            password=password,
-            port=args.port,
-            timeout=args.timeout,
-            strict_host_key_checking=args.strict_host_key_checking,
-            key_path=args.key_file,
-            gateway=gateway,
-        ) as ssh:
+        with _open_session(args, password, gateway) as ssh:
             system_info = gather_system_info(ssh)
             if args.jobs > 1:
                 check_results = run_all_checks_parallel(
