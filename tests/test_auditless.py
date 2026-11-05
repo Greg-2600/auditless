@@ -324,7 +324,9 @@ class TestMainScanOrchestration:
         monkeypatch.setattr(cli, "gather_system_info", lambda ssh: info)
         monkeypatch.setattr(cli, "run_all_checks", lambda ssh, pw: [check])
         monkeypatch.setattr(
-            cli, "run_all_checks_parallel", lambda ssh, pw, max_workers=8: [check]
+            cli,
+            "run_all_checks_parallel",
+            lambda ssh, pw, max_workers=8, check_timeout=None: [check],
         )
         for name in (
             "run_all_database_checks",
@@ -384,12 +386,43 @@ class TestMainScanOrchestration:
         monkeypatch.setattr(
             cli,
             "run_all_checks_parallel",
-            lambda ssh, pw, max_workers=8: calls.append("par") or [check],
+            lambda ssh, pw, max_workers=8, check_timeout=None: calls.append("par")
+            or [check],
         )
         assert cli.main(["h", "u", "pw", "--jobs", "1"]) == 0
         assert cli.main(["h", "u", "pw"]) == 0
         assert cli.main(["h", "u", "pw", "--jobs", "8"]) == 0
         assert calls == ["seq", "par", "par"]
+
+    def test_main_deadline_partial_report(self, monkeypatch, tmp_path):
+        """Expired deadline renders completed phases plus a WARN marker."""
+        import json
+
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+        ticks = iter([1000.0, 1000.0, 9999.0])
+        monkeypatch.setattr(cli.time, "monotonic", lambda: next(ticks, 9999.0))
+        out = tmp_path / "r.json"
+        argv = ["h", "u", "pw", "--format", "json", "--output", str(out)]
+        assert cli.main(argv + ["--deadline", "60"]) == 0
+        report = json.loads(out.read_text(encoding="utf-8"))
+        items = [c["item"] for c in report["checks"]]
+        assert "Scan deadline exceeded" in items
+        assert len(report["checks"]) == 2  # stubbed core check + marker
+
+    def test_main_no_deadline_marker_by_default(self, monkeypatch, tmp_path):
+        """Without --deadline the scan completes with no truncation marker."""
+        import json
+
+        from linux_health import cli
+
+        self._patch_all(monkeypatch)
+        out = tmp_path / "r.json"
+        argv = ["h", "u", "pw", "--format", "json", "--output", str(out)]
+        assert cli.main(argv) == 0
+        report = json.loads(out.read_text(encoding="utf-8"))
+        assert all(c["item"] != "Scan deadline exceeded" for c in report["checks"])
 
     def test_main_json_scan_writes_file(self, monkeypatch, tmp_path):
         import json

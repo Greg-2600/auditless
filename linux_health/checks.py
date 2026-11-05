@@ -3320,66 +3320,121 @@ _attach_test_ids()
 _CheckThunk = Callable[[], "CheckResult | list[CheckResult]"]
 
 
-def _check_thunks(ssh: SSHSession, password: str = "") -> list[_CheckThunk]:
-    """Zero-argument check closures bound to one session (canonical order)."""
+def _check_thunks(ssh: SSHSession, password: str = "") -> list[tuple[str, _CheckThunk]]:
+    """Named zero-argument check closures (canonical order).
+
+    Names are the check function names, used for timeout placeholders
+    and test-ID resolution.
+    """
     return [
         # Original checks
-        lambda: check_disk_usage(ssh),
-        lambda: check_memory(ssh),
-        lambda: check_load(ssh),
-        lambda: check_reboot_required(ssh),
-        lambda: check_updates(ssh, password),
-        lambda: check_ssh_config(ssh, password),
-        lambda: check_firewall(ssh, password),
-        lambda: check_time_sync(ssh),
-        lambda: check_accounts(ssh),
-        lambda: check_stale_user_accounts(ssh),
-        lambda: check_auth_failures(ssh, password),
-        lambda: check_root_logins(ssh),
-        lambda: check_listening_services(ssh),
-        lambda: check_abnormal_network_processes(ssh),
-        lambda: check_suspicious_process_locations(ssh),
-        lambda: check_unexpected_sudo_usage(ssh, password),
-        lambda: check_recently_created_accounts(ssh),
-        lambda: check_system_binary_modifications(ssh),
-        lambda: check_failed_login_spike(ssh, password),
-        lambda: check_suid_files(ssh),
-        lambda: check_cron_and_timers(ssh),
-        lambda: check_process_resource_usage(ssh),
+        ("check_disk_usage", lambda: check_disk_usage(ssh)),
+        ("check_memory", lambda: check_memory(ssh)),
+        ("check_load", lambda: check_load(ssh)),
+        ("check_reboot_required", lambda: check_reboot_required(ssh)),
+        ("check_updates", lambda: check_updates(ssh, password)),
+        ("check_ssh_config", lambda: check_ssh_config(ssh, password)),
+        ("check_firewall", lambda: check_firewall(ssh, password)),
+        ("check_time_sync", lambda: check_time_sync(ssh)),
+        ("check_accounts", lambda: check_accounts(ssh)),
+        ("check_stale_user_accounts", lambda: check_stale_user_accounts(ssh)),
+        ("check_auth_failures", lambda: check_auth_failures(ssh, password)),
+        ("check_root_logins", lambda: check_root_logins(ssh)),
+        ("check_listening_services", lambda: check_listening_services(ssh)),
+        (
+            "check_abnormal_network_processes",
+            lambda: check_abnormal_network_processes(ssh),
+        ),
+        (
+            "check_suspicious_process_locations",
+            lambda: check_suspicious_process_locations(ssh),
+        ),
+        (
+            "check_unexpected_sudo_usage",
+            lambda: check_unexpected_sudo_usage(ssh, password),
+        ),
+        (
+            "check_recently_created_accounts",
+            lambda: check_recently_created_accounts(ssh),
+        ),
+        (
+            "check_system_binary_modifications",
+            lambda: check_system_binary_modifications(ssh),
+        ),
+        ("check_failed_login_spike", lambda: check_failed_login_spike(ssh, password)),
+        ("check_suid_files", lambda: check_suid_files(ssh)),
+        ("check_cron_and_timers", lambda: check_cron_and_timers(ssh)),
+        ("check_process_resource_usage", lambda: check_process_resource_usage(ssh)),
         # New comprehensive security checks
-        lambda: check_suspicious_network_connections(ssh),
-        lambda: check_hidden_files_in_system_dirs(ssh),
-        lambda: check_kernel_module_integrity(ssh, password),
-        lambda: check_active_reverse_shells(ssh),
-        lambda: check_weak_password_policy(ssh, password),
-        lambda: check_container_escape_indicators(ssh),
-        lambda: check_arp_spoofing(ssh),
-        lambda: check_dns_tampering(ssh),
-        lambda: check_crypto_miners(ssh),
-        lambda: check_file_integrity_critical_binaries(ssh),
-        lambda: check_log_tampering(ssh, password),
-        lambda: check_privilege_escalation_vectors(ssh, password),
-        lambda: check_world_writable_system_files(ssh),
-        lambda: check_deleted_file_handles(ssh),
+        (
+            "check_suspicious_network_connections",
+            lambda: check_suspicious_network_connections(ssh),
+        ),
+        (
+            "check_hidden_files_in_system_dirs",
+            lambda: check_hidden_files_in_system_dirs(ssh),
+        ),
+        (
+            "check_kernel_module_integrity",
+            lambda: check_kernel_module_integrity(ssh, password),
+        ),
+        ("check_active_reverse_shells", lambda: check_active_reverse_shells(ssh)),
+        (
+            "check_weak_password_policy",
+            lambda: check_weak_password_policy(ssh, password),
+        ),
+        (
+            "check_container_escape_indicators",
+            lambda: check_container_escape_indicators(ssh),
+        ),
+        ("check_arp_spoofing", lambda: check_arp_spoofing(ssh)),
+        ("check_dns_tampering", lambda: check_dns_tampering(ssh)),
+        ("check_crypto_miners", lambda: check_crypto_miners(ssh)),
+        (
+            "check_file_integrity_critical_binaries",
+            lambda: check_file_integrity_critical_binaries(ssh),
+        ),
+        ("check_log_tampering", lambda: check_log_tampering(ssh, password)),
+        (
+            "check_privilege_escalation_vectors",
+            lambda: check_privilege_escalation_vectors(ssh, password),
+        ),
+        (
+            "check_world_writable_system_files",
+            lambda: check_world_writable_system_files(ssh),
+        ),
+        ("check_deleted_file_handles", lambda: check_deleted_file_handles(ssh)),
         # Lynis-inspired feature additions
-        lambda: check_boot_loader_password(ssh, password),
-        lambda: check_kernel_hardening(ssh),
-        lambda: check_file_integrity_tools(ssh),
-        lambda: check_package_manager_security(ssh),
-        lambda: check_logging_and_auditing(ssh, password),
-        lambda: check_selinux_apparmor(ssh),
-        lambda: check_security_tools(ssh),
-        lambda: check_filesystem_mounts(ssh),
-        lambda: check_shell_security(ssh),
-        lambda: check_compiler_presence(ssh),
-        lambda: check_legacy_services(ssh),
-        lambda: check_usb_storage(ssh, password),
+        (
+            "check_boot_loader_password",
+            lambda: check_boot_loader_password(ssh, password),
+        ),
+        ("check_kernel_hardening", lambda: check_kernel_hardening(ssh)),
+        ("check_file_integrity_tools", lambda: check_file_integrity_tools(ssh)),
+        (
+            "check_package_manager_security",
+            lambda: check_package_manager_security(ssh),
+        ),
+        (
+            "check_logging_and_auditing",
+            lambda: check_logging_and_auditing(ssh, password),
+        ),
+        ("check_selinux_apparmor", lambda: check_selinux_apparmor(ssh)),
+        ("check_security_tools", lambda: check_security_tools(ssh)),
+        ("check_filesystem_mounts", lambda: check_filesystem_mounts(ssh)),
+        ("check_shell_security", lambda: check_shell_security(ssh)),
+        ("check_compiler_presence", lambda: check_compiler_presence(ssh)),
+        ("check_legacy_services", lambda: check_legacy_services(ssh)),
+        ("check_usb_storage", lambda: check_usb_storage(ssh, password)),
         # Server and application security checks
-        lambda: check_web_server_security(ssh, password),
-        lambda: check_database_security(ssh, password),
-        lambda: check_mail_server_security(ssh, password),
-        lambda: check_php_security(ssh, password),
-        lambda: check_dns_configuration(ssh, password),
+        ("check_web_server_security", lambda: check_web_server_security(ssh, password)),
+        ("check_database_security", lambda: check_database_security(ssh, password)),
+        (
+            "check_mail_server_security",
+            lambda: check_mail_server_security(ssh, password),
+        ),
+        ("check_php_security", lambda: check_php_security(ssh, password)),
+        ("check_dns_configuration", lambda: check_dns_configuration(ssh, password)),
     ]
 
 
@@ -3396,11 +3451,26 @@ def _flatten(items: list[CheckResult | list[CheckResult]]) -> List[CheckResult]:
 
 def run_all_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
     """Run every core check sequentially (canonical order)."""
-    return _flatten([thunk() for thunk in _check_thunks(ssh, password)])
+    return _flatten([thunk() for _, thunk in _check_thunks(ssh, password)])
+
+
+def _timeout_placeholder(name: str, check_timeout: float) -> CheckResult:
+    """WARN result standing in for a check that exceeded its ceiling."""
+    return CheckResult(
+        category="Scan",
+        item=f"{name} timed out",
+        status="warn",
+        details=f"Check exceeded the {check_timeout:g}s per-check timeout.",
+        recommendation="Re-run with a higher --check-timeout if this check matters.",
+        test_id=CHECK_TEST_IDS.get(name, ""),
+    )
 
 
 def run_all_checks_parallel(
-    ssh: SSHSession, password: str = "", max_workers: int = 8
+    ssh: SSHSession,
+    password: str = "",
+    max_workers: int = 8,
+    check_timeout: float | None = None,
 ) -> List[CheckResult]:
     """Run every core check via a bounded thread pool (canonical order).
 
@@ -3409,13 +3479,24 @@ def run_all_checks_parallel(
     is lock-guarded). Results return in the same order as
     :func:`run_all_checks`; a failing check raises on collection just as
     the sequential runner raises inline. ``max_workers`` is clamped to
-    1..32; 1 delegates to the sequential runner.
+    1..32; 1 delegates to the sequential runner. A positive
+    ``check_timeout`` caps each check with a WARN placeholder instead of
+    losing the rest of the report to one hang (``None``/non-positive
+    disables it).
     """
     workers = min(max(1, int(max_workers)), 32)
     if workers == 1:
         return run_all_checks(ssh, password)
+    ceiling = check_timeout if check_timeout and check_timeout > 0 else None
+    thunks = _check_thunks(ssh, password)
     with ThreadPoolExecutor(
         max_workers=workers, thread_name_prefix="auditless-check"
     ) as pool:
-        futures = [pool.submit(thunk) for thunk in _check_thunks(ssh, password)]
-        return _flatten([future.result() for future in futures])
+        pending = [(name, pool.submit(thunk)) for name, thunk in thunks]
+        collected: list[CheckResult | list[CheckResult]] = []
+        for name, future in pending:
+            try:
+                collected.append(future.result(timeout=ceiling))
+            except TimeoutError:
+                collected.append(_timeout_placeholder(name, ceiling or 0))
+        return _flatten(collected)

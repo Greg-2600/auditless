@@ -574,6 +574,8 @@ python -m linux_health <hostname> <username> <password> [options]
 | `--timeout SECONDS` | 5.0 | SSH connection timeout |
 | `--command-timeout SECONDS` | 60.0 | Per-command execution timeout |
 | `--jobs N` | 4 | Concurrent check workers per host (1=sequential, max 32) |
+| `--check-timeout SECONDS` | 120.0 | Per-check ceiling for the parallel runner (WARN placeholder on expiry; ≤0 disables) |
+| `--deadline SECONDS` | 0 (off) | Global scan deadline; renders a partial report with completed checks on expiry |
 | `--reuse-session` | — | Reuse pooled SSH sessions across scans in this process |
 | `--format {text\|md\|json}` | text | Report output format (text, Markdown, or JSON) |
 | `--output PATH` | stdout | Report file destination |

@@ -10,12 +10,15 @@ import argparse
 import getpass
 import os
 import sys
+import time
 import warnings
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
 from .checks import (
+    CheckResult,
     DetailedSecurityInfo,
     gather_available_updates,
     gather_critical_file_permissions,
@@ -118,6 +121,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=4,
         help="Concurrent check workers per host (1=sequential, max 32)",
+    )
+    parser.add_argument(
+        "--check-timeout",
+        type=float,
+        default=120.0,
+        help="Per-check ceiling in seconds for the parallel runner "
+        "(WARN placeholder on expiry; <=0 disables)",
+    )
+    parser.add_argument(
+        "--deadline",
+        type=float,
+        default=0.0,
+        help="Global scan deadline in seconds; renders a partial report "
+        "with completed checks on expiry (0 disables)",
     )
     parser.add_argument(
         "--reuse-session",
@@ -324,63 +341,100 @@ def main(argv: list[str] | None = None) -> int:
             }
         with _open_session(args, password, gateway) as ssh:
             system_info = gather_system_info(ssh)
-            if args.jobs > 1:
-                check_results = run_all_checks_parallel(
-                    ssh, password, max_workers=args.jobs
+            scan_start = time.monotonic()
+            deadline = args.deadline if args.deadline and args.deadline > 0 else None
+
+            def _expired() -> bool:
+                return (
+                    deadline is not None and (time.monotonic() - scan_start) >= deadline
                 )
+
+            def _run_core() -> list[CheckResult]:
+                if args.jobs > 1:
+                    return run_all_checks_parallel(
+                        ssh,
+                        password,
+                        max_workers=args.jobs,
+                        check_timeout=args.check_timeout,
+                    )
+                return run_all_checks(ssh, password)
+
+            suites: list[tuple[str, Callable[[], list[CheckResult]]]] = [
+                ("core", _run_core),
+                ("database", lambda: run_all_database_checks(ssh, password)),
+                ("audit", lambda: run_all_audit_checks(ssh, password)),
+                (
+                    "filesystem",
+                    lambda: run_all_filesystem_checks(ssh, password),
+                ),
+                (
+                    "packages",
+                    lambda: run_all_package_management_checks(ssh, password),
+                ),
+                (
+                    "container",
+                    lambda: run_all_container_checks(ssh, args.command_timeout),
+                ),
+                ("webserver", lambda: run_all_webserver_checks(ssh, password)),
+                ("dns", lambda: run_all_dns_checks(ssh, password)),
+            ]
+            check_results: list[CheckResult] = []
+            truncated = False
+            completed: list[str] = []
+            for label, run_suite in suites:
+                if _expired():
+                    truncated = True
+                    break
+                check_results.extend(run_suite())
+                completed.append(label)
+            if truncated:
+                done = ", ".join(completed) if completed else "none"
+                check_results.append(
+                    CheckResult(
+                        category="Scan",
+                        item="Scan deadline exceeded",
+                        status="warn",
+                        details=(
+                            "Partial report: the global scan deadline "
+                            f"({deadline:g}s) expired; phases completed: "
+                            f"{done}."
+                        ),
+                        recommendation=(
+                            "Re-run with a higher --deadline, or narrower "
+                            "scope via --profile/--scan-ports."
+                        ),
+                        test_id="",
+                    )
+                )
+
+            if _expired():
+                truncated = True
+                detailed_security = None
             else:
-                check_results = run_all_checks(ssh, password)
-
-            # Run new Phase 1 checks (Database & Audit)
-            database_results = run_all_database_checks(ssh, password)
-            audit_results = run_all_audit_checks(ssh, password)
-            check_results.extend(database_results)
-            check_results.extend(audit_results)
-
-            # Run Phase 2 checks (Filesystem & NFS)
-            filesystem_results = run_all_filesystem_checks(ssh, password)
-            check_results.extend(filesystem_results)
-
-            # Run Phase 2 checks (Extended Package Management)
-            package_results = run_all_package_management_checks(ssh, password)
-            check_results.extend(package_results)
-
-            # Run Phase 3 checks (Container Security)
-            container_results = run_all_container_checks(ssh, args.command_timeout)
-            check_results.extend(container_results)
-
-            # Run Phase 3 checks (Web Server Security)
-            webserver_results = run_all_webserver_checks(ssh, password)
-            check_results.extend(webserver_results)
-
-            # Run Phase 3 checks (DNS Security)
-            dns_results = run_all_dns_checks(ssh, password)
-            check_results.extend(dns_results)
-
-            detailed_security = DetailedSecurityInfo(
-                suid_binaries=gather_suid_binaries(ssh),
-                root_logins=gather_root_logins(ssh),
-                successful_ssh_logins=gather_successful_ssh_logins(ssh, password),
-                failed_ssh_logins=gather_failed_ssh_logins(ssh, password),
-                top_processes=gather_top_processes(ssh),
-                disk_usage_dirs=gather_disk_usage_dirs(ssh, password),
-                available_updates=gather_available_updates(ssh, password),
-                firewall_rules=gather_firewall_rules(ssh, password),
-                sshd_config_check=gather_sshd_config_check(ssh, password),
-                failed_systemd_units=gather_failed_systemd_units(ssh),
-                sudoers_info=gather_sudoers_info(ssh, password),
-                critical_file_permissions=gather_critical_file_permissions(ssh),
-                rootkit_scan=(
-                    gather_rkhunter_scan(ssh, password)
-                    if args.enable_rootkit_scan
-                    else None
-                ),
-                unused_packages=(
-                    gather_unused_packages(ssh, password)
-                    if args.check_package_hygiene
-                    else None
-                ),
-            )
+                detailed_security = DetailedSecurityInfo(
+                    suid_binaries=gather_suid_binaries(ssh),
+                    root_logins=gather_root_logins(ssh),
+                    successful_ssh_logins=gather_successful_ssh_logins(ssh, password),
+                    failed_ssh_logins=gather_failed_ssh_logins(ssh, password),
+                    top_processes=gather_top_processes(ssh),
+                    disk_usage_dirs=gather_disk_usage_dirs(ssh, password),
+                    available_updates=gather_available_updates(ssh, password),
+                    firewall_rules=gather_firewall_rules(ssh, password),
+                    sshd_config_check=gather_sshd_config_check(ssh, password),
+                    failed_systemd_units=gather_failed_systemd_units(ssh),
+                    sudoers_info=gather_sudoers_info(ssh, password),
+                    critical_file_permissions=gather_critical_file_permissions(ssh),
+                    rootkit_scan=(
+                        gather_rkhunter_scan(ssh, password)
+                        if args.enable_rootkit_scan
+                        else None
+                    ),
+                    unused_packages=(
+                        gather_unused_packages(ssh, password)
+                        if args.check_package_hygiene
+                        else None
+                    ),
+                )
     except Exception as exc:  # pylint: disable=broad-except
         parser.error(f"SSH failed: {exc}")
         return 2
