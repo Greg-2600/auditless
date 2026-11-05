@@ -31,7 +31,8 @@ def client(tmp_path, monkeypatch):
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-    api = ApiClient(f"http://127.0.0.1:{port}", timeout=10.0)
+    # Generous timeout: Windows CI runners are slow to serve first bytes.
+    api = ApiClient(f"http://127.0.0.1:{port}", timeout=30.0)
     end = time.time() + 15
     while time.time() < end:
         try:
