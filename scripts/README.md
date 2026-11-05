@@ -1,6 +1,6 @@
 # 🛠️ Development & Testing Scripts
 
-This directory contains utility scripts for Linux Health Security Scanner development and testing.
+This directory contains utility scripts for Auditless development and testing.
 
 ## Scripts Overview
 
@@ -53,5 +53,5 @@ For contribution guidelines, see [../.github/CONTRIBUTING.md](../.github/CONTRIB
 
 ---
 
-**Note:** These scripts are development tools and are not required for normal operation of the Linux Health Security Scanner.
+**Note:** These scripts are development tools and are not required for normal operation of Auditless.
 

@@ -1,5 +1,10 @@
 # Linux Health v3.0 Roadmap: Lynis Feature Parity
 
+> **Historical — superseded by [`ROADMAP.md`](../ROADMAP.md).**
+> Kept as the v3.0 Lynis-parity design record; its DB/audit/filesystem/
+> packages/container/web/DNS modules have largely shipped. For current
+> naming, see [`NAMING.md`](NAMING.md).
+
 ## Executive Summary
 
 This roadmap outlines how to expand Linux Health from 36 checks to 70+ checks with 30+ test categories, bringing it closer to Lynis feature parity while maintaining its SSH-based simplicity and Python implementation.
