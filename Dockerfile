@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY linux_health/ /app/linux_health/
+COPY auditless.py /app/auditless.py
 
 # Create data + reports directories (volumes mount over these)
 RUN mkdir -p /app/data /app/reports \

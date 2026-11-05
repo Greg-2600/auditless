@@ -34,19 +34,19 @@ jobs:
 
       - name: Lint with Ruff
         run: |
-          ruff check linux_health/ tests/
+          ruff check linux_health/ tests/ auditless.py
 
       - name: Format check with Black
         run: |
-          black --check linux_health/ tests/
+          black --check linux_health/ tests/ auditless.py
 
       - name: Lint with Pylint (10.00/10 gate)
         run: |
-          pylint linux_health/ --fail-under=10.0
+          pylint linux_health/ auditless.py --fail-under=10.0
 
       - name: Type check with Mypy
         run: |
-          mypy linux_health/
+          mypy linux_health/ auditless.py
 
       - name: Build distribution (validates release packaging)
         run: |
@@ -55,7 +55,7 @@ jobs:
 
       - name: Security gate with Bandit (HIGH only)
         run: |
-          bandit -r linux_health/ -q -lll
+          bandit -r linux_health/ auditless.py -q -lll
 
       - name: Run tests with pytest
         run: |

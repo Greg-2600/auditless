@@ -54,6 +54,7 @@ setup(
     ],
     python_requires=">=3.11",
     install_requires=requirements,
+    py_modules=["auditless"],
     entry_points={
         "console_scripts": [
             "auditless=linux_health.cli:main",
