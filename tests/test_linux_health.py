@@ -127,6 +127,13 @@ class TestRenderReportPorts:
 class TestBuildParser:
     """Tests for CLI argument parser"""
 
+    def test_parser_branding_auditless_primary(self):
+        """Parser presents auditless as primary with alias epilog"""
+        parser = build_parser()
+        assert parser.prog == "auditless"
+        assert "Auditless" in (parser.description or "")
+        assert "linux-health" in (parser.epilog or "")
+
     def test_parser_accepts_hostname_and_username(self):
         """Test parser accepts required hostname and username arguments"""
         parser = build_parser()
