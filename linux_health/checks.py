@@ -16,6 +16,10 @@ from .test_ids import CHECK_TEST_IDS
 from paramiko.ssh_exception import ChannelException
 
 COMMAND_TIMEOUT: float = 60.0
+#: Soft ceiling per remote command output (stdout/stderr each). Bounds
+#: report memory on pathological hosts; ordinary outputs are far smaller.
+#: <= 0 disables the cap (parse-affecting callers use explicit values).
+MAX_OUTPUT_BYTES: int = 1024 * 1024
 # Output cache keyed by (hostname, command): concurrent fleet scans of
 # different hosts must never share entries (they share this process).
 # Invalidation rules (see .github/PERFORMANCE.md):
@@ -32,6 +36,30 @@ def set_command_timeout(seconds: float) -> None:
     """Set global per-command timeout for remote SSH execs."""
     global COMMAND_TIMEOUT
     COMMAND_TIMEOUT = max(1.0, seconds)
+
+
+def get_max_output_bytes() -> int:
+    """Current per-command output cap in bytes (<= 0 means uncapped)."""
+    return MAX_OUTPUT_BYTES
+
+
+def set_max_output_bytes(limit: int) -> None:
+    """Set per-command output cap in bytes (<= 0 disables the cap)."""
+    global MAX_OUTPUT_BYTES
+    MAX_OUTPUT_BYTES = int(limit)
+
+
+def truncate_output(text: str, limit: int | None = None) -> str:
+    """Cap text to limit bytes, marking truncation (never raises)."""
+    cap = MAX_OUTPUT_BYTES if limit is None else int(limit)
+    if cap <= 0:
+        return text
+    if len(text.encode("utf-8", errors="replace")) <= cap:
+        return text
+    encoded = text.encode("utf-8", errors="replace")[:cap]
+    return encoded.decode("utf-8", errors="ignore") + (
+        f" [...truncated {len(text)} chars]"
+    )
 
 
 def reset_command_cache() -> None:
@@ -101,6 +129,17 @@ def _cache_put(key: tuple[str, str], result: tuple[int, str, str]) -> None:
         _COMMAND_CACHE[key] = (result, time.monotonic())
 
 
+def _cap_output(
+    result: tuple[int, str, str], limit: int | None
+) -> tuple[int, str, str]:
+    """Truncate stored streams to the effective per-command cap."""
+    cap = MAX_OUTPUT_BYTES if limit is None else int(limit)
+    if cap <= 0:
+        return result
+    code, out, err = result
+    return code, truncate_output(out, cap), truncate_output(err, cap)
+
+
 @dataclass
 class CheckResult:
     category: str
@@ -144,11 +183,17 @@ def _run(
     password: str = "",
     command_timeout: float | None = None,
     use_cache: bool = True,
+    max_output_bytes: int | None = None,
 ) -> Tuple[int, str, str]:
     """Run command on SSH session with optional output caching.
 
     Performance optimization: Command outputs are cached during a scan session
     to avoid redundant remote execution. Cache is keyed by command string.
+
+    Memory discipline: stdout/stderr are truncated to ``max_output_bytes``
+    (default: the global cap) so one pathological host cannot bloat fleet
+    reports; parsing sees the same prefix every consumer already relied on
+    for remotely-bounded commands. Pass ``<= 0`` to disable.
 
     Args:
         ssh: SSH session object
@@ -156,6 +201,7 @@ def _run(
         password: Optional sudo password
         command_timeout: Custom timeout for this command
         use_cache: Whether to use cached results (default: True)
+        max_output_bytes: Per-stream cap (None: global default)
 
     Returns:
         Tuple of (return_code, stdout, stderr)
@@ -214,20 +260,24 @@ def _run(
             finally:
                 with suppress(Exception):
                     stdout.channel.close()
-            result = (exit_status, out, err)
+            result = _cap_output((exit_status, out, err), max_output_bytes)
             # Cache result for future use (if caching is enabled)
             if use_cache:
                 _cache_put(cache_key, result)
             return result
         except (TypeError, AttributeError):
             # Fall back to using ssh.run() for mock objects
-            result = ssh.run(command, timeout=effective_timeout)
+            result = _cap_output(
+                ssh.run(command, timeout=effective_timeout), max_output_bytes
+            )
             if use_cache:
                 _cache_put(cache_key, result)
             return result
     else:
         # Use the normal ssh.run() method
-        result = ssh.run(command, timeout=effective_timeout)
+        result = _cap_output(
+            ssh.run(command, timeout=effective_timeout), max_output_bytes
+        )
         if use_cache:
             _cache_put(cache_key, result)
         return result

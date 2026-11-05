@@ -38,6 +38,7 @@ from .checks import (
     run_all_checks,
     run_all_checks_parallel,
     set_command_timeout,
+    set_max_output_bytes,
 )
 from .checks_audit import run_all_audit_checks
 from .checks_container import run_all_checks as run_all_container_checks
@@ -126,6 +127,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-cache",
         action="store_true",
         help="Disable the command-output cache for this scan (slower, always fresh)",
+    )
+    parser.add_argument(
+        "--max-output-bytes",
+        type=int,
+        default=1048576,
+        help="Cap retained bytes per remote command output (<=0 disables)",
     )
     parser.add_argument(
         "--jobs",
@@ -357,6 +364,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # Apply per-command timeout for all SSH execs
     set_command_timeout(args.command_timeout)
+
+    # Cap retained output bytes per command (fleet memory discipline)
+    set_max_output_bytes(args.max_output_bytes)
 
     # Reset command cache for fresh scan results
     from .checks import (
