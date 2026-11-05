@@ -79,14 +79,15 @@ and verifies them before the release counts as good:
 Verify any release yourself (no secrets needed):
 
 ```bash
-IMG=ghcr.io/greg-2600/auditless:2.5.2
+VERSION=${VERSION:-2.5.3}  # export the release you want to verify
+IMG=ghcr.io/greg-2600/auditless:${VERSION}
 cosign verify \
   --certificate-identity-regexp "https://github.com/Greg-2600/auditless/.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$IMG"
 slsa-verifier verify-image "$IMG" \
   --source-uri "github.com/Greg-2600/auditless" \
-  --source-tag "v2.5.2"
+  --source-tag "v${VERSION}"
 cosign download sbom "$IMG" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['packages']), 'packages')"
 ```
 
