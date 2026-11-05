@@ -81,6 +81,60 @@ def test_compliance_empty_report():
     assert summary["coverage"]["percent"] == 0
 
 
+def test_detect_framework():
+    from linux_health.compliance import detect_framework
+
+    assert detect_framework("Ubuntu 22.04.5 LTS") == "cis-ubuntu22"
+    assert detect_framework("Debian GNU/Linux 12 (bookworm)") == "cis-debian12"
+    assert detect_framework("Red Hat Enterprise Linux 9.4") == "cis-rhel9"
+    assert detect_framework("Rocky Linux 9.3") == "cis-rhel9"
+    assert detect_framework("") == "cis-ubuntu22"
+    assert detect_framework("Something Else 1.0") == "cis-ubuntu22"
+
+
+def test_frameworks_all_registered():
+    from linux_health.compliance import FRAMEWORKS
+
+    assert set(FRAMEWORKS) == {"cis-ubuntu22", "cis-debian12", "cis-rhel9", "pci-dss4"}
+    for fw in FRAMEWORKS.values():
+        assert fw.title and fw.version and fw.sections and fw.titles
+
+
+def test_pci_scoring_and_auto_detection():
+    report = {
+        "system": {"os": "Debian GNU/Linux 12"},
+        "summary": {"hardening_index": 70},
+        "checks": [
+            {
+                "test_id": "FIRE-4512",
+                "item": "Firewall",
+                "category": "N",
+                "status": "pass",
+                "details": "",
+                "recommendation": "",
+            },
+            {
+                "test_id": "TIME-3104",
+                "item": "Clock",
+                "category": "N",
+                "status": "fail",
+                "details": "",
+                "recommendation": "",
+            },
+        ],
+    }
+    auto = compliance_summary(report)
+    assert auto["framework"] == "cis-debian12"
+    pci = compliance_summary(report, "pci-dss4")
+    assert pci["framework"] == "pci-dss4"
+    by_control = {c["control"]: c for c in pci["controls"]}
+    assert by_control["1.5"]["status"] == "pass"
+    assert by_control["10.4"]["status"] == "fail"
+    assert pci["coverage"]["total_checks"] == 2
+    with pytest.raises(ValueError, match="unknown framework"):
+        compliance_summary(report, "soc2")
+
+
 def _canned_compliance_report():
     return {
         "summary": {"hardening_index": 75},
@@ -142,6 +196,13 @@ def test_host_compliance_endpoint(client, monkeypatch):
 def test_compliance_controls_catalog(client):
     catalog = client.compliance_controls()
     assert catalog["benchmark"].startswith("CIS Ubuntu Linux")
+    assert catalog["framework"] == "cis-ubuntu22"
     assert "1.4.1" in catalog["controls"]
     assert catalog["mapping"]["BOOT-5122"] == [{"control": "1.4.1", "level": "direct"}]
     assert "STOR-6310" in catalog["unmapped"]
+    pci = client.compliance_controls(framework="pci-dss4")
+    assert pci["framework"] == "pci-dss4"
+    assert "10.4" in pci["controls"]
+    with pytest.raises(ApiError) as exc_info:
+        client.compliance_controls(framework="soc2")
+    assert exc_info.value.status == 400

@@ -396,16 +396,18 @@ class ApiClient:
         )
         return result
 
-    def host_compliance(self, host_id: str) -> dict[str, Any]:
-        """CIS compliance of the host's latest report (GET .../compliance)."""
+    def host_compliance(self, host_id: str, framework: str = "auto") -> dict[str, Any]:
+        """Compliance of the host's latest report (GET .../compliance)."""
         result: dict[str, Any] = self._request(
-            "GET", f"/api/hosts/{host_id}/compliance"
+            "GET", f"/api/hosts/{host_id}/compliance", params={"framework": framework}
         )
         return result
 
-    def compliance_controls(self) -> dict[str, Any]:
-        """CIS control catalog (GET /api/compliance/controls)."""
-        result: dict[str, Any] = self._request("GET", "/api/compliance/controls")
+    def compliance_controls(self, framework: str = "cis-ubuntu22") -> dict[str, Any]:
+        """Control catalog (GET /api/compliance/controls)."""
+        result: dict[str, Any] = self._request(
+            "GET", "/api/compliance/controls", params={"framework": framework}
+        )
         return result
 
     def wait_for(
