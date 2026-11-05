@@ -4,6 +4,25 @@
 
 This document describes the architectural design, patterns used, and technical decisions behind Linux Health Security Scanner v2.0.0.
 
+## Product Naming (Canonical)
+
+The product is **Auditless** (agentless Linux security scanner).
+Historical name **Linux Health** survives only as the Python import package
+and in legacy paths. The full decision table lives in `ROADMAP.md`
+("Naming decision"); the short version:
+
+| Layer | Canonical | Legacy / alias |
+|---|---|---|
+| Product, UI, docs title | **Auditless** | Linux Health Security Scanner |
+| Distribution (`pip`, Docker, CLI) | **auditless** | `linux-health` CLI kept as deprecated alias through v3.x |
+| Import package (`import x`) | **linux_health** (kept through v3.x) | `auditless` import shim planned |
+| Env / config namespace | **AUDITLESS_\*** | config paths gain `auditless` variants; `linux_health` paths keep working with a warning |
+| Repository | **Greg-2600/auditless** | stale `yourusername/linux_health` links are tech debt (ROADMAP P0) |
+
+Rule for renames: add the new name, shim/migrate the old, warn once,
+remove after the deprecation window (full package rename slated for v4.0).
+Never break existing installs silently.
+
 ## Design Principles
 
 ### 1. **Zero-Touch Agentless Architecture**
