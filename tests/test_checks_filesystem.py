@@ -402,7 +402,7 @@ class TestRunAllFilesystemChecks:
 
         results = run_all_filesystem_checks(ssh, password="test")
 
-        # Should still return 6 results, all marked as fail
+        # Should still return 6 results, all marked unknown (not fail)
         assert len(results) == 6
-        assert all(r.status == "fail" for r in results)
+        assert all(r.status == "unknown" for r in results)
         assert all("error" in r.details.lower() for r in results)

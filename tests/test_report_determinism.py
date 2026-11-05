@@ -75,6 +75,7 @@ def test_json_top_level_key_order_locked() -> None:
         "passed",
         "warned",
         "failed",
+        "unknown",
         "hardening_index",
         "hardening_level",
     ]

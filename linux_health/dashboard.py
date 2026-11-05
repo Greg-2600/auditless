@@ -575,7 +575,7 @@ def diff_reports(before: dict, after: dict) -> dict:
         return f"{check.get('test_id', '')}::{check.get('item', '')}"
 
     def rank(status: str) -> int:
-        return {"pass": 2, "warn": 1, "fail": 0}.get(status, -1)
+        return {"pass": 2, "warn": 1, "fail": 0, "unknown": 1}.get(status, -1)
 
     old = {key(c): c for c in before.get("checks", [])}
     new = {key(c): c for c in after.get("checks", [])}
@@ -1102,12 +1102,12 @@ async function showComp(hostId){
  const fw=(document.getElementById("compfw")||{}).value||"auto";
  const c=await api("/api/hosts/"+hostId+"/compliance?framework="+fw);
  const rows=c.controls.map(x=>`<tr><td>${esc(x.control)}<br><span style="color:var(--dim)">${esc(x.title)}</span></td>`+
-  `<td>${x.level}</td><td class="${x.status}"><b>${x.status.toUpperCase()}</b></td>`+
-  `<td>${x.score}</td><td>${x.tests.map(t=>esc(t.test_id)).join(", ")}</td></tr>`).join("");
+  `<td>${x.level}</td><td class="${x.status}"><b>${esc(String(x.status).toUpperCase())}</b></td>`+
+  `<td>${x.score??"n/a"}</td><td>${x.tests.map(t=>esc(t.test_id)).join(", ")}</td></tr>`).join("");
  const secs=Object.entries(c.sections).map(([k,v])=>
-  `<tr><td>${esc(v.section)}</td><td class="${v.score>=75?"pass":v.score>=60?"warn":"fail"}"><b>${v.score}</b></td><td>${v.controls}</td></tr>`).join("");
+  `<tr><td>${esc(v.section)}</td><td class="${v.score==null?"unknown":v.score>=75?"pass":v.score>=60?"warn":"fail"}"><b>${v.score??"n/a"}</b></td><td>${v.controls}</td></tr>`).join("");
  document.getElementById("diff").innerHTML=
-  `<h3>CIS compliance: <span class="score ${lvl(c.overall_score)}">${c.overall_score}/100</span></h3>`+
+  `<h3>CIS compliance: <span class="score ${c.overall_score==null?"unknown":lvl(c.overall_score)}">${c.overall_score??"n/a"}/100</span></h3>`+
   `<p class="hist">${esc(c.benchmark)} &mdash; coverage ${c.coverage.mapped_checks}/${c.coverage.total_checks} checks (${c.coverage.percent}%) &mdash; ${c.extended.length} extended (non-CIS) checks</p>`+
   `<h4>By section</h4><table><tr><th>Section</th><th>Score</th><th>Controls</th></tr>${secs}</table>`+
   `<h4>Controls</h4><table><tr><th>Control</th><th>Level</th><th>Status</th><th>Score</th><th>Tests</th></tr>${rows}</table>`}
@@ -1145,7 +1145,7 @@ function render(r){
    onclick="dl()">Download JSON</button></h3>
   <div class="toolbar"><select id="f" onchange="flt()"><option value="">all</option>
   <option value="fail">fail</option><option value="warn">warn</option>
-  <option value="pass">pass</option></select>
+  <option value="pass">pass</option><option value="unknown">unknown</option></select>
   <input id="q" placeholder="filter text or test id&hellip;" oninput="flt()"></div>
   <table id="ct"><tr><th>Status</th><th>Test</th><th>Item</th><th>Details</th><th>Fix</th></tr>
   ${(r.checks||[]).map(c=>`<tr data-s="${c.status}"

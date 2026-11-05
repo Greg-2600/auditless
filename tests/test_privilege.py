@@ -98,7 +98,7 @@ def test_unprivileged_gates_table_members() -> None:
     by_item = {r.item: r for r in results}
     for name in NEEDS_ELEVATION:
         slot = by_item[f"{name} skipped (unprivileged)"]
-        assert slot.status == "warn"
+        assert slot.status == "unknown"
         assert slot.category == "Privilege"
         assert "unknown" in slot.details
         assert slot.test_id == CHECK_TEST_IDS.get(name, "")
@@ -144,6 +144,6 @@ def test_ambiguous_privilege_runs_everything() -> None:
 def test_placeholder_shape() -> None:
     """Direct placeholder construction stays well-formed."""
     slot: CheckResult = _privilege_placeholder("check_x")
-    assert (slot.status, slot.category) == ("warn", "Privilege")
-    assert "unknown" in slot.details
+    assert (slot.status, slot.category) == ("unknown", "Privilege")
+    assert "elevated privileges" in slot.details
     assert isinstance(checks_mod.NEEDS_ELEVATION, frozenset)

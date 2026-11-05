@@ -2565,6 +2565,49 @@ class TestHardeningIndex:
         # 1 pass (100%) + 1 fail (0%) = 50%
         assert index["overall_index"] == 50
 
+    def test_calculate_hardening_index_excludes_unknown(self):
+        """Unknown results count separately and never move the index."""
+        checks = [
+            CheckResult(
+                category="Security",
+                item="Check 1",
+                status="pass",
+                details="Details",
+                recommendation="Recommendation",
+            ),
+            CheckResult(
+                category="Privilege",
+                item="Check 2 skipped (unprivileged)",
+                status="unknown",
+                details="Details",
+                recommendation="Recommendation",
+            ),
+        ]
+        from linux_health.report import calculate_hardening_index
+
+        index = calculate_hardening_index(checks)
+        assert index["unknown"] == 1
+        assert index["total_checks"] == 2
+        # 1 pass assessed alone = 100 (unknown excluded, not 50/66)
+        assert index["overall_index"] == 100
+
+    def test_calculate_hardening_index_all_unknown(self):
+        """Nothing assessed scores 0 with everything counted unknown."""
+        checks = [
+            CheckResult(
+                category="Scan",
+                item="Check 1 timed out",
+                status="unknown",
+                details="Details",
+                recommendation="Recommendation",
+            ),
+        ]
+        from linux_health.report import calculate_hardening_index
+
+        index = calculate_hardening_index(checks)
+        assert index["overall_index"] == 0
+        assert index["unknown"] == 1
+
 
 class TestProfileLoading:
     """Tests for profile loading functionality"""

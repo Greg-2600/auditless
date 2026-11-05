@@ -18,12 +18,14 @@ STATUS_ICON = {
     "pass": "✅",
     "warn": "⚠️",
     "fail": "❌",
+    "unknown": "❓",
 }
 
 STATUS_SYMBOL = {
     "pass": "[PASS]",
     "warn": "[WARN]",
     "fail": "[FAIL]",
+    "unknown": "[UNKNOWN]",
 }
 
 
@@ -42,7 +44,12 @@ def _port_service_suffix(port: PortStatus) -> str:
 
 
 def calculate_hardening_index(checks: Iterable[CheckResult]) -> dict[str, Any]:
-    """Calculate Lynis-style hardening index (0-100) with breakdown."""
+    """Calculate Lynis-style hardening index (0-100) with breakdown.
+
+    Unknown results (not assessed: unprivileged, timed out, crashed)
+    are counted but excluded from scoring entirely — neither rewarded
+    like pass nor punished like fail.
+    """
     checks_list = list(checks)
 
     if not checks_list:
@@ -52,6 +59,7 @@ def calculate_hardening_index(checks: Iterable[CheckResult]) -> dict[str, Any]:
             "passed": 0,
             "warned": 0,
             "failed": 0,
+            "unknown": 0,
             "categories": {},
         }
 
@@ -59,11 +67,14 @@ def calculate_hardening_index(checks: Iterable[CheckResult]) -> dict[str, Any]:
     passed = sum(1 for c in checks_list if c.status == "pass")
     warned = sum(1 for c in checks_list if c.status == "warn")
     failed = sum(1 for c in checks_list if c.status == "fail")
+    unknown = sum(1 for c in checks_list if c.status == "unknown")
 
     # Calculate overall hardening index
     # Pass = 100% weight, Warn = 50% weight, Fail = 0% weight
+    # Unknown = excluded (no evidence either way)
+    assessed = total - unknown
     weighted_score = (passed * 100) + (warned * 50) + (failed * 0)
-    max_score = total * 100
+    max_score = assessed * 100
     overall_index = int((weighted_score / max_score * 100)) if max_score > 0 else 0
 
     # Calculate per-category breakdown
@@ -71,7 +82,13 @@ def calculate_hardening_index(checks: Iterable[CheckResult]) -> dict[str, Any]:
     for check in checks_list:
         cat = check.category
         if cat not in categories:
-            categories[cat] = {"pass": 0, "warn": 0, "fail": 0, "total": 0}
+            categories[cat] = {
+                "pass": 0,
+                "warn": 0,
+                "fail": 0,
+                "unknown": 0,
+                "total": 0,
+            }
 
         categories[cat]["total"] += 1
         if check.status == "pass":
@@ -80,11 +97,13 @@ def calculate_hardening_index(checks: Iterable[CheckResult]) -> dict[str, Any]:
             categories[cat]["warn"] += 1
         elif check.status == "fail":
             categories[cat]["fail"] += 1
+        elif check.status == "unknown":
+            categories[cat]["unknown"] += 1
 
     # Calculate index per category
     for cat, stats in categories.items():
         cat_weighted = (stats["pass"] * 100) + (stats["warn"] * 50)
-        cat_max = stats["total"] * 100
+        cat_max = (stats["total"] - stats["unknown"]) * 100
         stats["index"] = int((cat_weighted / cat_max * 100)) if cat_max > 0 else 0
 
     return {
@@ -93,6 +112,7 @@ def calculate_hardening_index(checks: Iterable[CheckResult]) -> dict[str, Any]:
         "passed": passed,
         "warned": warned,
         "failed": failed,
+        "unknown": unknown,
         "categories": categories,
     }
 
@@ -126,6 +146,7 @@ def render_report_text(
     passed = sum(1 for c in checks_list if c.status == "pass")
     warned = sum(1 for c in checks_list if c.status == "warn")
     failed = sum(1 for c in checks_list if c.status == "fail")
+    unknown = sum(1 for c in checks_list if c.status == "unknown")
 
     # Calculate hardening index
     hardening = calculate_hardening_index(checks_list)
@@ -153,6 +174,11 @@ def render_report_text(
     lines.append(f"  ✅ Passed:     {passed}")
     lines.append(f"  ⚠️  Warnings:   {warned}")
     lines.append(f"  ❌ Failed:     {failed}")
+    lines.append(f"  ❓ Unknown:    {unknown} (not assessed, excluded from index)")
+    lines.append(f"  ✅ Passed:     {passed}")
+    lines.append(f"  ⚠️  Warnings:   {warned}")
+    lines.append(f"  ❌ Failed:     {failed}")
+    lines.append(f"  ❓ Unknown:    {unknown} (not assessed, excluded from index)")
     lines.append("")
     lines.append(
         f"  HARDENING INDEX: {hardening['overall_index']}/100 {level_icon} ({level})"
@@ -170,14 +196,15 @@ def render_report_text(
         _, cat_icon = get_hardening_level(stats["index"])
         lines.append(
             f"  {cat_icon} {stats['index']:3d}/100  {cat:<25} "
-            f"(✅{stats['pass']} ⚠️{stats['warn']} ❌{stats['fail']})"
+            f"(✅{stats['pass']} ⚠️{stats['warn']} ❌{stats['fail']} "
+            f"❓{stats['unknown']})"
         )
     lines.append("")
 
     lines.append("HEALTH CHECKS")
     lines.append("-" * 80)
-    # Sort by status: fail, warn, pass
-    status_order = {"fail": 0, "warn": 1, "pass": 2}
+    # Sort by status: fail, warn, pass, unknown
+    status_order = {"fail": 0, "warn": 1, "pass": 2, "unknown": 3}
     sorted_checks = sorted(
         checks_list, key=lambda c: status_order.get(c.status.lower(), 3)
     )
@@ -358,6 +385,7 @@ def render_report(
     passed = sum(1 for c in checks_list if c.status == "pass")
     warned = sum(1 for c in checks_list if c.status == "warn")
     failed = sum(1 for c in checks_list if c.status == "fail")
+    unknown = sum(1 for c in checks_list if c.status == "unknown")
 
     # Calculate hardening index
     hardening = calculate_hardening_index(checks_list)
@@ -377,7 +405,10 @@ def render_report(
     lines.append("")
 
     lines.append("## Summary")
-    lines.append(f"- Checks: {total} (✅ {passed} / ⚠️ {warned} / ❌ {failed})")
+    lines.append(
+        f"- Checks: {total} (✅ {passed} / ⚠️ {warned} / ❌ {failed} / "
+        f"❓ {unknown} unknown, excluded from index)"
+    )
     lines.append(
         f"- **Hardening Index: {hardening['overall_index']}/100** {level_icon} **({level})**"
     )
@@ -389,23 +420,24 @@ def render_report(
     # Add category breakdown
     lines.append("## Hardening by Category")
     lines.append("")
-    lines.append("| Category | Index | Passed | Warned | Failed |")
-    lines.append("| --- | --- | --- | --- | --- |")
+    lines.append("| Category | Index | Passed | Warned | Failed | Unknown |")
+    lines.append("| --- | --- | --- | --- | --- | --- |")
     # Sort categories by index (worst first)
     sorted_cats = sorted(hardening["categories"].items(), key=lambda x: x[1]["index"])
     for cat, stats in sorted_cats:
         _, cat_icon = get_hardening_level(stats["index"])
         lines.append(
             f"| {cat} | {cat_icon} {stats['index']}/100 | "
-            f"{stats['pass']} | {stats['warn']} | {stats['fail']} |"
+            f"{stats['pass']} | {stats['warn']} | {stats['fail']} | "
+            f"{stats['unknown']} |"
         )
     lines.append("")
 
     lines.append("## Checklist")
     lines.append("| Status | Item | Details | Recommendation | Category |")
     lines.append("| --- | --- | --- | --- | --- |")
-    # Sort by status: fail, warn, pass
-    status_order = {"fail": 0, "warn": 1, "pass": 2}
+    # Sort by status: fail, warn, pass, unknown
+    status_order = {"fail": 0, "warn": 1, "pass": 2, "unknown": 3}
     sorted_checks = sorted(
         checks_list, key=lambda c: status_order.get(c.status.lower(), 3)
     )
@@ -561,6 +593,7 @@ def render_report_json(
             "passed": hardening["passed"],
             "warned": hardening["warned"],
             "failed": hardening["failed"],
+            "unknown": hardening["unknown"],
             "hardening_index": hardening["overall_index"],
             "hardening_level": level,
         },
@@ -593,6 +626,7 @@ def render_report_json(
             "passed": stats["pass"],
             "warned": stats["warn"],
             "failed": stats["fail"],
+            "unknown": stats["unknown"],
             "total": stats["total"],
         }
 

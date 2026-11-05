@@ -370,9 +370,17 @@ def compliance_summary(report: dict, framework: str = "auto") -> dict:
     sections: dict[str, dict] = {}
     for control in sorted(by_control):
         bucket = by_control[control]
-        statuses = [t["status"] for t in bucket["tests"]]
-        worst = min(statuses, key=_score_of) if statuses else "fail"
-        score = sum(_score_of(s) for s in statuses) / len(statuses) if statuses else 0.0
+        # Unknown evidence (not assessed) never decides a control.
+        assessed = [
+            t for t in bucket["tests"] if t["status"] in ("pass", "warn", "fail")
+        ]
+        if assessed:
+            statuses = [t["status"] for t in assessed]
+            worst = min(statuses, key=_score_of)
+            score: float | None = sum(_score_of(s) for s in statuses) / len(statuses)
+        else:
+            worst = "unknown"
+            score = None
         section = control.split(".")[0]
         controls.append(
             {
@@ -381,7 +389,7 @@ def compliance_summary(report: dict, framework: str = "auto") -> dict:
                 "section": active.sections.get(section, section),
                 "level": bucket["level"],
                 "status": worst,
-                "score": round(score * 100),
+                "score": round(score * 100) if score is not None else None,
                 "tests": bucket["tests"],
             }
         )
@@ -389,19 +397,28 @@ def compliance_summary(report: dict, framework: str = "auto") -> dict:
             control.split(".")[0],
             {"section": active.sections.get(section, section), "scores": []},
         )
-        sec["scores"].append(score)
+        if score is not None:
+            sec["scores"].append(score)
 
     section_summary = {
         sec: {
             "section": data["section"],
-            "score": round(sum(data["scores"]) / len(data["scores"]) * 100),
+            "score": (
+                round(sum(data["scores"]) / len(data["scores"]) * 100)
+                if data["scores"]
+                else None
+            ),
             "controls": len(data["scores"]),
         }
         for sec, data in sorted(sections.items())
     }
-    overall = (
-        round(sum(c["score"] for c in controls) / len(controls)) if controls else 0
-    )
+    scored = [c["score"] for c in controls if c["score"] is not None]
+    if scored:
+        overall = round(sum(scored) / len(scored))
+    elif controls:
+        overall = None  # controls exist but none were assessable
+    else:
+        overall = 0
     total = len(checks)
     mapped = total - len(extended)
     return {

@@ -206,3 +206,22 @@ def test_compliance_controls_catalog(client):
     with pytest.raises(ApiError) as exc_info:
         client.compliance_controls(framework="soc2")
     assert exc_info.value.status == 400
+
+
+def test_compliance_unknown_evidence_excluded() -> None:
+    """Unknown checks never decide a control (neither worst nor average)."""
+    summary = compliance_summary(
+        _report(("BOOT-5122", "pass"), ("BOOT-5122", "unknown"))
+    )
+    by_control = {c["control"]: c for c in summary["controls"]}
+    assert by_control["1.4.1"]["status"] == "pass"
+    assert by_control["1.4.1"]["score"] == 100
+
+
+def test_compliance_all_unknown_control() -> None:
+    """A control with only unknown evidence scores None, honestly labeled."""
+    summary = compliance_summary(_report(("BOOT-5122", "unknown")))
+    by_control = {c["control"]: c for c in summary["controls"]}
+    assert by_control["1.4.1"]["status"] == "unknown"
+    assert by_control["1.4.1"]["score"] is None
+    assert summary["overall_score"] is None
