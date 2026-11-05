@@ -732,7 +732,14 @@ def render_report_dict(report: dict, fmt: str) -> tuple[str, str]:
         for c in report.get("checks", [])
     ]
     ports = [
-        PortStatus(port=p.get("port", 0), open=True, reason=p.get("reason", ""))
+        PortStatus(
+            port=p.get("port", 0),
+            open=True,
+            reason=p.get("reason", ""),
+            banner=p.get("banner"),
+            service=p.get("service"),
+            version=p.get("version"),
+        )
         for p in report.get("ports", {}).get("open_ports", [])
     ]
     findings = report.get("detailed_findings") or {}

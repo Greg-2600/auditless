@@ -31,6 +31,16 @@ def _status_icon(status: str) -> str:
     return STATUS_ICON.get(status, "⬜")
 
 
+def _port_service_suffix(port: PortStatus) -> str:
+    """Render ' (service version)' for identified open ports, else ''."""
+    if not port.service and not port.version:
+        return ""
+    label = port.service or "unknown"
+    if port.version:
+        label += f" {port.version}"
+    return f" ({label})"
+
+
 def calculate_hardening_index(checks: Iterable[CheckResult]) -> dict[str, Any]:
     """Calculate Lynis-style hardening index (0-100) with breakdown."""
     checks_list = list(checks)
@@ -184,7 +194,10 @@ def render_report_text(
         lines.append("  No open ports found (all scanned ports were closed/filtered)")
     else:
         for port in open_only:
-            lines.append(f"  Port {port.port:5d}  OPEN      {port.reason or ''}")
+            lines.append(
+                f"  Port {port.port:5d}  OPEN      {port.reason or ''}"
+                f"{_port_service_suffix(port)}"
+            )
     lines.append("")
 
     if detailed:
@@ -414,7 +427,9 @@ def render_report(
         lines.append(f"| none | closed/filtered | {msg} |")
     else:
         for port in open_only:
-            lines.append(f"| {port.port} | open | {port.reason or ''} |")
+            lines.append(
+                f"| {port.port} | open | {port.reason or ''}{_port_service_suffix(port)} |"
+            )
     lines.append("")
 
     if detailed:
@@ -555,7 +570,14 @@ def render_report_json(
             "scanned": len(ports_list),
             "open": len([p for p in ports_list if p.open]),
             "open_ports": [
-                {"port": p.port, "state": "open", "reason": p.reason or ""}
+                {
+                    "port": p.port,
+                    "state": "open",
+                    "reason": p.reason or "",
+                    "service": p.service,
+                    "version": p.version,
+                    "banner": p.banner,
+                }
                 for p in ports_list
                 if p.open
             ],
