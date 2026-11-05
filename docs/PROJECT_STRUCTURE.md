@@ -25,7 +25,7 @@ linux_health/
 │
 ├── tests/                  # Test suite (469 unit + 14 e2e)
 │   ├── conftest.py        # Shared live-server fixture
-│   ├── test_linux_health.py / test_dashboard.py / test_store.py
+│   ├── test_auditless.py / test_dashboard.py / test_store.py
 │   ├── test_scheduler.py / test_compliance.py / test_remediations.py
 │   ├── test_checks_*.py   # Per-module check tests
 │   └── test_e2e.py        # Containerized live-fire (AUDITLESS_E2E=1)
