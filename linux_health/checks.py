@@ -555,6 +555,26 @@ def check_updates(ssh: SSHSession, password: str = "") -> CheckResult:
     return _pass("Pending updates", "0 packages pending", "No action", category)
 
 
+def _directive_value(out: str, name: str) -> str | None:
+    """First value for an sshd directive (sshd -T or config-grep output)."""
+    text = "\n".join(
+        line for line in out.splitlines() if not line.strip().startswith("#")
+    )
+    match = re.search(rf"(?:^|\n){name}\s+(\S+)", text, re.IGNORECASE | re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def _parse_sshd_time(raw: str | None) -> int | None:
+    """Parse sshd time values (bare seconds, or 60s/2m/1h suffixes)."""
+    if raw is None:
+        return None
+    match = re.fullmatch(r"(\d+)\s*([smh]?)", raw.strip(), re.IGNORECASE)
+    if not match:
+        return None
+    amount, unit = int(match.group(1)), match.group(2).lower()
+    return amount * {"": 1, "s": 1, "m": 60, "h": 3600}[unit]
+
+
 def check_ssh_config(ssh: SSHSession, password: str = "") -> List[CheckResult]:
     category = "SSH"
     # Try sshd -T first (works better with sudo, doesn't require file read)
@@ -562,10 +582,17 @@ def check_ssh_config(ssh: SSHSession, password: str = "") -> List[CheckResult]:
     if password:
         cmd = f"sudo -S {cmd}"
     code, out, err = _run(ssh, cmd, password)
+    effective = code == 0 and bool(out.strip())
 
-    # Fallback to grep if sshd -T fails
-    if code != 0:
-        cmd = "grep -E '^(PasswordAuthentication|PermitRootLogin|Port)' /etc/ssh/sshd_config 2>/dev/null"
+    # Fallback to grep if sshd -T fails (uncommented directives only;
+    # sshd -T remains authoritative because it expands Match blocks)
+    if not effective:
+        cmd = (
+            "grep -Ei '^[[:space:]]*(PasswordAuthentication|PermitRootLogin|Port|"
+            "AllowUsers|AllowGroups|MaxAuthTries|LoginGraceTime|"
+            "ClientAliveInterval|ClientAliveCountMax)[[:space:]]' "
+            "/etc/ssh/sshd_config 2>/dev/null"
+        )
         if password:
             cmd = f"sudo -S {cmd}"
         code, out, err = _run(ssh, cmd, password)
@@ -666,14 +693,122 @@ def check_ssh_config(ssh: SSHSession, password: str = "") -> List[CheckResult]:
         )
         security_score += 0
 
+    # Who may log in at all: an explicit allow-list beats the default
+    # (any valid account). sshd -T prints these only when set.
+    allow_users = _directive_value(out, "allowusers")
+    allow_groups = _directive_value(out, "allowgroups")
+    if allow_users or allow_groups:
+        results.append(
+            _pass(
+                "SSH access allow-list",
+                "Login restricted (AllowUsers/AllowGroups configured)",
+                "Keep the allow-list minimal and reviewed",
+                category,
+            )
+        )
+        security_score += 1
+    else:
+        results.append(
+            _warn(
+                "SSH access allow-list",
+                "No AllowUsers/AllowGroups restriction"
+                + ("" if effective else " (could not determine from config)"),
+                "Restrict SSH logins with AllowUsers/AllowGroups",
+                category,
+            )
+        )
+        security_score += 0
+
+    # Brute-force throttle: CIS wants MaxAuthTries at 4 or below
+    # (sshd default is 6).
+    max_auth = _directive_value(out, "maxauthtries")
+    if max_auth is not None and max_auth.isdigit() and int(max_auth) <= 4:
+        results.append(
+            _pass(
+                "SSH MaxAuthTries",
+                f"MaxAuthTries {max_auth} (brute-force throttled)",
+                "Keep MaxAuthTries at 4 or below",
+                category,
+            )
+        )
+        security_score += 1
+    else:
+        results.append(
+            _warn(
+                "SSH MaxAuthTries",
+                f"MaxAuthTries {max_auth or 'uses the default of 6'}"
+                + ("" if effective else " (could not determine from config)"),
+                "Set 'MaxAuthTries 4' in sshd_config",
+                category,
+            )
+        )
+        security_score += 0
+
+    # Stale unauthenticated sessions should not linger (CIS: <= 60s).
+    grace = _parse_sshd_time(_directive_value(out, "logingracetime"))
+    if grace is not None and grace <= 60:
+        results.append(
+            _pass(
+                "SSH LoginGraceTime",
+                f"LoginGraceTime {grace}s",
+                "Keep LoginGraceTime at 60s or below",
+                category,
+            )
+        )
+        security_score += 1
+    else:
+        results.append(
+            _warn(
+                "SSH LoginGraceTime",
+                "LoginGraceTime above 60s or using the 120s default"
+                + ("" if effective else " (could not determine from config)"),
+                "Set 'LoginGraceTime 60' in sshd_config",
+                category,
+            )
+        )
+        security_score += 0
+
+    # Dead sessions should be reaped (CIS: interval <= 300s, count <= 3).
+    alive_interval = _directive_value(out, "clientaliveinterval")
+    alive_count = _directive_value(out, "clientalivecountmax")
+    interval_ok = (
+        alive_interval is not None
+        and alive_interval.isdigit()
+        and 0 < int(alive_interval) <= 300
+    )
+    count_ok = (
+        alive_count is not None and alive_count.isdigit() and 0 < int(alive_count) <= 3
+    )
+    if interval_ok and count_ok:
+        results.append(
+            _pass(
+                "SSH ClientAlive",
+                f"ClientAliveInterval {alive_interval}s x{alive_count}",
+                "Keep dead-session reaping enabled",
+                category,
+            )
+        )
+        security_score += 1
+    else:
+        results.append(
+            _warn(
+                "SSH ClientAlive",
+                "Dead SSH sessions are not reaped (interval disabled or too lax)"
+                + ("" if effective else " (could not determine from config)"),
+                "Set 'ClientAliveInterval 300' and 'ClientAliveCountMax 3'",
+                category,
+            )
+        )
+        security_score += 0
+
     # Add overall security rating
-    if security_score >= 5:
+    if security_score >= 8:
         rating = "Excellent"
         icon = "✅"
-    elif security_score >= 3:
+    elif security_score >= 5:
         rating = "Good"
         icon = "✅"
-    elif security_score >= 1:
+    elif security_score >= 2:
         rating = "Fair"
         icon = "⚠️"
     else:
@@ -683,14 +818,14 @@ def check_ssh_config(ssh: SSHSession, password: str = "") -> List[CheckResult]:
     results.append(
         _pass(
             "SSH Security Rating",
-            f"{icon} {rating} ({security_score}/5)",
+            f"{icon} {rating} ({security_score}/9)",
             "Review each recommendation above",
             category,
         )
-        if security_score >= 3
+        if security_score >= 5
         else _warn(
             "SSH Security Rating",
-            f"{icon} {rating} ({security_score}/5)",
+            f"{icon} {rating} ({security_score}/9)",
             "Review each recommendation above",
             category,
         )
