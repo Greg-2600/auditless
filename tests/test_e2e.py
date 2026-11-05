@@ -28,6 +28,8 @@ NETWORK = "auditless-e2e-net"
 SSH_NAME = "auditless-e2e-ssh"
 APP_NAME = "auditless-e2e-app"
 HOOK_NAME = "auditless-e2e-hook"
+ISO_NETWORK = "auditless-e2e-iso"
+ISO_TARGET = "auditless-e2e-target"
 VOLUME = "auditless-e2e-data"
 
 HOOK_SERVER = (
@@ -209,6 +211,39 @@ def stack(tmp_path_factory):
             "-c",
             HOOK_SERVER,
         )
+        # Isolated target: no published ports, reachable only via the
+        # gateway container (attached to both networks below).
+        docker("network", "create", ISO_NETWORK, check=False)
+        docker(
+            "run",
+            "-d",
+            "--name",
+            ISO_TARGET,
+            "--network",
+            ISO_NETWORK,
+            "-e",
+            "USER_NAME=tester",
+            "-e",
+            f"USER_PASSWORD={E2E_PASSWORD}",
+            "-e",
+            "PASSWORD_ACCESS=true",
+            "-e",
+            f"PUBLIC_KEY={public_key}",
+            SSH_IMAGE,
+        )
+        docker("network", "connect", ISO_NETWORK, SSH_NAME)
+        # Real bastions need AllowTcpForwarding; the lab image ships it off.
+        docker(
+            "exec",
+            "-u",
+            "root",
+            SSH_NAME,
+            "sh",
+            "-c",
+            "sed -i 's/^AllowTcpForwarding.*/AllowTcpForwarding yes/'"
+            " /config/sshd/sshd_config"
+            " && kill -HUP $(pgrep -f 'sshd.pam.*listener' | head -1)",
+        )
 
         yield {
             "api": api,
@@ -224,7 +259,9 @@ def stack(tmp_path_factory):
         docker("rm", "-f", APP_NAME, check=False)
         docker("rm", "-f", SSH_NAME, check=False)
         docker("rm", "-f", HOOK_NAME, check=False)
+        docker("rm", "-f", ISO_TARGET, check=False)
         docker("network", "rm", NETWORK, check=False)
+        docker("network", "rm", ISO_NETWORK, check=False)
         docker("volume", "rm", VOLUME, check=False)
 
 
@@ -468,6 +505,42 @@ def test_api_diff_and_report_formats(stack):
     with pytest.raises(ApiError) as exc_info:
         api.get_report(second["id"], format="xml")
     assert exc_info.value.status == 400
+
+
+def test_bastion_two_hop_scan(stack):
+    """Scan an isolated target through a bastion (key on both hops).
+
+    The target has no published ports and shares a network only with the
+    gateway; the app container reaches it exclusively via direct-tcpip.
+    """
+    api = stack["api"]
+    via = api.create_host(
+        "e2e-isolated",
+        ISO_TARGET,
+        "tester",
+        port=2222,
+        auth="key",
+        jump_hostname=SSH_NAME,
+        jump_port=2222,
+        jump_username="tester",
+        jump_auth="key",
+    )
+    api.put_host_key(via["id"], stack["private_key"])
+    api.put_host_key(via["id"], stack["private_key"], kind="jump")
+    assert api.get_host_key(via["id"], kind="jump")["has_key"] is True
+
+    done = None
+    end = time.time() + 300
+    while time.time() < end:
+        job = api.start_scan(host_id=via["id"])
+        candidate = api.wait_for(job["id"], deadline=240, interval=5.0)
+        if candidate["status"] == "done":
+            done = candidate
+            break
+        time.sleep(10)  # target sshd still booting; retry
+    assert done is not None and done["status"] == "done"
+    assert done["report"]["summary"]["total_checks"] > 50
+    assert E2E_PASSWORD not in json.dumps(done)
 
 
 def test_api_persistence_across_restart(stack):

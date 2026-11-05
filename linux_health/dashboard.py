@@ -148,6 +148,10 @@ class ScanRequest(BaseModel):
         default=None,
         description="SSH password. Memory-only for the run; never stored or returned.",
     )
+    jump_password: SecretStr | None = Field(
+        default=None,
+        description="Bastion password for jump hosts (memory-only).",
+    )
     host_id: str | None = Field(
         default=None,
         description="Saved host to scan (alternative to hostname/username).",
@@ -180,6 +184,12 @@ class HostCreate(BaseModel):
         default="password",
         description="'password' (prompted per scan) or 'key' (stored server-side).",
     )
+    jump_hostname: str = Field(
+        default="", description="Bastion host (empty = direct connection)."
+    )
+    jump_port: int = 22
+    jump_username: str = ""
+    jump_auth: str = Field(default="password", description="'password' or 'key'.")
 
 
 class HostUpdate(BaseModel):
@@ -190,6 +200,10 @@ class HostUpdate(BaseModel):
     username: str | None = None
     port: int | None = None
     auth: str | None = None
+    jump_hostname: str | None = None
+    jump_port: int | None = None
+    jump_username: str | None = None
+    jump_auth: str | None = None
 
 
 class HostPublic(BaseModel):
@@ -202,6 +216,11 @@ class HostPublic(BaseModel):
     username: str
     auth: str
     has_key: int
+    jump_hostname: str = ""
+    jump_port: int = 22
+    jump_username: str = ""
+    jump_auth: str = "password"
+    has_jump_key: int = 0
     created_at: float
     updated_at: float
 
@@ -348,6 +367,20 @@ def run_scan(params: dict) -> dict:
         argv.append("--check-package-hygiene")
     if params.get("strict_host_key_checking"):
         argv.append("--strict-host-key-checking")
+    gateway = params.get("gateway") or {}
+    if gateway.get("hostname"):
+        argv += [
+            "--jump-host",
+            str(gateway["hostname"]),
+            "--jump-port",
+            str(gateway.get("port") or 22),
+            "--jump-user",
+            str(gateway.get("username") or ""),
+        ]
+        if gateway.get("password"):
+            argv += ["--jump-password", str(gateway["password"])]
+        if gateway.get("key_path"):
+            argv += ["--jump-key-file", str(gateway["key_path"])]
 
     out_path = Path(tempfile.mkdtemp(prefix="auditless-")) / "report.json"
     argv += ["--output", str(out_path)]
@@ -420,8 +453,7 @@ def _run_job(
 
 def _scrub_temp_key(params: dict) -> None:
     """Unlink materialized key bytes (idempotent backstop)."""
-    temp_key = params.get("_temp_key") or ""
-    if temp_key:
+    for temp_key in params.get("_temp_keys") or []:
         with contextlib.suppress(OSError):
             Path(temp_key).unlink()
 
@@ -453,19 +485,47 @@ def resolve_host_scan(host_id: str, overrides: dict) -> tuple[dict, dict]:
         raise KeyError(f"unknown host {host_id}")
     password = overrides.get("password") or ""
     key_path = ""
-    key_temp = ""
+    temp_keys: list[str] = []
+
+    def _materialize(kind: str) -> str:
+        # Decrypted key bytes go to a 0600 temp file; _temp_keys lets
+        # _run_job unlink every copy afterwards.
+        fd, path = tempfile.mkstemp(prefix="auditless-key-")
+        os.chmod(path, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(get_store().read_host_key(host_id, kind=kind))
+        temp_keys.append(path)
+        return path
+
     if host["auth"] == "key":
         if not get_store().has_host_key(host_id):
             raise ValueError("host uses key auth but no key is stored")
-        # Materialize decrypted key bytes to a 0600 temp file; the caller
-        # passes _temp_key through so _run_job can unlink it afterwards.
-        fd, key_temp = tempfile.mkstemp(prefix="auditless-key-")
-        os.chmod(key_temp, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(get_store().read_host_key(host_id))
-        key_path = key_temp
+        key_path = _materialize("host")
     elif not password:
         raise ValueError("password is required for this host")
+    gateway: dict = {}
+    if host.get("jump_hostname"):
+        if host.get("jump_auth", "password") == "key":
+            if not get_store().has_host_key(host_id, kind="jump"):
+                raise ValueError("jump host uses key auth but no key is stored")
+            gateway = {
+                "hostname": host["jump_hostname"],
+                "port": host.get("jump_port") or 22,
+                "username": host.get("jump_username") or "",
+                "password": "",
+                "key_path": _materialize("jump"),
+            }
+        else:
+            jump_password = overrides.get("jump_password") or ""
+            if not jump_password:
+                raise ValueError("jump password is required for this host")
+            gateway = {
+                "hostname": host["jump_hostname"],
+                "port": host.get("jump_port") or 22,
+                "username": host.get("jump_username") or "",
+                "password": jump_password,
+                "key_path": "",
+            }
     base = {
         "hostname": host["hostname"],
         "username": host["username"],
@@ -478,7 +538,8 @@ def resolve_host_scan(host_id: str, overrides: dict) -> tuple[dict, dict]:
         "enable_rootkit_scan": bool(overrides.get("enable_rootkit_scan")),
         "check_package_hygiene": bool(overrides.get("check_package_hygiene")),
         "strict_host_key_checking": bool(overrides.get("strict_host_key_checking")),
-        "_temp_key": key_temp,
+        "gateway": gateway,
+        "_temp_keys": temp_keys,
     }
     return base, {**base, "password": password}
 
@@ -774,7 +835,8 @@ Binds to localhost; do not expose without auth + TLS.</div>
 <button style="margin:0" onclick="verifyAudit()">Verify chain</button></div>
 <div id="audstat" class="hist"></div><div id="audit" class="hist">loading&hellip;</div></div>
 <div class="card"><h3 style="margin-top:0">Fleet overview</h3>
-<div class="toolbar"><button style="margin:0" onclick="loadFleet()">Refresh</button></div>
+<div class="toolbar"><button style="margin:0" onclick="loadFleet()">Refresh</button>
+<button style="margin:0" onclick="scanFleet()">Scan all (parallel)</button></div>
 <div id="fleet" class="hist">loading&hellip;</div>
 <div id="trend"></div></div>
 <div class="card"><h3 style="margin-top:0">Scan schedules</h3>
@@ -892,6 +954,11 @@ async function putKey(){
   keytext.value="";loadHosts();status("key stored (0600, never readable back)");}
  catch(e){status('<span class="err">'+esc(e.message)+"</span>")}}
 async function delKey(){await api("/api/hosts/"+keyhost.value+"/key",{method:"DELETE"});loadHosts()}
+async function scanFleet(){
+ const pw=prompt("SSH/sudo password for password-auth hosts (empty if all key auth):","")||"";
+ const r=await api("/api/fleet/scan",{method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({password:pw})});
+ status("launched "+r.jobs.length+" scans (bounded pool)");loadHist();}
 async function loadTokens(){
  try{const t=await api("/api/tokens");
   document.getElementById("toks").innerHTML=t.length?t.map(x=>
@@ -1171,11 +1238,13 @@ def api_start_scan(
         "strict_host_key_checking": data.strict_host_key_checking,
     }
     secret = data.password.get_secret_value() if data.password else ""
+    jump_secret = data.jump_password.get_secret_value() if data.jump_password else ""
     try:
         if host_id:
             try:
                 base, run_params = resolve_host_scan(
-                    host_id, {**overrides, "password": secret}
+                    host_id,
+                    {**overrides, "password": secret, "jump_password": jump_secret},
                 )
             except KeyError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1343,6 +1412,11 @@ def _host_public(row: dict) -> HostPublic:
         username=str(row["username"]),
         auth=str(row["auth"]),
         has_key=int(row["has_key"]),
+        jump_hostname=str(row.get("jump_hostname") or ""),
+        jump_port=int(row.get("jump_port") or 22),
+        jump_username=str(row.get("jump_username") or ""),
+        jump_auth=str(row.get("jump_auth") or "password"),
+        has_jump_key=int(row.get("has_jump_key") or 0),
         created_at=float(row["created_at"]),
         updated_at=float(row["updated_at"]),
     )
@@ -1372,9 +1446,21 @@ def api_create_host(
     """Save a host for key auth and report history."""
     if data.auth not in ("password", "key"):
         raise HTTPException(status_code=400, detail="auth must be 'password' or 'key'")
+    if data.jump_auth not in ("password", "key"):
+        raise HTTPException(
+            status_code=400, detail="jump_auth must be 'password' or 'key'"
+        )
     try:
         row = get_store().upsert_host(
-            data.name, data.hostname, data.username, data.port, data.auth
+            data.name,
+            data.hostname,
+            data.username,
+            data.port,
+            data.auth,
+            jump_hostname=data.jump_hostname,
+            jump_port=data.jump_port,
+            jump_username=data.jump_username,
+            jump_auth=data.jump_auth,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1411,6 +1497,10 @@ def api_update_host(
         raise HTTPException(status_code=404, detail="unknown host")
     if data.auth is not None and data.auth not in ("password", "key"):
         raise HTTPException(status_code=400, detail="auth must be 'password' or 'key'")
+    if data.jump_auth is not None and data.jump_auth not in ("password", "key"):
+        raise HTTPException(
+            status_code=400, detail="jump_auth must be 'password' or 'key'"
+        )
     updated = get_store().upsert_host(
         data.name or row["name"],
         data.hostname or row["hostname"],
@@ -1418,6 +1508,18 @@ def api_update_host(
         data.port if data.port is not None else row["port"],
         data.auth or row["auth"],
         host_id=host_id,
+        jump_hostname=(
+            data.jump_hostname
+            if data.jump_hostname is not None
+            else row["jump_hostname"]
+        ),
+        jump_port=data.jump_port if data.jump_port is not None else row["jump_port"],
+        jump_username=(
+            data.jump_username
+            if data.jump_username is not None
+            else row["jump_username"]
+        ),
+        jump_auth=data.jump_auth or row["jump_auth"],
     )
     _audit(actor, "host.update", "host", host_id)
     return _host_public(updated)
@@ -1440,7 +1542,10 @@ def api_delete_host(host_id: str, actor: str = Depends(require_token)) -> dict:
     dependencies=_guarded,
 )
 def api_put_host_key(
-    host_id: str, data: KeyUpload, actor: str = Depends(require_token)
+    host_id: str,
+    data: KeyUpload,
+    actor: str = Depends(require_token),
+    kind: str = "host",
 ) -> dict:
     """Save key bytes with owner-only permissions (write-only endpoint)."""
     if not get_store().get_host(host_id):
@@ -1448,10 +1553,10 @@ def api_put_host_key(
     if not data.key.strip():
         raise HTTPException(status_code=400, detail="empty key")
     try:
-        get_store().set_host_key(host_id, data.key)
+        get_store().set_host_key(host_id, data.key, kind=kind)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown host") from exc
-    _audit(actor, "key.store", "host", host_id)
+    _audit(actor, f"key.store.{kind}", "host", host_id)
     return {"host_id": host_id, "has_key": True}
 
 
@@ -1460,12 +1565,12 @@ def api_put_host_key(
     summary="Key presence (never the key)",
     dependencies=_guarded,
 )
-def api_get_host_key(host_id: str) -> dict:
+def api_get_host_key(host_id: str, kind: str = "host") -> dict:
     """Whether key bytes are stored. The key itself is never returned."""
     if not get_store().get_host(host_id):
         raise HTTPException(status_code=404, detail="unknown host")
     try:
-        present = get_store().has_host_key(host_id)
+        present = get_store().has_host_key(host_id, kind=kind)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown host") from exc
     return {"host_id": host_id, "has_key": present}
@@ -1474,15 +1579,17 @@ def api_get_host_key(host_id: str) -> dict:
 @app.delete(
     "/api/hosts/{host_id}/key", summary="Remove a stored key", dependencies=_guarded
 )
-def api_delete_host_key(host_id: str, actor: str = Depends(require_token)) -> dict:
+def api_delete_host_key(
+    host_id: str, actor: str = Depends(require_token), kind: str = "host"
+) -> dict:
     """Delete stored key bytes (host record kept, flag cleared)."""
     if not get_store().get_host(host_id):
         raise HTTPException(status_code=404, detail="unknown host")
     try:
-        get_store().clear_host_key(host_id)
+        get_store().clear_host_key(host_id, kind=kind)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown host") from exc
-    _audit(actor, "key.delete", "host", host_id)
+    _audit(actor, f"key.delete.{kind}", "host", host_id)
     return {"host_id": host_id, "has_key": False}
 
 
@@ -1850,6 +1957,62 @@ def api_apply_remediation(
         proposal["remediation_id"],
     )
     return {"results": results, "verification_job_id": job.id}
+
+
+class FleetScanRequest(BaseModel):
+    """Launch scans across many hosts with bounded concurrency."""
+
+    host_ids: list[str] | None = Field(
+        default=None, description="Hosts to scan; default all saved hosts."
+    )
+    password: SecretStr | None = Field(
+        default=None,
+        description="SSH/sudo password applied to every target (memory-only).",
+    )
+    max_concurrent: int = Field(
+        default=4, ge=1, le=8, description="Cap simultaneous scans."
+    )
+
+
+@app.post(
+    "/api/fleet/scan",
+    summary="Scan many hosts in parallel",
+    dependencies=_guarded,
+)
+def api_fleet_scan(data: FleetScanRequest, actor: str = Depends(require_token)) -> dict:
+    """Start one persisted scan per host (bounded pool); returns job ids."""
+    store = get_store()
+    targets = (
+        [store.get_host(hid) for hid in (data.host_ids or [])]
+        if data.host_ids is not None
+        else store.list_hosts()
+    )
+    if data.host_ids is not None and any(h is None for h in targets):
+        raise HTTPException(status_code=404, detail="unknown host id")
+    hosts = [h for h in targets if h is not None]
+    secret = data.password.get_secret_value() if data.password else ""
+    slots = threading.Semaphore(min(max(1, data.max_concurrent), 8))
+
+    def _fleet_worker(job: ScanJob, params: dict, host_id: str, job_actor: str) -> None:
+        with slots:
+            _run_job(job, params, host_id, job_actor)
+
+    launched = []
+    for host in hosts:
+        try:
+            base, run_params = resolve_host_scan(host["id"], {"password": secret})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        job = start_scan({**base, "password": secret})
+        worker = threading.Thread(
+            target=_fleet_worker,
+            args=(job, run_params, host["id"], actor),
+            daemon=True,
+        )
+        worker.start()
+        launched.append({"host_id": host["id"], "job_id": job.id})
+    _audit(actor, "fleet.scan", "fleet", "", f"hosts={len(launched)}")
+    return {"jobs": launched}
 
 
 @app.get(

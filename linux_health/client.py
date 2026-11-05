@@ -161,8 +161,9 @@ class ApiClient:
         username: str,
         port: int = 22,
         auth: str = "password",
+        **options: Any,
     ) -> dict[str, Any]:
-        """Register a host (POST /api/hosts)."""
+        """Register a host (POST /api/hosts). Jump options accepted."""
         result: dict[str, Any] = self._request(
             "POST",
             "/api/hosts",
@@ -172,6 +173,7 @@ class ApiClient:
                 "username": username,
                 "port": port,
                 "auth": auth,
+                **options,
             },
         )
         return result
@@ -196,21 +198,30 @@ class ApiClient:
         result: dict[str, Any] = self._request("DELETE", f"/api/hosts/{host_id}")
         return result
 
-    def put_host_key(self, host_id: str, key_text: str) -> dict[str, Any]:
-        """Store key bytes (write-only; PUT /api/hosts/{id}/key)."""
+    def put_host_key(
+        self, host_id: str, key_text: str, kind: str = "host"
+    ) -> dict[str, Any]:
+        """Store key bytes (write-only; kind host|jump)."""
         result: dict[str, Any] = self._request(
-            "PUT", f"/api/hosts/{host_id}/key", {"key": key_text}
+            "PUT",
+            f"/api/hosts/{host_id}/key",
+            {"key": key_text},
+            params={"kind": kind},
         )
         return result
 
-    def get_host_key(self, host_id: str) -> dict[str, Any]:
+    def get_host_key(self, host_id: str, kind: str = "host") -> dict[str, Any]:
         """Key presence only; the key itself is never returned."""
-        result: dict[str, Any] = self._request("GET", f"/api/hosts/{host_id}/key")
+        result: dict[str, Any] = self._request(
+            "GET", f"/api/hosts/{host_id}/key", params={"kind": kind}
+        )
         return result
 
-    def delete_host_key(self, host_id: str) -> dict[str, Any]:
+    def delete_host_key(self, host_id: str, kind: str = "host") -> dict[str, Any]:
         """Remove stored key bytes (DELETE /api/hosts/{id}/key)."""
-        result: dict[str, Any] = self._request("DELETE", f"/api/hosts/{host_id}/key")
+        result: dict[str, Any] = self._request(
+            "DELETE", f"/api/hosts/{host_id}/key", params={"kind": kind}
+        )
         return result
 
     def list_reports(
@@ -296,6 +307,21 @@ class ApiClient:
     def fleet(self) -> list[dict[str, Any]]:
         """Latest score per saved host (GET /api/fleet)."""
         result: list[dict[str, Any]] = self._request("GET", "/api/fleet")
+        return result
+
+    def fleet_scan(
+        self,
+        host_ids: list[str] | None = None,
+        password: str = "",
+        max_concurrent: int = 4,
+    ) -> dict[str, Any]:
+        """Scan many hosts in parallel (POST /api/fleet/scan)."""
+        payload: dict[str, Any] = {"max_concurrent": max_concurrent}
+        if host_ids is not None:
+            payload["host_ids"] = host_ids
+        if password:
+            payload["password"] = password
+        result: dict[str, Any] = self._request("POST", "/api/fleet/scan", payload)
         return result
 
     def backup(self) -> dict[str, Any]:

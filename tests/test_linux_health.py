@@ -1386,6 +1386,88 @@ class TestSSHSession:
         with pytest.raises(RuntimeError, match="not connected"):
             session.run("ls")
 
+    def test_ssh_session_gateway_tunnel(self):
+        """Bastion connections open a direct-tcpip channel first."""
+        from unittest.mock import MagicMock, patch
+
+        from linux_health.ssh_client import SSHSession
+
+        with (
+            patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class,
+            patch("linux_health.ssh_client.paramiko.Transport") as mock_transport_class,
+        ):
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            mock_transport = MagicMock()
+            mock_transport_class.return_value = mock_transport
+            channel = MagicMock()
+            mock_transport.open_channel.return_value = channel
+
+            session = SSHSession(
+                "inner",
+                "u",
+                "p",
+                gateway={
+                    "hostname": "bastion",
+                    "port": 2222,
+                    "username": "b",
+                    "password": "bp",
+                },
+            )
+            session.connect()
+
+            mock_transport_class.assert_called_once_with(("bastion", 2222))
+            mock_transport.open_channel.assert_called_once_with(
+                "direct-tcpip", ("inner", 22), ("127.0.0.1", 0)
+            )
+            _, kwargs = mock_client.connect.call_args
+            assert kwargs["sock"] is channel
+            assert kwargs["hostname"] == "inner"
+
+            session.close()
+            mock_client.close.assert_called_once()
+            mock_transport.close.assert_called_once()
+
+    def test_ssh_session_gateway_key_loader(self):
+        """Gateway key loader tries RSA/Ed25519/ECDSA in order."""
+        from unittest.mock import MagicMock, patch
+
+        from linux_health.ssh_client import SSHSession
+
+        session = SSHSession("h", "u", "p", gateway={"key_path": "/k"})
+        with patch("linux_health.ssh_client.paramiko.RSAKey") as rsa:
+            rsa.from_private_key_file.side_effect = ValueError("nope")
+            with patch("linux_health.ssh_client.paramiko.Ed25519Key") as ed:
+                ed.from_private_key_file.return_value = MagicMock()
+                assert (
+                    session._load_gateway_key() is ed.from_private_key_file.return_value
+                )
+
+    def test_ssh_session_gateway_bad_key_raises(self, tmp_path):
+        """Unreadable gateway keys fail fast with a clear error."""
+        from linux_health.ssh_client import SSHSession
+
+        session = SSHSession("h", "u", "p", gateway={"key_path": "/nonexistent-key"})
+        with pytest.raises(ValueError, match="unreadable gateway key"):
+            session._load_gateway_key()
+
+    def test_ssh_session_no_gateway_no_transport(self):
+        """Direct connections never touch Transport."""
+        from unittest.mock import MagicMock, patch
+
+        from linux_health.ssh_client import SSHSession
+
+        with (
+            patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class,
+            patch("linux_health.ssh_client.paramiko.Transport") as mock_transport_class,
+        ):
+            mock_client_class.return_value = MagicMock()
+            session = SSHSession("host", "user", "pass")
+            session.connect()
+            mock_transport_class.assert_not_called()
+            _, kwargs = session._client.connect.call_args
+            assert kwargs["sock"] is None
+
     def test_ssh_session_default_uses_auto_add_policy(self):
         """Test default host key policy is auto-add (backward compatible)"""
         from unittest.mock import MagicMock, patch

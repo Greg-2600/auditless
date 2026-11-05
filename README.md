@@ -375,6 +375,12 @@ exposing it.
 - **SSH keys** (`PUT /api/hosts/{id}/key`): bytes land 0600 owned by the
   container user, flagged `has_key`, and are never readable back through
   any endpoint. CLI equivalent: `--key-file ~/.ssh/id_ed25519`.
+- **Bastion / jump hosts**: set `jump_hostname` (+port/user/auth) on a
+  host and scans tunnel through it via direct-tcpip. Jump keys upload
+  with `?kind=jump` and live apart from host keys. Bastions need
+  `AllowTcpForwarding yes` (as any jump host does); key auth end to end
+  is recommended. CLI: `--jump-host`, `--jump-user`, `--jump-port`,
+  `--jump-key-file`, `--jump-password`.
 - **Reports** (`/api/reports`) persist across restarts; **diff**
   (`/api/diff?from_id=..&to_id=..`, plus the UI Compare button) shows
   fixed vs regressed checks and the hardening-index delta per host.
@@ -1744,7 +1750,7 @@ pytest tests/ -s
 pytest tests/ -vv --tb=long
 ```
 
-#### End-to-End Suite (`tests/test_e2e.py`, 12 tests)
+#### End-to-End Suite (`tests/test_e2e.py`, 15 tests)
 
 Spins up real containers — a throwaway OpenSSH server plus the app image —
 and exercises every feature through the public `ApiClient`: CLI scans in
@@ -1758,6 +1764,16 @@ AUDITLESS_E2E=1 pytest tests/test_e2e.py -v
 ```
 
 CI runs the same in the `e2e` workflow job on every push/PR to `main`.
+
+#### Fleet Benchmark (`scripts/bench_fleet.py`)
+
+Boots N throwaway SSH servers and times sequential API scans against one
+parallel `POST /api/fleet/scan` call (measured 3.0x on 3 targets —
+linear, as expected for network-bound scans):
+
+```bash
+python scripts/bench_fleet.py 3
+```
 
 ### Continuous Integration
 

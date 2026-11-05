@@ -91,6 +91,55 @@ def test_host_id_traversal_rejected(store, tmp_path):
     assert not outside.exists()
 
 
+def test_jump_host_fields_and_keys(store):
+    """Jump columns persist; jump keys live apart from host keys."""
+    host = store.upsert_host(
+        "j",
+        "inner",
+        "u",
+        jump_hostname="bastion",
+        jump_port=2222,
+        jump_username="b",
+        jump_auth="key",
+    )
+    assert host["jump_hostname"] == "bastion"
+    assert host["has_jump_key"] == 0
+    store.set_host_key(host["id"], "HOST-PEM", kind="jump")
+    assert store.get_host(host["id"])["has_jump_key"] == 1
+    assert store.read_host_key(host["id"], kind="jump") == "HOST-PEM"
+    assert store.key_path(host["id"], kind="jump").name.endswith(".jump")
+    with pytest.raises(ValueError, match="kind must be"):
+        store.set_host_key(host["id"], "x", kind="weird")
+    store.clear_host_key(host["id"], kind="jump")
+    assert store.get_host(host["id"])["has_jump_key"] == 0
+
+
+def test_legacy_db_gains_jump_columns(tmp_path):
+    """Stores created before jump support migrate on open."""
+    import sqlite3
+
+    from linux_health.store import Store
+
+    directory = tmp_path / "legacy"
+    directory.mkdir()
+    with sqlite3.connect(str(directory / "auditless.db")) as conn:
+        conn.execute(
+            "CREATE TABLE hosts (id TEXT PRIMARY KEY, name TEXT, hostname TEXT,"
+            " port INTEGER, username TEXT, auth TEXT, has_key INTEGER,"
+            " created_at REAL, updated_at REAL)"
+        )
+        conn.execute(
+            "INSERT INTO hosts VALUES ('h1','n','h',22,'u','password',0,1.0,2.0)"
+        )
+        conn.commit()
+    store = Store(directory)
+    row = store.get_host("h1")
+    assert row["jump_hostname"] == ""
+    assert row["jump_port"] == 22
+    updated = store.upsert_host("n", "h", "u", host_id="h1", jump_hostname="b")
+    assert updated["jump_hostname"] == "b"
+
+
 def test_backup_roundtrip_and_prune(store):
     """Snapshots restore fully; only the newest `keep` are retained."""
     store.upsert_host("b", "h", "u")
