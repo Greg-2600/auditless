@@ -2,6 +2,7 @@
 
 import os
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +19,16 @@ def test_data_dir_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("AUDITLESS_DATA_DIR", str(tmp_path / "custom"))
     assert data_dir() == tmp_path / "custom"
     assert (tmp_path / "custom").is_dir()
+
+
+def test_data_dir_default_is_relative_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unset AUDITLESS_DATA_DIR resolves to ./data, created on demand."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AUDITLESS_DATA_DIR", raising=False)
+    assert data_dir() == Path("data")
+    assert (tmp_path / "data").is_dir()
 
 
 def test_host_crud(store):
