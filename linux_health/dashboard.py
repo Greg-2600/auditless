@@ -373,6 +373,8 @@ def run_scan(params: dict) -> dict:
         argv += ["--check-timeout", str(params["check_timeout"])]
     if params.get("deadline") is not None:
         argv += ["--deadline", str(params["deadline"])]
+    if params.get("retries") is not None:
+        argv += ["--retries", str(params["retries"])]
     if params.get("reuse_session", True):
         argv.append("--reuse-session")
     gateway = params.get("gateway") or {}
@@ -1922,7 +1924,7 @@ def api_apply_remediation(
     job and diff to prove the finding flipped.
     """
     from .checks import _run, reset_command_cache
-    from .ssh_client import SSHSession
+    from .ssh_client import SSHSession, invalidate_sessions
 
     with _proposals_lock:
         proposal = _proposals.get(proposal_id)
@@ -1962,6 +1964,10 @@ def api_apply_remediation(
                 )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"apply failed: {exc}") from exc
+
+    # The fix may restart services (sshd); drop pooled sessions so the
+    # verification rescan redials instead of racing a dying connection.
+    invalidate_sessions(base["hostname"], base["port"], base["username"])
 
     job = start_scan({**base, "password": password})
     worker = threading.Thread(

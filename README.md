@@ -572,6 +572,7 @@ python -m linux_health <hostname> <username> <password> [options]
 | ---- | ------- | ----------- |
 | `--port PORT` | 22 | SSH service port |
 | `--timeout SECONDS` | 5.0 | SSH connection timeout |
+| `--retries N` | 0 | Retry transient SSH failures with backoff (auth fails fast; 0 disables) |
 | `--command-timeout SECONDS` | 60.0 | Per-command execution timeout |
 | `--jobs N` | 4 | Concurrent check workers per host (1=sequential, max 32) |
 | `--check-timeout SECONDS` | 120.0 | Per-check ceiling for the parallel runner (WARN placeholder on expiry; ≤0 disables) |

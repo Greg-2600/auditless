@@ -199,6 +199,22 @@ def test_key_ignores_secrets() -> None:
     assert same_a != SessionPool.key_for("other", 22, "u", password="one")
 
 
+def test_invalidate_drops_host_sessions() -> None:
+    """Post-change invalidation closes parked sessions for one host only."""
+    pool = SessionPool()
+    target = _acquire(pool, _key(pool))
+    pool.release(_key(pool), target)
+    other_key = SessionPool.key_for("host-2", 22, "ops")
+    other = _acquire(pool, other_key)
+    pool.release(other_key, other)
+    assert pool.invalidate("host-1", 22, "ops") == 1
+    assert target.closed
+    assert not other.closed
+    assert pool.idle_count() == 1
+    assert pool.invalidate("host-2") == 1
+    assert pool.idle_count() == 0
+
+
 def test_open_session_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     """--reuse-session selects pooled vs fresh session construction."""
     import argparse
