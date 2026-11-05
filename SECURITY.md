@@ -64,21 +64,29 @@ Every `v*` tag builds multi-arch images with attestations, then signs
 and verifies them before the release counts as good:
 
 - **SLSA provenance** — `provenance: true` on the image build records
-  exactly which commit and workflow produced the image.
-- **SBOM** — `sbom: true` attaches a software bill of materials.
+  exactly which commit and workflow produced the image; verified
+  with `slsa-verifier` (buildx attestations are not cosign envelopes,
+  so `cosign verify-attestation` cannot read them).
+- **SBOM** — an SPDX SBOM is generated from the pushed image and
+  attached with `cosign attest --type spdxjson`, so `cosign download
+  sbom` retrieves an authenticated bill of materials.
 - **Signatures** — keyless Sigstore/OIDC signing; no long-lived keys.
 - **Verification gate** — the release workflow itself runs
-  `cosign verify`, `verify-attestation`, an SBOM download, and a boot
+  `cosign verify`, `slsa-verifier verify-image`, a cosign SBOM
+  attestation check, an SBOM download, and a boot
   smoke test of the image *by digest*. Trivy scans upload SARIF.
 
 Verify any release yourself (no secrets needed):
 
 ```bash
-IMG=ghcr.io/Greg-2600/auditless:2.4.0
+IMG=ghcr.io/greg-2600/auditless:2.5.2
 cosign verify \
   --certificate-identity-regexp "https://github.com/Greg-2600/auditless/.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$IMG"
+slsa-verifier verify-image "$IMG" \
+  --source-uri "github.com/Greg-2600/auditless" \
+  --source-tag "v2.5.2"
 cosign download sbom "$IMG" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['packages']), 'packages')"
 ```
 

@@ -82,6 +82,20 @@ jobs:
           provenance: true
           sbom: true
 
+      - name: Resolve lowercase digest ref
+        id: img
+        run: |
+          echo "ref=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate SBOM (SPDX JSON) for cosign attestation
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ steps.img.outputs.ref }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: true
+          artifact-name: sbom-spdx
+
   sign-image:
     runs-on: ubuntu-latest
     needs: publish-docker
@@ -106,14 +120,25 @@ jobs:
         run: |
           echo "ref=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')@${{ needs.publish-docker.outputs.digest }}" >> "$GITHUB_OUTPUT"
 
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sbom-spdx
+          path: ./sbom
+
       - name: Sign image (keyless OIDC)
         env:
           IMAGE: ${{ steps.img.outputs.ref }}
         run: cosign sign --yes "$IMAGE"
 
+      - name: Attest SBOM (keyless OIDC)
+        env:
+          IMAGE: ${{ steps.img.outputs.ref }}
+        run: cosign attest --yes --predicate ./sbom/sbom.spdx.json --type spdxjson "$IMAGE"
+
   verify-release:
     runs-on: ubuntu-latest
-    needs: sign-image
+    needs: [publish-docker, sign-image]
     permissions:
       contents: read
       packages: read
@@ -137,7 +162,15 @@ jobs:
             --certificate-identity-regexp "https://github.com/${REPO}/.*" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "$IMAGE"
-          cosign verify-attestation --type slsaprovenance \
+          # Buildx provenance attestations are verified with slsa-verifier
+          # (cosign verify-attestation only reads cosign-made attestations).
+          curl -sL -o /tmp/slsa-verifier \
+            https://github.com/slsa-framework/slsa-verifier/releases/download/v2.7.1/slsa-verifier-linux-amd64
+          chmod +x /tmp/slsa-verifier
+          /tmp/slsa-verifier verify-image "$IMAGE" \
+            --source-uri "github.com/${REPO}" \
+            --source-tag "${{ github.ref_name }}"
+          cosign verify-attestation --type spdxjson \
             --certificate-identity-regexp "https://github.com/${REPO}/.*" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "$IMAGE"
