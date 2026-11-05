@@ -341,6 +341,35 @@ class SessionPool:
             except Exception:
                 pass
 
+    def invalidate(
+        self,
+        hostname: str,
+        port: int | None = None,
+        username: str | None = None,
+    ) -> int:
+        """Drop idle sessions for a host (remediation may restart services).
+
+        Returns the number of sessions closed. A service restart on the
+        target can kill pooled connections; callers that change target
+        state must invalidate so the next scan redials instead of
+        racing a dying session.
+        """
+        with self._lock:
+            doomed = [
+                key
+                for key in self._idle
+                if key.hostname == hostname
+                and (port is None or key.port == port)
+                and (username is None or key.username == username)
+            ]
+            entries = [entry for key in doomed for entry in self._idle.pop(key)]
+        for entry in entries:
+            try:
+                entry.session.close()
+            except Exception:
+                pass
+        return len(entries)
+
     def idle_count(self) -> int:
         """Number of parked sessions (introspection/tests)."""
         with self._lock:
@@ -414,3 +443,10 @@ def pooled_session(
 def drain_session_pool() -> None:
     """Close all pooled idle sessions (tests/process shutdown)."""
     _DEFAULT_POOL.drain()
+
+
+def invalidate_sessions(
+    hostname: str, port: int | None = None, username: str | None = None
+) -> int:
+    """Drop pooled idle sessions for a host (post-remediation safety)."""
+    return _DEFAULT_POOL.invalidate(hostname, port, username)
