@@ -1,9 +1,16 @@
 """SQLite persistence for hosts, keys metadata, and scan reports.
 
 Storage layout (stdlib sqlite3, no new dependencies):
-    $AUDITLESS_DATA_DIR (default ./data)
+    $AUDITLESS_DATA_DIR
       auditless.db        hosts + scan reports (JSON payloads)
       keys/<host_id>      private key material, mode 0600, never in the DB
+
+Data-directory rule (single source of truth — see :func:`data_dir`):
+    - Unset ``AUDITLESS_DATA_DIR`` → relative ``./data`` under the current
+      working directory, created on demand.
+    - Containers set ``AUDITLESS_DATA_DIR=/app/data`` explicitly
+      (docker-compose.yml, backed by the ``auditless-data`` volume;
+      Dockerfile creates and declares it). Nothing else overrides it.
 
 Only key *metadata* (has_key flag) is exposed via the API. Key bytes are
 written to disk with owner-only permissions and are never returned,
@@ -22,7 +29,11 @@ from typing import Any, Iterator
 
 
 def data_dir() -> Path:
-    """Resolve the data directory (env override, created on demand)."""
+    """Resolve the data directory (env override, created on demand).
+
+    Unset ``AUDITLESS_DATA_DIR`` means relative ``./data``; containers
+    pass ``/app/data`` explicitly (see module docstring).
+    """
     path = Path(os.environ.get("AUDITLESS_DATA_DIR", "data"))
     path.mkdir(parents=True, exist_ok=True)
     return path

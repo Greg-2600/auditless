@@ -40,7 +40,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 9 — [P0] Add `auditless` import alias for the `linux_health` package (shim module + `sys.modules` fallback) so `import auditless` and `python -m auditless` work; keep `linux_health` working. `packaging` (effort: M)
 - [x] 10 — [P0] Dual config-path discovery: check `~/.config/auditless/`, `/etc/auditless/`, `auditless.yaml` **first**, fall back to existing `linux_health` paths with a one-time deprecation warning (no silent break). `config` (effort: M)
 - [x] 11 — [P0] Migrate `dashboard.py` profile search path (`~/.config/linux_health/profiles`) to the same dual-path helper as item 10; extract one shared `get_config_dirs()` used by both. `config` (effort: S)
-- [ ] 12 — [P0] Decide and document `AUDITLESS_DATA_DIR` default (`./data` vs `/app/data` in container) in one place; remove contradictory comments in `store.py`/`cli.py`/`compose`. `store` (effort: S)
+- [x] 12 — [P0] Decide and document `AUDITLESS_DATA_DIR` default (`./data` vs `/app/data` in container) in one place; remove contradictory comments in `store.py`/`cli.py`/`compose`. `store` (effort: S)
 - [ ] 13 — [P0] Regenerate or gitignore `linux_health.egg-info/` (currently stale: `Name: linux-health`, `Version: 2.0.0`, stale URLs). Add egg-info hygiene to release checklist. `packaging` (effort: S)
 - [ ] 14 — [P0] Align `setup.py` shim metadata with `pyproject.toml` (author, URLs already point at `Greg-2600/auditless` — lock them with a test so they can't drift again). `packaging` (effort: S)
 - [ ] 15 — [P0] Add a `test_packaging_names.py` test that asserts dist-name `auditless`, both console scripts exist, import alias works, and no `yourusername` string survives in packaged metadata. `tests` (effort: S)
