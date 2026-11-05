@@ -13,11 +13,16 @@ from .ssh_client import SSHSession
 from .test_ids import CHECK_TEST_IDS
 
 COMMAND_TIMEOUT: float = 60.0
-# Performance optimization: Cache command outputs during session
-# Note: Cache is cleared between test runs and sessions to prevent stale data
-_COMMAND_CACHE: dict[str, tuple[int, str, str]] = {}
+# Output cache keyed by (hostname, command): concurrent fleet scans of
+# different hosts must never share entries (they share this process).
+# Invalidation rules (see .github/PERFORMANCE.md):
+#   1. reset_command_cache() at the start of every scan (fresh results);
+#   2. per-entry TTL (default 300s) bounds staleness if a reset is missed;
+#   3. --no-cache disables the cache for one scan (prior state restored).
+_COMMAND_CACHE: dict[tuple[str, str], tuple[tuple[int, str, str], float]] = {}
 _CACHE_LOCK = threading.Lock()
 _USE_CACHE: bool = True  # Can be disabled for testing
+_CACHE_TTL_S: float = 300.0
 
 
 def set_command_timeout(seconds: float) -> None:
@@ -47,6 +52,50 @@ def enable_command_cache() -> None:
     """Enable command caching."""
     global _USE_CACHE
     _USE_CACHE = True
+
+
+def is_command_cache_enabled() -> bool:
+    """Whether the command cache is currently enabled."""
+    return _USE_CACHE
+
+
+def get_command_cache_ttl() -> float:
+    """Current per-entry cache TTL in seconds."""
+    return _CACHE_TTL_S
+
+
+def set_command_cache_ttl(seconds: float) -> None:
+    """Set per-entry cache TTL in seconds (negative clamps to 0)."""
+    global _CACHE_TTL_S
+    _CACHE_TTL_S = max(0.0, seconds)
+
+
+def _cache_key(ssh: SSHSession, command: str) -> tuple[str, str]:
+    """Cache identity: target host plus command (never shared across hosts)."""
+    return (str(getattr(ssh, "hostname", "") or ""), command)
+
+
+def _cache_get(key: tuple[str, str]) -> tuple[int, str, str] | None:
+    """Fresh cached result, or None on miss/expiry/disable."""
+    if not _USE_CACHE:
+        return None
+    with _CACHE_LOCK:
+        entry = _COMMAND_CACHE.get(key)
+        if entry is None:
+            return None
+        result, cached_at = entry
+        if time.monotonic() - cached_at >= _CACHE_TTL_S:
+            del _COMMAND_CACHE[key]
+            return None
+        return result
+
+
+def _cache_put(key: tuple[str, str], result: tuple[int, str, str]) -> None:
+    """Store a result unless caching is disabled."""
+    if not _USE_CACHE:
+        return
+    with _CACHE_LOCK:
+        _COMMAND_CACHE[key] = (result, time.monotonic())
 
 
 @dataclass
@@ -109,11 +158,11 @@ def _run(
         Tuple of (return_code, stdout, stderr)
     """
     # Check cache first (optimization for repeated commands)
-    cache_key = command
-    if use_cache and _USE_CACHE:
-        with _CACHE_LOCK:
-            if cache_key in _COMMAND_CACHE:
-                return _COMMAND_CACHE[cache_key]
+    cache_key = _cache_key(ssh, command)
+    if use_cache:
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
 
     # Run command on SSH session with a hard timeout, sending sudo password when needed.
     effective_timeout = command_timeout or COMMAND_TIMEOUT
@@ -147,23 +196,20 @@ def _run(
             err = stderr.read().decode("utf-8", errors="replace").strip()
             result = (exit_status, out, err)
             # Cache result for future use (if caching is enabled)
-            if _USE_CACHE:
-                with _CACHE_LOCK:
-                    _COMMAND_CACHE[cache_key] = result
+            if use_cache:
+                _cache_put(cache_key, result)
             return result
         except (TypeError, AttributeError):
             # Fall back to using ssh.run() for mock objects
             result = ssh.run(command, timeout=effective_timeout)
-            if _USE_CACHE:
-                with _CACHE_LOCK:
-                    _COMMAND_CACHE[cache_key] = result
+            if use_cache:
+                _cache_put(cache_key, result)
             return result
     else:
         # Use the normal ssh.run() method
         result = ssh.run(command, timeout=effective_timeout)
-        if _USE_CACHE:
-            with _CACHE_LOCK:
-                _COMMAND_CACHE[cache_key] = result
+        if use_cache:
+            _cache_put(cache_key, result)
         return result
 
 

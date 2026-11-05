@@ -432,6 +432,28 @@ class TestMainScanOrchestration:
         report = json.loads(out.read_text(encoding="utf-8"))
         assert all(c["item"] != "Scan deadline exceeded" for c in report["checks"])
 
+    def test_main_no_cache_restores_state(self, monkeypatch):
+        """--no-cache disables for one scan, then restores prior state."""
+        from linux_health import cli
+        from linux_health.checks import (
+            disable_command_cache,
+            enable_command_cache,
+            is_command_cache_enabled,
+        )
+
+        self._patch_all(monkeypatch)
+        try:
+            enable_command_cache()
+            assert cli.main(["h", "u", "pw"]) == 0
+            assert is_command_cache_enabled() is True
+            assert cli.main(["h", "u", "pw", "--no-cache"]) == 0
+            assert is_command_cache_enabled() is True
+            disable_command_cache()
+            assert cli.main(["h", "u", "pw"]) == 0
+            assert is_command_cache_enabled() is False
+        finally:
+            disable_command_cache()
+
     def test_main_json_scan_writes_file(self, monkeypatch, tmp_path):
         import json
 
