@@ -92,7 +92,14 @@ jobs:
 
     steps:
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      - name: Login to GHCR (cosign pushes signature)
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve lowercase digest ref
         id: img
@@ -114,7 +121,7 @@ jobs:
 
     steps:
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
 
       - name: Resolve lowercase digest ref
         id: img
