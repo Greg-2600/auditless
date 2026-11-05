@@ -50,3 +50,16 @@ def test_roadmap_has_200_numbered_items() -> None:
     items = mod.parse_items(ROADMAP.read_text(encoding="utf-8"))
     nums = sorted(i["n"] for i in items)
     assert nums == list(range(1, 201))
+
+
+def test_milestone_report_not_hit() -> None:
+    mod = _mod()
+    assert mod.milestone_report(44, 200) == "44/200 done; next review at 50"
+    assert mod.milestone_report(0, 200) == "0/200 done; next review at 10"
+
+
+def test_milestone_report_hit() -> None:
+    mod = _mod()
+    out = mod.milestone_report(50, 200)
+    assert "milestone hit: 50/200" in out
+    assert "ROADMAP-REVIEW-050.md" in out
