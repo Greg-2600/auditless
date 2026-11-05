@@ -151,7 +151,7 @@ def run_all_checks(ssh: SSHSession, password: str = "") -> list[CheckResult]:
 
 ### Step 3: Write Comprehensive Tests
 
-Create test class in tests/test_linux_health.py:
+Create test class in tests/test_auditless.py:
 
 ```python
 class TestExampleSecurityCheck:
@@ -373,7 +373,7 @@ class TestNewFeature:
 pytest tests/ -v
 
 # Run specific test class
-pytest tests/test_linux_health.py::TestNewFeature -v
+pytest tests/test_auditless.py::TestNewFeature -v
 
 # Run with coverage
 pytest tests/ --cov=linux_health --cov-report=term-missing

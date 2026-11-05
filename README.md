@@ -1596,7 +1596,7 @@ def run_all_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
 #### Step 3: Write Comprehensive Tests
 
 ```python
-# tests/test_linux_health.py
+# tests/test_auditless.py
 
 from unittest.mock import Mock, MagicMock
 from linux_health.checks import check_custom_vulnerability
@@ -1650,7 +1650,7 @@ class TestCustomVulnerability:
 
 ```bash
 # Run specific test class
-pytest tests/test_linux_health.py::TestCustomVulnerability -v
+pytest tests/test_auditless.py::TestCustomVulnerability -v
 
 # Run all tests
 pytest tests/ -v
@@ -1737,7 +1737,7 @@ pytest tests/ --cov=linux_health --cov-report=html
 # Open htmlcov/index.html
 
 # Run specific test class
-pytest tests/test_linux_health.py::TestCheckDiskUsage -v
+pytest tests/test_auditless.py::TestCheckDiskUsage -v
 
 # Run tests matching pattern
 pytest tests/ -k "crypto" -v
