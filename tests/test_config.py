@@ -25,18 +25,29 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_canonical_paths_precede_legacy() -> None:
     """Every auditless location sorts before its linux_health twin."""
-    paths = [str(p) for p in get_default_profile_paths()]
+    paths = get_default_profile_paths()
+    home = Path.home()
+    cwd = Path.cwd()
     pairs = [
-        ("auditless.yaml", "linux_health.yaml"),
-        (".auditless.yaml", ".linux_health.yaml"),
-        (".config/auditless/profile.yaml", ".config/linux_health/profile.yaml"),
-        (".auditless/profile.yaml", ".linux_health/profile.yaml"),
-        ("/etc/auditless/profile.yaml", "/etc/linux_health/profile.yaml"),
+        (cwd / "auditless.yaml", cwd / "linux_health.yaml"),
+        (cwd / ".auditless.yaml", cwd / ".linux_health.yaml"),
+        (
+            home / ".config" / "auditless" / "profile.yaml",
+            home / ".config" / "linux_health" / "profile.yaml",
+        ),
+        (
+            home / ".auditless" / "profile.yaml",
+            home / ".linux_health" / "profile.yaml",
+        ),
+        (
+            Path("/etc/auditless/profile.yaml"),
+            Path("/etc/linux_health/profile.yaml"),
+        ),
     ]
     for canonical, legacy in pairs:
-        canon_idx = next(i for i, p in enumerate(paths) if p.endswith(canonical))
-        legacy_idx = next(i for i, p in enumerate(paths) if p.endswith(legacy))
-        assert canon_idx < legacy_idx, f"{canonical} should precede {legacy}"
+        assert paths.index(canonical) < paths.index(
+            legacy
+        ), f"{canonical} should precede {legacy}"
 
 
 def test_is_legacy_profile_path() -> None:
