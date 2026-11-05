@@ -275,6 +275,68 @@ class TestCheckTestIdRegistry:
         }
         assert not missing, f"checks without test IDs: {sorted(missing)}"
 
+    def test_registry_covers_submodule_checks(self):
+        """Every check in the satellite modules is registered (no XXXX)."""
+        import inspect
+        import re
+
+        import linux_health.checks_audit as audit_mod
+        import linux_health.checks_database as database_mod
+        import linux_health.checks_filesystem as filesystem_mod
+        import linux_health.checks_packages as packages_mod
+        from linux_health.test_ids import CHECK_TEST_IDS
+
+        modules = (audit_mod, filesystem_mod, database_mod, packages_mod)
+        for mod in modules:
+            names = {
+                name
+                for name, fn in inspect.getmembers(mod, inspect.isfunction)
+                if name.startswith("check_")
+            }
+            missing = names - set(CHECK_TEST_IDS)
+            assert not missing, f"{mod.__name__} unregistered: {sorted(missing)}"
+            for name in sorted(names):
+                doc = inspect.getdoc(getattr(mod, name)) or ""
+                match = re.search(r"Test ID:\s*([A-Z]+-\d+)", doc)
+                assert match, f"{name} missing docstring Test ID"
+                assert CHECK_TEST_IDS[name] == match.group(1), name
+
+    def test_crash_paths_emit_real_ids(self):
+        """Exploding checks fail with registry IDs, never XXXX fallbacks."""
+        import re
+
+        from unittest.mock import MagicMock
+
+        from linux_health.checks_audit import run_all_audit_checks
+        from linux_health.checks_database import run_all_database_checks
+        from linux_health.checks_filesystem import run_all_filesystem_checks
+        from linux_health.checks_packages import run_all_package_management_checks
+
+        def exploding_ssh() -> MagicMock:
+            def boom(command: str, timeout: float = 10.0) -> tuple:  # type: ignore[return]
+                raise RuntimeError("transport gone (test)")
+
+            ssh = MagicMock()
+            ssh.hostname = "crash-test"
+            ssh._client = None
+            ssh.run = boom
+            return ssh
+
+        runners = (
+            run_all_audit_checks,
+            run_all_filesystem_checks,
+            run_all_database_checks,
+            run_all_package_management_checks,
+        )
+        for run_all in runners:
+            results = run_all(exploding_ssh(), "")
+            assert results, run_all.__name__
+            for result in results:
+                assert re.fullmatch(r"[A-Z]+-\d+", result.test_id), (
+                    run_all.__name__,
+                    result.test_id,
+                )
+
     @pytest.mark.parametrize(
         "func_name,test_id",
         sorted(
@@ -289,8 +351,17 @@ class TestCheckTestIdRegistry:
         from unittest.mock import MagicMock
 
         import linux_health.checks as checks_mod
+        import linux_health.checks_audit as audit_mod
+        import linux_health.checks_database as database_mod
+        import linux_health.checks_filesystem as filesystem_mod
+        import linux_health.checks_packages as packages_mod
 
-        fn = getattr(checks_mod, func_name)
+        fn = None
+        for mod in (checks_mod, audit_mod, filesystem_mod, database_mod, packages_mod):
+            fn = getattr(mod, func_name, None)
+            if fn is not None:
+                break
+        assert fn is not None, f"{func_name} found in no check module"
         mock_ssh = MagicMock()
         mock_ssh._client = None  # force the ssh.run() path in _run
         mock_ssh.run.return_value = (0, "", "")
