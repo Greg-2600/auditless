@@ -14,6 +14,12 @@ Example:
 
 from __future__ import annotations
 
+import threading
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+
 import paramiko
 from paramiko.client import AutoAddPolicy, RejectPolicy
 
@@ -156,3 +162,215 @@ class SSHSession:
         out = stdout.read().decode("utf-8", errors="replace").strip()
         err = stderr.read().decode("utf-8", errors="replace").strip()
         return exit_status, out, err
+
+    def is_healthy(self) -> bool:
+        """Round-trip health check (transport alive + command executes)."""
+        client = self._client
+        if client is None:
+            return False
+        transport = client.get_transport()
+        if transport is None or not transport.is_active():
+            return False
+        try:
+            self.run("true", timeout=5.0)
+        except Exception:
+            return False
+        return True
+
+
+@dataclass(frozen=True)
+class PoolKey:
+    """Pool identity for a session (never carries secrets).
+
+    Two scans to the same host/user share pooled sessions even when the
+    presented passwords differ — the live session is already
+    authenticated. ``auth`` records the KIND of credential only.
+    """
+
+    hostname: str
+    port: int
+    username: str
+    auth: str
+    strict_host_key_checking: bool
+    timeout: float
+    gateway: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass
+class _IdleEntry:
+    session: SSHSession
+    expires_at: float
+
+
+class SessionPool:
+    """Bounded pool of idle SSH sessions for long-lived processes.
+
+    One-shot CLI scans connect once per process, so pooling only pays off
+    in the serving process (dashboard/scheduler/fleet rescans of the same
+    hosts). The pool never changes failure semantics: a dead or expired
+    idle session is discarded and a fresh connection is made, so the
+    worst case behaves exactly like no pooling.
+    """
+
+    def __init__(
+        self,
+        max_idle_per_host: int = 2,
+        max_idle_total: int = 32,
+        idle_ttl: float = 120.0,
+    ) -> None:
+        self.max_idle_per_host = max_idle_per_host
+        self.max_idle_total = max_idle_total
+        self.idle_ttl = idle_ttl
+        self._lock = threading.Lock()
+        self._idle: dict[PoolKey, list[_IdleEntry]] = {}
+
+    @staticmethod
+    def key_for(
+        hostname: str,
+        port: int,
+        username: str,
+        password: str = "",
+        key_path: str | None = None,
+        strict_host_key_checking: bool = False,
+        timeout: float = 5.0,
+        gateway: dict | None = None,
+    ) -> PoolKey:
+        """Build the pool identity (credential kinds only, never secrets)."""
+        gw = gateway or {}
+        gw_fp = (
+            ("hostname", str(gw.get("hostname", ""))),
+            ("port", str(gw.get("port", 22))),
+            ("username", str(gw.get("username", ""))),
+            ("auth", "key" if gw.get("key_path") else "password"),
+            ("key_path", str(gw.get("key_path") or "")),
+        )
+        auth = "key" if key_path else "password"
+        _ = password  # kind only; the secret never enters the key
+        return PoolKey(
+            hostname=hostname,
+            port=port,
+            username=username,
+            auth=auth,
+            strict_host_key_checking=strict_host_key_checking,
+            timeout=timeout,
+            gateway=gw_fp,
+        )
+
+    def _take_locked(self, key: PoolKey) -> SSHSession | None:
+        entries = self._idle.get(key, [])
+        while entries:
+            entry = entries.pop()
+            if entry.expires_at < time.monotonic():
+                entry.session.close()
+                continue
+            if entry.session.is_healthy():
+                return entry.session
+            entry.session.close()
+        return None
+
+    def acquire(self, key: PoolKey, connect: Callable[[], SSHSession]) -> SSHSession:
+        """Return a healthy idle session or connect a fresh one.
+
+        ``connect`` builds and connects a new session on a pool miss; its
+        exceptions propagate exactly as without pooling.
+        """
+        with self._lock:
+            session = self._take_locked(key)
+        if session is not None:
+            return session
+        return connect()
+
+    def release(self, key: PoolKey, session: SSHSession) -> None:
+        """Park a healthy session for reuse, else close it."""
+        with self._lock:
+            parked = sum(len(entries) for entries in self._idle.values())
+            bucket = self._idle.setdefault(key, [])
+            if (
+                parked < self.max_idle_total
+                and len(bucket) < self.max_idle_per_host
+                and session.is_healthy()
+            ):
+                bucket.append(_IdleEntry(session, time.monotonic() + self.idle_ttl))
+                return
+        session.close()
+
+    def drain(self) -> None:
+        """Close every idle session (tests/shutdown)."""
+        with self._lock:
+            entries = [entry for bucket in self._idle.values() for entry in bucket]
+            self._idle.clear()
+        for entry in entries:
+            try:
+                entry.session.close()
+            except Exception:
+                pass
+
+    def idle_count(self) -> int:
+        """Number of parked sessions (introspection/tests)."""
+        with self._lock:
+            return sum(len(entries) for entries in self._idle.values())
+
+
+_DEFAULT_POOL = SessionPool()
+
+
+@contextmanager
+def pooled_session(
+    hostname: str,
+    username: str,
+    password: str,
+    port: int = 22,
+    timeout: float = 5.0,
+    strict_host_key_checking: bool = False,
+    key_path: str | None = None,
+    gateway: dict | None = None,
+    pool: SessionPool | None = None,
+) -> Iterator[SSHSession]:
+    """Yield a session, reusing a healthy pooled one when available.
+
+    Falls back to a fresh connection whenever the pool misses or the
+    idle session fails its health check — scans behave as without
+    pooling in the worst case. A block exception closes (never parks)
+    the session and re-raises.
+    """
+    active_pool = pool if pool is not None else _DEFAULT_POOL
+    key = SessionPool.key_for(
+        hostname,
+        port,
+        username,
+        password,
+        key_path,
+        strict_host_key_checking,
+        timeout,
+        gateway,
+    )
+
+    def connect() -> SSHSession:
+        session = SSHSession(
+            hostname=hostname,
+            username=username,
+            password=password,
+            port=port,
+            timeout=timeout,
+            strict_host_key_checking=strict_host_key_checking,
+            key_path=key_path,
+            gateway=gateway,
+        )
+        session.connect()
+        return session
+
+    session = active_pool.acquire(key, connect)
+    try:
+        yield session
+    except Exception:
+        try:
+            session.close()
+        except Exception:
+            pass
+        raise
+    active_pool.release(key, session)
+
+
+def drain_session_pool() -> None:
+    """Close all pooled idle sessions (tests/process shutdown)."""
+    _DEFAULT_POOL.drain()

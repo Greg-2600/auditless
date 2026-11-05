@@ -369,6 +369,8 @@ def run_scan(params: dict) -> dict:
         argv.append("--strict-host-key-checking")
     if params.get("jobs") is not None:
         argv += ["--jobs", str(params["jobs"])]
+    if params.get("reuse_session", True):
+        argv.append("--reuse-session")
     gateway = params.get("gateway") or {}
     if gateway.get("hostname"):
         argv += [
