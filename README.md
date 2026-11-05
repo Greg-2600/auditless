@@ -553,6 +553,11 @@ docker-compose run --rm auditless host user password
 python -m linux_health <hostname> <username> <password> [options]
 ```
 
+> **Entry points:** `auditless` (primary), `python -m linux_health`, and
+> `python -m auditless`. The `linux-health` command still works but is
+> deprecated — it prints a notice on every run. Kept through v3.x,
+> removal slated for v4.0.
+
 #### Required Arguments
 
 | Argument | Description |
