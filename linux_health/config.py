@@ -1,7 +1,8 @@
-"""Configuration and profile management for Linux Health Security Scanner."""
+"""Configuration and profile management for Auditless."""
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Set
@@ -87,7 +88,7 @@ def create_default_profile(output_path: str | Path) -> None:
             "Install it with: pip install pyyaml"
         )
 
-    profile_content = """# Linux Health Security Scanner Profile
+    profile_content = """# Auditless Scan Profile
 # Customize this file to control scan behavior
 
 name: custom
@@ -131,20 +132,40 @@ custom_settings: {}
         f.write(profile_content)
 
 
-def get_default_profile_paths() -> list[Path]:
-    """Get default profile search paths."""
-    paths = []
+def is_legacy_profile_path(path: str | Path) -> bool:
+    """Whether a profile path uses a legacy ``linux_health`` location."""
+    name = Path(path).name
+    parts = Path(path).parts
+    return (
+        "linux_health" in name
+        or "linux_health" in parts
+        or name in (".linux_health.yaml",)
+    )
 
-    # Current directory
-    paths.append(Path.cwd() / "linux_health.yaml")
-    paths.append(Path.cwd() / ".linux_health.yaml")
+
+def get_default_profile_paths() -> list[Path]:
+    """Get default profile search paths (canonical first, legacy last)."""
+    paths = []
+    stems = [
+        "auditless.yaml",
+        ".auditless.yaml",
+        "linux_health.yaml",
+        ".linux_health.yaml",
+    ]
+
+    # Current directory (canonical before legacy)
+    for stem in stems:
+        paths.append(Path.cwd() / stem)
 
     # Home directory
     home = Path.home()
+    paths.append(home / ".config" / "auditless" / "profile.yaml")
+    paths.append(home / ".auditless" / "profile.yaml")
     paths.append(home / ".config" / "linux_health" / "profile.yaml")
     paths.append(home / ".linux_health" / "profile.yaml")
 
     # System-wide
+    paths.append(Path("/etc/auditless/profile.yaml"))
     paths.append(Path("/etc/linux_health/profile.yaml"))
 
     return paths
@@ -157,6 +178,14 @@ def load_profile_auto() -> ScanProfile | None:
 
     for path in get_default_profile_paths():
         if path.exists():
+            if is_legacy_profile_path(path):
+                warnings.warn(
+                    f"Profile at legacy path {path} is deprecated; "
+                    "move it to the auditless equivalent "
+                    "(~/.config/auditless/profile.yaml).",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
             try:
                 return load_profile(path)
             except (FileNotFoundError, yaml.YAMLError, ValueError):
