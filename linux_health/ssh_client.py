@@ -17,11 +17,18 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 
 import paramiko
 from paramiko.client import AutoAddPolicy, RejectPolicy
+
+#: Network-level failures worth retrying (auth failures fail immediately).
+_TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
+    OSError,
+    EOFError,
+    paramiko.SSHException,
+)
 
 
 class SSHSession:
@@ -37,6 +44,8 @@ class SSHSession:
         strict_host_key_checking: bool = False,
         key_path: str | None = None,
         gateway: dict | None = None,
+        retries: int = 0,
+        retry_backoff: float = 1.0,
     ):
         self.hostname = hostname
         self.username = username
@@ -48,6 +57,9 @@ class SSHSession:
         # Optional bastion: {"hostname":..,"port":22,"username":..,
         #   "password":..,"key_path":..} — tunneled via direct-tcpip.
         self.gateway = gateway or {}
+        # Transient-failure retries (network only; auth fails immediately).
+        self.retries = max(0, retries)
+        self.retry_backoff = max(0.0, retry_backoff)
         self._client: paramiko.SSHClient | None = None
         self._gateway_transport: paramiko.Transport | None = None
 
@@ -66,11 +78,29 @@ class SSHSession:
         strict_host_key_checking=True (or --strict-host-key-checking) to
         reject unknown host keys and require a pre-populated known_hosts.
 
+        Transient network failures (timeouts, resets, DNS flakes, SSH
+        protocol errors) retry with exponential backoff up to ``retries``
+        times (or --retries). Authentication failures fail immediately —
+        retrying bad credentials only risks account lockout.
+
         Raises:
             paramiko.AuthenticationException: If credentials are invalid
             paramiko.SSHException: If SSH protocol negotiation fails
             socket.gaierror: If hostname cannot be resolved
         """
+        for attempt in range(self.retries + 1):
+            try:
+                self._connect_once()
+                return
+            except paramiko.AuthenticationException:
+                raise
+            except _TRANSIENT_ERRORS:
+                if attempt >= self.retries:
+                    raise
+                time.sleep(self.retry_backoff * (2.0**attempt))
+
+    def _connect_once(self) -> None:
+        """Single connection attempt (with cleanup so retries start fresh)."""
         client = paramiko.SSHClient()
         if self.strict_host_key_checking:
             client.set_missing_host_key_policy(RejectPolicy())
@@ -81,17 +111,23 @@ class SSHSession:
         sock = None
         if self.gateway:
             sock = self._open_gateway_channel()
-        client.connect(
-            hostname=self.hostname,
-            port=self.port,
-            username=self.username,
-            password=self.password or None,
-            timeout=self.timeout,
-            key_filename=self.key_path,
-            sock=sock,
-            allow_agent=False,
-            look_for_keys=False,
-        )
+        try:
+            client.connect(
+                hostname=self.hostname,
+                port=self.port,
+                username=self.username,
+                password=self.password or None,
+                timeout=self.timeout,
+                key_filename=self.key_path,
+                sock=sock,
+                allow_agent=False,
+                look_for_keys=False,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            with suppress(Exception):
+                client.close()
+            self.close()
+            raise
         self._client = client
 
     def _open_gateway_channel(self) -> paramiko.Channel:
@@ -325,6 +361,8 @@ def pooled_session(
     key_path: str | None = None,
     gateway: dict | None = None,
     pool: SessionPool | None = None,
+    retries: int = 0,
+    retry_backoff: float = 1.0,
 ) -> Iterator[SSHSession]:
     """Yield a session, reusing a healthy pooled one when available.
 
@@ -355,6 +393,8 @@ def pooled_session(
             strict_host_key_checking=strict_host_key_checking,
             key_path=key_path,
             gateway=gateway,
+            retries=retries,
+            retry_backoff=retry_backoff,
         )
         session.connect()
         return session

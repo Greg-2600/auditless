@@ -117,6 +117,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout", type=float, default=5.0, help="SSH connect timeout seconds"
     )
     parser.add_argument(
+        "--retries",
+        type=int,
+        default=0,
+        help="Retry transient SSH failures with backoff (auth fails fast; 0 disables)",
+    )
+    parser.add_argument(
         "--jobs",
         type=int,
         default=4,
@@ -264,6 +270,7 @@ def _open_session(
             strict_host_key_checking=args.strict_host_key_checking,
             key_path=args.key_file,
             gateway=gateway,
+            retries=args.retries,
         )
     return SSHSession(
         hostname=args.hostname,
@@ -274,6 +281,7 @@ def _open_session(
         strict_host_key_checking=args.strict_host_key_checking,
         key_path=args.key_file,
         gateway=gateway,
+        retries=args.retries,
     )
 
 

@@ -373,6 +373,8 @@ def run_scan(params: dict) -> dict:
         argv += ["--check-timeout", str(params["check_timeout"])]
     if params.get("deadline") is not None:
         argv += ["--deadline", str(params["deadline"])]
+    if params.get("retries") is not None:
+        argv += ["--retries", str(params["retries"])]
     if params.get("reuse_session", True):
         argv.append("--reuse-session")
     gateway = params.get("gateway") or {}

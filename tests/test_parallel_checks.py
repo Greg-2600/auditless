@@ -179,9 +179,11 @@ def test_run_scan_forwards_jobs(
             "password": "pw",
             "deadline": 300,
             "check_timeout": 60,
+            "retries": 2,
         }
     )
     assert payload == {"ok": True}
     argv = seen["argv"]
     assert argv[argv.index("--deadline") + 1] == "300"
     assert argv[argv.index("--check-timeout") + 1] == "60"
+    assert argv[argv.index("--retries") + 1] == "2"
