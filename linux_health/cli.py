@@ -481,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
                     CheckResult(
                         category="Scan",
                         item="Scan deadline exceeded",
-                        status="warn",
+                        status="unknown",
                         details=(
                             "Partial report: the global scan deadline "
                             f"({deadline:g}s) expired; phases completed: "

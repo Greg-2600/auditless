@@ -130,7 +130,7 @@ def test_hung_check_becomes_warn_placeholder(
         _mock_ssh(), password="", max_workers=8, check_timeout=0.3
     )
     slot = next(r for r in results if r.item == "check_memory timed out")
-    assert slot.status == "warn"
+    assert slot.status == "unknown"
     assert slot.category == "Scan"
     assert slot.test_id == CHECK_TEST_IDS.get("check_memory", "")
     assert len(results) == len(baseline)

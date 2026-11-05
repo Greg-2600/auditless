@@ -427,8 +427,8 @@ def run_all_filesystem_checks(ssh: SSHSession, password: str = "") -> List[Check
                 CheckResult(
                     category="Filesystem" if "nfs" in check.__name__ else "Storage",
                     item=check.__name__.replace("check_", "").replace("_", " ").title(),
-                    status="fail",
-                    details=f"Check failed with error: {str(e)}",
+                    status="unknown",
+                    details=f"Check failed with error (not assessed): {str(e)}",
                     recommendation="Review check implementation and SSH connection",
                     test_id=CHECK_TEST_IDS.get(check.__name__, "FS-XXXX"),
                 )

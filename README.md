@@ -136,8 +136,12 @@ The **Hardening Index** is a Lynis-inspired 0-100 score that quantifies your sys
 - **PASS** checks contribute **100%** to category score
 - **WARN** checks contribute **50%** to category score  
 - **FAIL** checks contribute **0%** to category score
+- **UNKNOWN** checks (❓ — tool missing, unprivileged, timed out, or
+  crashed) are **excluded from scoring entirely**: not assessed means
+  neither rewarded nor punished. Reports always show the unknown count
+  beside the index.
 
-Overall index = Weighted average across all categories
+Overall index = Weighted average across all categories (assessed checks only)
 
 ### Hardening Levels
 
@@ -880,7 +884,7 @@ Generated: 2026-01-08 15:30:42 UTC
 - Logged-in users: greg, admin # users=2
 
 ## Summary
-- Checks: 36 (✅ 24 / ⚠️ 10 / ❌ 2)
+- Checks: 36 (✅ 24 / ⚠️ 10 / ❌ 2 / ❓ 0 unknown, excluded from index)
 - Open ports (scanned): 5 -> 22, 80, 443, 3306, 6379
 
 ## Checklist
@@ -917,6 +921,7 @@ Machine-readable structured output for automation and tool integration:
     "passed": 40,
     "warned": 10,
     "failed": 3,
+    "unknown": 0,
     "hardening_index": 82,
     "hardening_level": "GOOD"
   },
@@ -1048,6 +1053,7 @@ Generate machine-readable JSON reports for seamless integration with security or
     "passed": 42,
     "warned": 8,
     "failed": 3,
+    "unknown": 0,
     "hardening_index": 84,
     "hardening_level": "GOOD"
   },

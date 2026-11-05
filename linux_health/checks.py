@@ -144,7 +144,7 @@ def _cap_output(
 class CheckResult:
     category: str
     item: str
-    status: str  # pass | warn | fail
+    status: str  # pass | warn | fail | unknown (unknown: not assessed)
     details: str
     recommendation: str
     test_id: str = ""  # Lynis-style test ID (e.g., BOOT-5122, AUTH-9328)
@@ -331,6 +331,25 @@ def _fail(
         category=category,
         item=item,
         status="fail",
+        details=details,
+        recommendation=recommendation,
+        test_id=test_id,
+    )
+
+
+def _unknown(
+    item: str, details: str, recommendation: str, category: str, test_id: str = ""
+) -> CheckResult:
+    """Unevaluable check (tool missing, unprivileged, timed out, crashed).
+
+    Unknown is excluded from hardening-index math entirely: it is neither
+    rewarded like pass nor punished like fail. Never use it for an
+    assessed finding.
+    """
+    return CheckResult(
+        category=category,
+        item=item,
+        status="unknown",
         details=details,
         recommendation=recommendation,
         test_id=test_id,
@@ -3581,14 +3600,13 @@ def run_all_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
 
 
 def _timeout_placeholder(name: str, check_timeout: float) -> CheckResult:
-    """WARN result standing in for a check that exceeded its ceiling."""
-    return CheckResult(
-        category="Scan",
-        item=f"{name} timed out",
-        status="warn",
-        details=f"Check exceeded the {check_timeout:g}s per-check timeout.",
-        recommendation="Re-run with a higher --check-timeout if this check matters.",
-        test_id=CHECK_TEST_IDS.get(name, ""),
+    """Unknown result standing in for a check that exceeded its ceiling."""
+    return _unknown(
+        f"{name} timed out",
+        f"Check exceeded the {check_timeout:g}s per-check timeout.",
+        "Re-run with a higher --check-timeout if this check matters.",
+        "Scan",
+        CHECK_TEST_IDS.get(name, ""),
     )
 
 
@@ -3646,18 +3664,15 @@ def _session_elevated(info: PrivilegeInfo, password: str) -> bool:
 
 
 def _privilege_placeholder(name: str) -> CheckResult:
-    """WARN result marking an unevaluable check as unknown (not a PASS)."""
-    return CheckResult(
-        category="Privilege",
-        item=f"{name} skipped (unprivileged)",
-        status="warn",
-        details=(
-            "unknown: this check needs elevated privileges (root or sudo) "
-            "for a meaningful verdict; re-run with --ask-password, "
-            "--key-file plus sudo access, or as root."
-        ),
-        recommendation="Re-run privileged to assess this area.",
-        test_id=CHECK_TEST_IDS.get(name, ""),
+    """Unknown result marking an unevaluable check (not a PASS)."""
+    return _unknown(
+        f"{name} skipped (unprivileged)",
+        "unknown: this check needs elevated privileges (root or sudo) "
+        "for a meaningful verdict; re-run with --ask-password, "
+        "--key-file plus sudo access, or as root.",
+        "Re-run privileged to assess this area.",
+        "Privilege",
+        CHECK_TEST_IDS.get(name, ""),
     )
 
 

@@ -72,7 +72,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 36 — [P1] Scan profiles: `--profile` + `--only-tests`/`--skip-tests` CLI flags mirroring profile YAML (today YAML-only for some paths). `cli` (effort: S)
 - [x] 37 — [P1] Profile validation (`auditless profile lint`) with JSON-schema + unknown-ID suggestions. `config` (effort: M)
 - [x] 38 — [P1] Deterministic check ordering + stable JSON key order (diff-friendly reports). `report` (effort: S)
-- [ ] 39 — [P1] Structured `unknown`/`skipped` status distinct from `warn` (tool missing ≠ vulnerable); update hardening-index math + docs. `report` (effort: M)
+- [x] 39 — [P1] Structured `unknown`/`skipped` status distinct from `warn` (tool missing ≠ vulnerable); update hardening-index math + docs. `report` (effort: M)
 - [ ] 40 — [P1] Benchmark script (`scripts/bench_fleet.py`) promoted to CI perf gate (fail on >10% scan-time regression). `perf` (effort: M)
 
 ---
