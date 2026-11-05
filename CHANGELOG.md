@@ -254,10 +254,10 @@ Thanks to all contributors who made this release possible!
 ## Support
 
 - 📖 **Documentation:** See [README.md](README.md)
-- 🐛 **Report Bugs:** [GitHub Issues](https://github.com/yourusername/linux_health/issues)
-- 💬 **Discussions:** [GitHub Discussions](https://github.com/yourusername/linux_health/discussions)
+- 🐛 **Report Bugs:** [GitHub Issues](https://github.com/Greg-2600/auditless/issues)
+- 💬 **Discussions:** [GitHub Discussions](https://github.com/Greg-2600/auditless/discussions)
 - 🔒 **Security:** See [SECURITY.md](SECURITY.md)
 
 ---
 
-[1.0.0]: https://github.com/yourusername/linux_health/releases/tag/v1.0.0
+[1.0.0]: https://github.com/Greg-2600/auditless/releases/tag/v1.0.0

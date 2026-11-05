@@ -18,7 +18,7 @@ Please read and follow our [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) to ensure
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/linux_health.git
+git clone https://github.com/Greg-2600/auditless.git
 cd linux_health
 
 # Create virtual environment
@@ -38,7 +38,7 @@ python -m pytest tests/ -v
 ### Reporting Bugs
 
 **Before opening an issue, please:**
-1. Check existing [issues](https://github.com/yourusername/linux_health/issues)
+1. Check existing [issues](https://github.com/Greg-2600/auditless/issues)
 2. Review [Troubleshooting](../README.md#troubleshooting) section
 
 **When reporting, include:**
@@ -54,8 +54,8 @@ Use the bug report template when creating an issue.
 ### Suggesting Features
 
 **Before suggesting, check:**
-1. [Open issues](https://github.com/yourusername/linux_health/issues)
-2. [Discussions](https://github.com/yourusername/linux_health/discussions)
+1. [Open issues](https://github.com/Greg-2600/auditless/issues)
+2. [Discussions](https://github.com/Greg-2600/auditless/discussions)
 
 **When suggesting, describe:**
 - What you want to do
@@ -273,7 +273,7 @@ python -m linux_health 192.168.1.100 user password \
 
 ## Questions?
 
-- 💬 **Discussions:** [GitHub Discussions](https://github.com/yourusername/linux_health/discussions)
+- 💬 **Discussions:** [GitHub Discussions](https://github.com/Greg-2600/auditless/discussions)
 - 📖 **Docs:** [README.md](../README.md)
 - 🔒 **Security:** See [SECURITY.md](../SECURITY.md)
 
