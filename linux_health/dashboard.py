@@ -1,4 +1,4 @@
-"""Local web dashboard + API for Linux Health Security Scanner.
+"""Local web dashboard + API for Auditless.
 
 FastAPI app serving a single-page UI, a documented JSON API, and
 interactive Swagger UI at /docs (ReDoc at /redoc, schema at
@@ -642,7 +642,7 @@ def get_version_info() -> dict:
     from . import __version__
 
     return {
-        "scanner": "Linux Health Security Scanner",
+        "scanner": "Auditless",
         "version": __version__,
         "api_version": "1.0",
         "python": platform.python_version(),
