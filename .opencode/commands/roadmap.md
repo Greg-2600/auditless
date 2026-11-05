@@ -18,14 +18,20 @@ Next item (from the helper — do not skip ahead):
    - `.venv/bin/pylint linux_health/ --fail-under=10.0`
    - `.venv/bin/mypy linux_health/`
    - `.venv/bin/bandit -r linux_health/ -q -lll`
-   - `.venv/bin/python -m pytest tests/ -q` (full suite = regression gate; e2e cases run when the environment supports them — report the skip count, do not force them)
+   - `.venv/bin/python -m pytest tests/ -q` (full suite = regression gate)
+   - `.venv/bin/python -m pytest tests/test_ui_selenium.py -q` (Selenium UI e2e:
+     headless Chrome against live uvicorn; skips cleanly with no browser;
+     asserts zero SEVERE console errors, history → report render, fleet table)
    - Fix failures properly. Never lower a gate, never delete a failing test to make it pass.
 4. **Docs.** Update the relevant docs for the change, then check the box: `.venv/bin/python scripts/roadmap.py mark <NNN>`. Verify `scripts/roadmap.py status` advances by one.
 5. **Commit, push, merge.**
    - Commit (pre-commit hooks run automatically — they must pass).
    - `git push -u origin roadmap/<NNN>-<slug>`, then `gh pr create --fill --base main`.
    - Wait for CI: `gh pr checks --watch --fail-fast` (generous timeout). If checks fail, fix on the same branch, push, and watch again — up to 2 fix rounds.
-   - Merge only on green: `gh pr merge --squash --delete-branch`. Confirm `git status` clean on the branch, then switch back to `main` and pull.
+   - Merge only on green: `gh pr merge --squash --delete-branch`. If the
+     repo ruleset reports `REVIEW_REQUIRED` with no second reviewer available
+     (documented solo-dev bypass in `SECURITY.md`) and all checks are green,
+     use `gh pr merge --squash --admin --delete-branch` and say so in the report. Confirm `git status` clean on the branch, then switch back to `main` and pull.
 6. **If stuck** (red after 2 fix rounds, ambiguous requirement, or a gate that cannot pass without lowering it): push the branch, convert the PR to draft, report the blocker clearly, and do NOT merge. Do not start another item.
 
 ## Rules

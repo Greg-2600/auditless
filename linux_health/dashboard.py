@@ -764,6 +764,7 @@ INDEX_HTML = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Auditless &mdash; Linux Security Scanner</title>
+<link rel="icon" href="data:,">
 <style>
 :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--txt:#e6edf3;--dim:#8b949e;
 --grn:#3fb950;--yel:#d29922;--red:#f85149;--acc:#58a6ff}
@@ -1053,7 +1054,7 @@ async function proposeFixes(id){
   ps.map(p=>`<div class="card"><b>${esc(p.title)}</b> `+
    `<span class="chip">${p.risk}</span> <span class="chip">${esc(p.test_id)} ${esc(p.item)}</span>`+
    `<p class="hist">${esc(p.description)}<br>Preconditions: ${esc(p.preconditions)}</p>`+
-   `<pre>${esc(p.script.join("\n"))}</pre>`+
+   `<pre>${esc(p.script.join("\\n"))}</pre>`+
    `<button onclick="approveFix('${p.proposal_id}')">Approve &amp; apply</button></div>`).join("");}
 async function approveFix(pid){
  const pw=prompt("SSH/sudo password (empty for key-auth hosts):","")||"";
