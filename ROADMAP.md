@@ -31,7 +31,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 
 - [x] 1 — [P0] Record the naming decision above in `docs/ARCHITECTURE.md` + `README.md` header so contributors stop guessing. `docs` (effort: S)
 - [x] 2 — [P0] Fix `pyproject.toml [project.urls]` (`yourusername/linux_health` → `Greg-2600/auditless` ×4). `packaging` (effort: S)
-- [ ] 3 — [P0] Fix stale `yourusername/linux_health` links in `CHANGELOG.md` (releases section), `.github/CONTRIBUTING.md`, `.github/*.md`. `docs` (effort: S)
+- [x] 3 — [P0] Fix stale `yourusername/linux_health` links in `CHANGELOG.md` (releases section), `.github/CONTRIBUTING.md`, `.github/*.md`. `docs` (effort: S)
 - [ ] 4 — [P0] Retitle `README.md` H1 to `Auditless` with subtitle `Agentless Linux security scanner (formerly Linux Health)`; keep one `Linux Health` alias mention for searchability. `docs` (effort: S)
 - [ ] 5 — [P0] Fix `README.md` badges: version `2.0.0` → `2.5.3` (or dynamic), tests `334/334` → `499`, coverage `76%` → actual. `docs` (effort: S)
 - [ ] 6 — [P0] Unify `linux_health/dashboard.py` strings: module docstring + FastAPI `title/description` + `<title>`/`<h1>` currently mix `Linux Health Security Scanner` and `Auditless`. Canonical: `Auditless`. `dashboard` (effort: S)
