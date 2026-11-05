@@ -8,6 +8,11 @@ Next item (from the helper — do not skip ahead):
 
 !`.venv/bin/python scripts/roadmap.py next`
 
+> **Milestone rule (every 10 items):** before starting work, run
+> `.venv/bin/python scripts/roadmap.py milestone`. If it reports a
+> milestone was just hit (done-count is a multiple of 10), do NOT
+> start the next item — run `/roadmap-review` instead for this turn.
+
 ## Workflow
 
 1. **Sync and branch.** `git fetch origin`, update local `main`, then create `roadmap/<NNN>-<short-slug>` from `main`. Worktree must be clean before branching (stash nothing — stop and report if dirty).

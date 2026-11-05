@@ -4,6 +4,8 @@
 > Test suite: **499 passed / 16 skipped**. Gates: ruff / black / mypy / pylint 10.00 / bandit HIGH-only — all green.
 > This file is the single prioritized backlog. Check a box only when the work is merged to `main`.
 > Priority: **P0 = tech debt / correctness blocking**, **P1 = high-value next**, **P2 = important**, **P3 = nice-to-have**, **P4 = backlog / polish**.
+> Every 10 completed items the loop runs `/roadmap-review` (quality, stability, security, wow factor) and writes `ROADMAP-REVIEW-<NNN>.md`;
+> this 1–200 numbering is locked — future candidates live in reviews until a v2 backlog is cut.
 
 How to read: `— [P0] description \`area\` (effort: S/M/L)`. Effort S ≤ 1 day, M = 2–5 days, L ≥ 1 week.
 
