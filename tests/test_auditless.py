@@ -2947,3 +2947,128 @@ def test_main_skip_tests_drops_match(monkeypatch, tmp_path):
     argv2 = ["h", "u", "pw", "--format", "json", "--output", str(out2)]
     assert cli.main(argv2 + ["--skip-tests", "OTHER-9"]) == 0
     assert json.loads(out2.read_text(encoding="utf-8"))["summary"]["total_checks"] == 1
+
+
+class TestCheckSudoersDAuditing:
+    """Tests for sudoers drop-in auditing (AUTH-9341)."""
+
+    _host_seq = 0
+
+    def _session(self, routes):
+        TestCheckSudoersDAuditing._host_seq += 1
+        hostname = f"sudoers-test-{TestCheckSudoersDAuditing._host_seq}"
+        from unittest.mock import Mock
+
+        def fake_run(command, timeout=10.0):
+            for key, response in routes:
+                if key in command:
+                    return response
+            return 1, "", ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    def test_no_sudo_passes(self):
+        """Hosts without sudo are clean by definition."""
+        from linux_health.checks import check_sudoers_d_auditing
+
+        ssh = self._session([("command -v sudo", (1, "", ""))])
+        result = check_sudoers_d_auditing(ssh, "")
+        assert result.status == "pass"
+        assert "not installed" in result.details.lower()
+
+    def test_clean_sudoers_passes(self):
+        """Scoped config without NOPASSWD passes."""
+        from linux_health.checks import check_sudoers_d_auditing
+
+        ssh = self._session(
+            [
+                ("command -v sudo", (0, "/usr/bin/sudo", "")),
+                ("cat /etc/sudoers", (0, "root ALL=(ALL:ALL) ALL\n", "")),
+                ("stat -c", (0, "440 0 /etc/sudoers\n", "")),
+            ]
+        )
+        result = check_sudoers_d_auditing(ssh, "pw")
+        assert result.status == "pass"
+
+    def test_unrestricted_nopasswd_fails(self):
+        """NOPASSWD: ALL is an auth bypass (fail)."""
+        from linux_health.checks import check_sudoers_d_auditing
+
+        ssh = self._session(
+            [
+                ("command -v sudo", (0, "/usr/bin/sudo", "")),
+                (
+                    "cat /etc/sudoers",
+                    (0, "deploy ALL=(ALL) NOPASSWD: ALL\n", ""),
+                ),
+                ("stat -c", (0, "440 0 /etc/sudoers\n", "")),
+            ]
+        )
+        result = check_sudoers_d_auditing(ssh, "pw")
+        assert result.status == "fail"
+        assert "nopasswd" in result.details.lower()
+
+    def test_scoped_nopasswd_warns(self):
+        """Command-scoped NOPASSWD is a review item, not a failure."""
+        from linux_health.checks import check_sudoers_d_auditing
+
+        ssh = self._session(
+            [
+                ("command -v sudo", (0, "/usr/bin/sudo", "")),
+                (
+                    "cat /etc/sudoers",
+                    (0, "backup ALL=(ALL) NOPASSWD: /usr/bin/rsync\n", ""),
+                ),
+                ("stat -c", (0, "440 0 /etc/sudoers\n", "")),
+            ]
+        )
+        result = check_sudoers_d_auditing(ssh, "pw")
+        assert result.status == "warn"
+
+    def test_authenticate_disabled_fails(self):
+        """!authenticate anywhere fails closed."""
+        from linux_health.checks import check_sudoers_d_auditing
+
+        ssh = self._session(
+            [
+                ("command -v sudo", (0, "/usr/bin/sudo", "")),
+                ("cat /etc/sudoers", (0, "Defaults !authenticate\n", "")),
+                ("stat -c", (0, "440 0 /etc/sudoers\n", "")),
+            ]
+        )
+        result = check_sudoers_d_auditing(ssh, "pw")
+        assert result.status == "fail"
+        assert "!authenticate" in result.details
+
+    def test_world_writable_sudoers_fails(self):
+        """Group/world-writable sudoers files are a privesc vector."""
+        from linux_health.checks import check_sudoers_d_auditing
+
+        ssh = self._session(
+            [
+                ("command -v sudo", (0, "/usr/bin/sudo", "")),
+                ("cat /etc/sudoers", (0, "root ALL=(ALL:ALL) ALL\n", "")),
+                ("stat -c", (0, "440 0 /etc/sudoers\n666 0 /etc/sudoers.d/x\n", "")),
+            ]
+        )
+        result = check_sudoers_d_auditing(ssh, "pw")
+        assert result.status == "fail"
+        assert "writable" in result.details.lower()
+
+    def test_commented_nopasswd_ignored(self):
+        """Commented-out entries must not trip the check."""
+        from linux_health.checks import check_sudoers_d_auditing
+
+        ssh = self._session(
+            [
+                ("command -v sudo", (0, "/usr/bin/sudo", "")),
+                ("cat /etc/sudoers", (0, "# deploy ALL=(ALL) NOPASSWD: ALL\n", "")),
+                ("stat -c", (0, "440 0 /etc/sudoers\n", "")),
+            ]
+        )
+        result = check_sudoers_d_auditing(ssh, "pw")
+        assert result.status == "pass"

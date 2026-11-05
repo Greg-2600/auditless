@@ -1168,6 +1168,101 @@ def check_unexpected_sudo_usage(ssh: SSHSession, password: str = "") -> CheckRes
     )
 
 
+def check_sudoers_d_auditing(ssh: SSHSession, password: str = "") -> CheckResult:
+    """Audit sudoers drop-ins: NOPASSWD scope, !authenticate, file permissions."""
+    category = "Privilege Escalation"
+
+    # Presence probe (also gates sudo-less systems to a clean PASS)
+    code, out, _ = _run(ssh, "command -v sudo 2>/dev/null")
+    if code != 0 or not out.strip():
+        return _pass(
+            "Sudoers auditing",
+            "sudo is not installed",
+            "No action required",
+            category,
+        )
+
+    # Sudoers content: main file plus drop-ins (root-readable only)
+    cmd = (
+        "bash -lc 'cat /etc/sudoers 2>/dev/null; "
+        'for f in /etc/sudoers.d/*; do [ -f "$f" ] && cat "$f" 2>/dev/null; done\''
+    )
+    if password:
+        cmd = f"sudo -S {cmd}"
+    _, content, _ = _run(ssh, cmd, password)
+    active = [
+        line.strip()
+        for line in content.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+    critical: list[str] = []
+    warns: list[str] = []
+    if any("!authenticate" in line for line in active):
+        critical.append("!authenticate disables password authentication")
+    for line in active:
+        if "NOPASSWD" not in line:
+            continue
+        after = line.split("NOPASSWD", 1)[1]
+        if re.search(r":\s*ALL\b", after):
+            critical.append(f"Unrestricted NOPASSWD: {line[:120]}")
+        else:
+            warns.append(f"Scoped NOPASSWD (review necessity): {line[:120]}")
+
+    # Drop-in file permissions: writable beyond root is a privesc vector
+    perm_cmd = "stat -c '%a %u %n' /etc/sudoers /etc/sudoers.d/* 2>/dev/null"
+    if password:
+        perm_cmd = f"sudo -S {perm_cmd}"
+    _, perm_out, _ = _run(ssh, perm_cmd, password)
+    for entry in perm_out.splitlines():
+        parts = entry.split()
+        if len(parts) != 3:
+            continue
+        mode, uid, path = parts
+        try:
+            writable = int(mode, 8) & 0o022
+        except ValueError:
+            continue
+        if writable:
+            critical.append(f"{path} mode {mode} is group/world-writable")
+        elif uid != "0":
+            warns.append(f"{path} not owned by root")
+
+    # Sudoers syntax sanity (best effort; sudo fail-closes on errors)
+    if password:
+        _, syntax_out, _ = _run(ssh, "sudo -S visudo -c 2>&1 | head -5", password)
+        if "syntax error" in syntax_out.lower():
+            warns.append("sudoers syntax errors; sudo may refuse the configuration")
+
+    if critical:
+        summary = "; ".join(critical[:3])
+        if len(critical) > 3:
+            summary += f"; +{len(critical) - 3} more"
+        return _fail(
+            "Sudoers auditing",
+            f"Dangerous sudoers configuration: {summary}",
+            "Scope NOPASSWD to specific commands, remove !authenticate, "
+            "fix file permissions (0440 root-owned), validate with visudo -c",
+            category,
+        )
+    if warns:
+        summary = "; ".join(warns[:3])
+        if len(warns) > 3:
+            summary += f"; +{len(warns) - 3} more"
+        return _warn(
+            "Sudoers auditing",
+            f"Sudoers hardening gaps: {summary}",
+            "Minimize NOPASSWD scope; keep drop-ins 0440 root-owned",
+            category,
+        )
+    return _pass(
+        "Sudoers auditing",
+        "No NOPASSWD entries, no !authenticate, drop-in permissions sane",
+        "Re-audit after any sudoers change",
+        category,
+    )
+
+
 def check_recently_created_accounts(ssh: SSHSession) -> CheckResult:
     """Detect user accounts created recently (potential backdoor accounts)"""
     category = "Account Integrity"
@@ -3494,6 +3589,10 @@ def _check_thunks(ssh: SSHSession, password: str = "") -> list[tuple[str, _Check
             lambda: check_unexpected_sudo_usage(ssh, password),
         ),
         (
+            "check_sudoers_d_auditing",
+            lambda: check_sudoers_d_auditing(ssh, password),
+        ),
+        (
             "check_recently_created_accounts",
             lambda: check_recently_created_accounts(ssh),
         ),
@@ -3630,6 +3729,7 @@ NEEDS_ELEVATION: frozenset[str] = frozenset(
         "check_recently_created_accounts",
         "check_unexpected_sudo_usage",
         "check_privilege_escalation_vectors",
+        "check_sudoers_d_auditing",
     }
 )
 
