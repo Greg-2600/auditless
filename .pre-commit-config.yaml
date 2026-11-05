@@ -14,31 +14,31 @@ repos:
     hooks:
       - id: black
         name: black (format check)
-        entry: .venv/bin/python -m black --check linux_health/ tests/
+        entry: .venv/bin/python -m black --check linux_health/ tests/ auditless.py
         language: system
         pass_filenames: false
         always_run: true
       - id: ruff
         name: ruff (lint)
-        entry: .venv/bin/python -m ruff check linux_health/ tests/
+        entry: .venv/bin/python -m ruff check linux_health/ tests/ auditless.py
         language: system
         pass_filenames: false
         always_run: true
       - id: pylint
         name: pylint (10.00/10 gate)
-        entry: .venv/bin/python -m pylint linux_health/ --fail-under=10.0
+        entry: .venv/bin/python -m pylint linux_health/ auditless.py --fail-under=10.0
         language: system
         pass_filenames: false
         always_run: true
       - id: mypy
         name: mypy (strict-ish gate)
-        entry: .venv/bin/python -m mypy linux_health/
+        entry: .venv/bin/python -m mypy linux_health/ auditless.py
         language: system
         pass_filenames: false
         always_run: true
       - id: bandit
         name: bandit (HIGH severity gate)
-        entry: .venv/bin/python -m bandit -r linux_health/ -q -lll
+        entry: .venv/bin/python -m bandit -r linux_health/ auditless.py -q -lll
         language: system
         pass_filenames: false
         always_run: true

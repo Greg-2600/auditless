@@ -45,6 +45,7 @@ linux-health = "linux_health.cli:main"
 
 [tool.setuptools]
 packages = ["linux_health"]
+py-modules = ["auditless"]
 
 [tool.black]
 line-length = 88
