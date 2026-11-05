@@ -1715,6 +1715,45 @@ class TestPortScanner:
 
             assert len(results) == 1
 
+    def test_normalize_host_strips_brackets(self):
+        """Bracketed IPv6 literals normalize for socket/SSH APIs"""
+        from linux_health.scanner import normalize_host
+
+        assert normalize_host("[::1]") == "::1"
+        assert normalize_host("::1") == "::1"
+        assert normalize_host("example.com") == "example.com"
+        assert normalize_host("[example.com]") == "example.com"
+        assert normalize_host("  [::1]  ") == "::1"
+        assert normalize_host("") == ""
+        assert normalize_host("127.0.0.1") == "127.0.0.1"
+
+    def test_scan_ipv6_loopback_live(self):
+        """Real dual-stack probe: open and closed ports on ::1."""
+        import socket
+
+        from linux_health.scanner import scan_ports
+
+        try:
+            listener = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            listener.bind(("::1", 0))
+        except OSError:
+            pytest.skip("IPv6 loopback unavailable")
+        open_port = listener.getsockname()[1]
+        with listener:
+            listener.listen(1)
+            results = scan_ports("[::1]", [open_port], timeout=2.0)
+            assert len(results) == 1
+            assert results[0].open is True
+        closed = scan_ports("::1", [open_port], timeout=1.0)
+        assert closed[0].open is False
+
+    def test_ssh_session_strips_brackets(self):
+        """SSH connections use the bare address for bracketed input."""
+        from linux_health.ssh_client import SSHSession
+
+        assert SSHSession("[::1]", "u", "pw").hostname == "::1"
+        assert SSHSession("example.com", "u", "pw").hostname == "example.com"
+
 
 class TestCLIFunctions:
     """Tests for CLI utility functions and argument parser"""

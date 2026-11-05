@@ -59,11 +59,23 @@ class PortStatus:
     reason: str | None = None
 
 
+def normalize_host(host: str) -> str:
+    """Strip one pair of brackets from RFC 3986 IPv6 literals.
+
+    ``[::1]`` → ``::1`` for socket/SSH APIs; bare hosts, hostnames, and
+    already-bare addresses pass through unchanged.
+    """
+    candidate = host.strip()
+    if len(candidate) >= 2 and candidate.startswith("[") and candidate.endswith("]"):
+        return candidate[1:-1]
+    return candidate
+
+
 def _scan_single(host: str, port: int, timeout: float) -> PortStatus:
     """Probe single port on target host using TCP connect.
 
     Args:
-        host: Target hostname or IP address
+        host: Target hostname or IP address (v4/v6, brackets optional)
         port: Port number (1-65535)
         timeout: Connection timeout in seconds
 
@@ -71,18 +83,28 @@ def _scan_single(host: str, port: int, timeout: float) -> PortStatus:
         PortStatus with open flag and diagnostic reason
 
     Note:
-        Uses socket.SOCK_STREAM (TCP) for connect-based scanning.
-        Handles all exceptions gracefully for robust concurrent execution.
+        Dual-stack: every address returned for the host is tried in
+        order (first success wins). Uses socket.SOCK_STREAM (TCP) for
+        connect-based scanning. Handles all exceptions gracefully for
+        robust concurrent execution.
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout)
-        try:
-            sock.connect((host, port))
-            return PortStatus(port=port, open=True, reason="Connected")
-        except socket.timeout:
-            return PortStatus(port=port, open=False, reason="timeout")
-        except OSError as exc:
-            return PortStatus(port=port, open=False, reason=str(exc))
+    target = normalize_host(host)
+    try:
+        addrinfos = socket.getaddrinfo(target, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        return PortStatus(port=port, open=False, reason=str(exc))
+    last_error = "no addresses resolved"
+    for family, socktype, proto, _canonname, sockaddr in addrinfos:
+        with socket.socket(family, socktype, proto) as sock:
+            sock.settimeout(timeout)
+            try:
+                sock.connect(sockaddr)
+                return PortStatus(port=port, open=True, reason="Connected")
+            except socket.timeout:
+                last_error = "timeout"
+            except OSError as exc:
+                last_error = str(exc)
+    return PortStatus(port=port, open=False, reason=last_error)
 
 
 def scan_ports(
@@ -94,7 +116,7 @@ def scan_ports(
     Results are sorted by port number and include diagnostic failure reasons.
 
     Args:
-        host: Target hostname or IP address
+        host: Target hostname or IP address (v4/v6, brackets optional)
         ports: Iterable of port numbers to scan (duplicates removed)
         timeout: Per-port connection timeout in seconds (default: 0.7)
         max_workers: Maximum concurrent threads (default: 50)
@@ -113,11 +135,12 @@ def scan_ports(
         ...     status = 'OPEN' if r.open else 'CLOSED'
         ...     print(f':{r.port} {status}')
     """
+    target = normalize_host(host)
     unique_ports = sorted({int(p) for p in ports if int(p) > 0})
     results: list[PortStatus] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_port = {
-            executor.submit(_scan_single, host, port, timeout): port
+            executor.submit(_scan_single, target, port, timeout): port
             for port in unique_ports
         }
         for future in as_completed(future_to_port):

@@ -23,6 +23,8 @@ from dataclasses import dataclass
 import paramiko
 from paramiko.client import AutoAddPolicy, RejectPolicy
 
+from .scanner import normalize_host
+
 #: Network-level failures worth retrying (auth failures fail immediately).
 _TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
     OSError,
@@ -47,7 +49,7 @@ class SSHSession:
         retries: int = 0,
         retry_backoff: float = 1.0,
     ):
-        self.hostname = hostname
+        self.hostname = normalize_host(hostname)
         self.username = username
         self.password = password
         self.port = port
