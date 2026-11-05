@@ -5,6 +5,17 @@ All notable changes to Linux Health Security Scanner are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-11-05
+
+### Added
+
+**Supply chain (SLSA Level 3)**
+- SBOM + SLSA provenance attestations on every image build
+- Keyless cosign signatures with a verify gate (signature,
+  attestation, SBOM download, boot smoke test) before releases count
+- OpenSSF Scorecard workflow; 10 OSV vulnerabilities closed by
+  raising dependency floors; all actions SHA-pinned with Dependabot
+
 ## [2.4.0] - 2026-11-05
 
 ### Added
