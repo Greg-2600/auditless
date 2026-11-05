@@ -34,10 +34,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/linux_health"
-Documentation = "https://github.com/yourusername/linux_health#readme"
-Repository = "https://github.com/yourusername/linux_health"
-Issues = "https://github.com/yourusername/linux_health/issues"
+Homepage = "https://github.com/Greg-2600/auditless"
+Documentation = "https://github.com/Greg-2600/auditless#readme"
+Repository = "https://github.com/Greg-2600/auditless"
+Issues = "https://github.com/Greg-2600/auditless/issues"
 
 [project.scripts]
 auditless = "linux_health.cli:main"
