@@ -69,7 +69,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 33 — [P1] Check severity re-grade pass (FAIL vs WARN audit against CIS impact); document rationale per change. `checks` (effort: M)
 - [x] 34 — [P1] `sudo -n` non-interactive discipline: no password prompts mid-scan; preflight auth check with clear error. `ssh` (effort: S)
 - [x] 35 — [P1] Large-fleet memory discipline: stream checks, cap stored output bytes per check (`--max-output-bytes`). `engine` (effort: S)
-- [ ] 36 — [P1] Scan profiles: `--profile` + `--only-tests`/`--skip-tests` CLI flags mirroring profile YAML (today YAML-only for some paths). `cli` (effort: S)
+- [x] 36 — [P1] Scan profiles: `--profile` + `--only-tests`/`--skip-tests` CLI flags mirroring profile YAML (today YAML-only for some paths). `cli` (effort: S)
 - [ ] 37 — [P1] Profile validation (`auditless profile lint`) with JSON-schema + unknown-ID suggestions. `config` (effort: M)
 - [ ] 38 — [P1] Deterministic check ordering + stable JSON key order (diff-friendly reports). `report` (effort: S)
 - [ ] 39 — [P1] Structured `unknown`/`skipped` status distinct from `warn` (tool missing ≠ vulnerable); update hardening-index math + docs. `report` (effort: M)

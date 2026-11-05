@@ -2868,3 +2868,39 @@ class TestEdgeCases:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_main_only_tests_filters_to_subset(monkeypatch, tmp_path):
+    """--only-tests keeps matching IDs and drops everything else."""
+    import json
+
+    from linux_health import cli
+
+    TestMainScanOrchestration()._patch_all(monkeypatch)
+    out = tmp_path / "r.json"
+    argv = ["h", "u", "pw", "--format", "json", "--output", str(out)]
+    assert cli.main(argv + ["--only-tests", "T-1"]) == 0
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["summary"]["total_checks"] == 1
+    out2 = tmp_path / "r2.json"
+    argv2 = ["h", "u", "pw", "--format", "json", "--output", str(out2)]
+    assert cli.main(argv2 + ["--only-tests", "NOPE-0"]) == 0
+    assert json.loads(out2.read_text(encoding="utf-8"))["summary"]["total_checks"] == 0
+
+
+def test_main_skip_tests_drops_match(monkeypatch, tmp_path):
+    """--skip-tests removes matching IDs and keeps the rest."""
+    import json
+
+    from linux_health import cli
+
+    TestMainScanOrchestration()._patch_all(monkeypatch)
+    out = tmp_path / "r.json"
+    argv = ["h", "u", "pw", "--format", "json", "--output", str(out)]
+    assert cli.main(argv + ["--skip-tests", "T-1"]) == 0
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["summary"]["total_checks"] == 0
+    out2 = tmp_path / "r2.json"
+    argv2 = ["h", "u", "pw", "--format", "json", "--output", str(out2)]
+    assert cli.main(argv2 + ["--skip-tests", "OTHER-9"]) == 0
+    assert json.loads(out2.read_text(encoding="utf-8"))["summary"]["total_checks"] == 1
