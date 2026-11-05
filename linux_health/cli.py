@@ -123,6 +123,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Retry transient SSH failures with backoff (auth fails fast; 0 disables)",
     )
     parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable the command-output cache for this scan (slower, always fresh)",
+    )
+    parser.add_argument(
         "--jobs",
         type=int,
         default=4,
@@ -335,9 +340,17 @@ def main(argv: list[str] | None = None) -> int:
     set_command_timeout(args.command_timeout)
 
     # Reset command cache for fresh scan results
-    from .checks import reset_command_cache
+    from .checks import (
+        disable_command_cache,
+        enable_command_cache,
+        is_command_cache_enabled,
+        reset_command_cache,
+    )
 
     reset_command_cache()
+    cache_was_enabled = is_command_cache_enabled()
+    if args.no_cache:
+        disable_command_cache()
 
     try:
         gateway = None
@@ -448,6 +461,9 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # pylint: disable=broad-except
         parser.error(f"SSH failed: {exc}")
         return 2
+    finally:
+        if cache_was_enabled:
+            enable_command_cache()
 
     port_results = scan_ports(args.hostname, ports)
 

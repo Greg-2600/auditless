@@ -153,6 +153,24 @@ python -m linux_health target user "" --use-key ~/.ssh/id_rsa
 
 ### Check Optimization
 
+**Command-Output Cache:**
+Repeated remote commands within one scan execute once; results are
+keyed by `(hostname, command)` so concurrent fleet scans never share
+entries across hosts.
+
+Invalidation rules (single source of truth — see `checks.py` header):
+
+1. Every scan starts with `reset_command_cache()` (fresh results).
+2. Entries expire after the TTL (default 300s; `set_command_cache_ttl`).
+3. `--no-cache` disables the cache for one scan (prior state restored
+   afterwards); per-call `use_cache=False` bypasses individual reads
+   (used by remediation apply).
+
+```bash
+# Slower but always fresh (e.g. right after changing the target)
+python -m linux_health target user pass --no-cache
+```
+
 **Skip Expensive Checks:**
 ```yaml
 # skip_expensive.yaml

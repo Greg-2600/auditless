@@ -377,6 +377,8 @@ def run_scan(params: dict) -> dict:
         argv += ["--deadline", str(params["deadline"])]
     if params.get("retries") is not None:
         argv += ["--retries", str(params["retries"])]
+    if params.get("no_cache"):
+        argv.append("--no-cache")
     if params.get("reuse_session", True):
         argv.append("--reuse-session")
     gateway = params.get("gateway") or {}

@@ -61,7 +61,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 25 — [P1] Make `--strict-host-key-checking` default-on with `known_hosts` management docs; fail closed with actionable error. `ssh` (effort: S)
 - [x] 26 — [P1] IPv6 target support (bracket parsing, port scanner dual-stack). `scanner` (effort: S)
 - [x] 27 — [P1] Port scanner: service banner grabbing + version inference for top 20 ports. `scanner` (effort: M)
-- [ ] 28 — [P1] Command-output cache keyed on (host, command) with TTL + `--no-cache` escape hatch; document invalidation rules. `engine` (effort: S)
+- [x] 28 — [P1] Command-output cache keyed on (host, command) with TTL + `--no-cache` escape hatch; document invalidation rules. `engine` (effort: S)
 - [ ] 29 — [P1] Distro detection hardening (`/etc/os-release` + fallbacks) shared by all checks; one `get_distro()` helper, tested on Ubuntu/Debian/RHEL/Alpine. `checks` (effort: S)
 - [ ] 30 — [P1] Privilege model: declare per-check needs-root table; warn (not crash) when unprivileged, mark result `unknown` with reason. `checks` (effort: M)
 - [ ] 31 — [P1] Replace remaining `XXXX` fallback test IDs (`ACCT-XXXX`, `FS-XXXX`, `DBS-XXXX`, `PKGS-XXXX` in checks_*_*.py) with real registry IDs. `test-ids` (effort: S)
