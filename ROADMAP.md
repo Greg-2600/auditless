@@ -43,7 +43,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 12 — [P0] Decide and document `AUDITLESS_DATA_DIR` default (`./data` vs `/app/data` in container) in one place; remove contradictory comments in `store.py`/`cli.py`/`compose`. `store` (effort: S)
 - [x] 13 — [P0] Regenerate or gitignore `linux_health.egg-info/` (currently stale: `Name: linux-health`, `Version: 2.0.0`, stale URLs). Add egg-info hygiene to release checklist. `packaging` (effort: S)
 - [x] 14 — [P0] Align `setup.py` shim metadata with `pyproject.toml` (author, URLs already point at `Greg-2600/auditless` — lock them with a test so they can't drift again). `packaging` (effort: S)
-- [ ] 15 — [P0] Add a `test_packaging_names.py` test that asserts dist-name `auditless`, both console scripts exist, import alias works, and no `yourusername` string survives in packaged metadata. `tests` (effort: S)
+- [x] 15 — [P0] Add a `test_packaging_names.py` test that asserts dist-name `auditless`, both console scripts exist, import alias works, and no `yourusername` string survives in packaged metadata. `tests` (effort: S)
 - [ ] 16 — [P0] Rename `tests/test_linux_health.py` → `tests/test_auditless.py` with a backward-compat re-export (or keep filename + document why); update `conftest.py` imports accordingly. `tests` (effort: S)
 - [ ] 17 — [P0] Standardize report/artifact prefix on `auditless-*` (reports dir already does; verify JSON/MD exporters + scheduler snapshots + backup filenames all match). `reports` (effort: S)
 - [ ] 18 — [P0] Audit `docs/*.md` + `scripts/` for `linux_health` vs `auditless` references; add a `docs/NAMING.md` alias table and fix titles (keep `IMPLEMENTATION_ROADMAP_V3.md` as historical, superseded-by pointer to this file). `docs` (effort: M)
