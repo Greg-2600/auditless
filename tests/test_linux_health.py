@@ -1906,7 +1906,7 @@ class TestJSONOutput:
         json_output = render_report_json(system, [], [], None)
         report = json.loads(json_output)
 
-        assert report["scan_info"]["scanner"] == "Linux Health Security Scanner"
+        assert report["scan_info"]["scanner"] == "Auditless"
         assert "generated_at" in report["scan_info"]
         assert "version" in report["scan_info"]
 

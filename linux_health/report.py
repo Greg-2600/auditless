@@ -531,7 +531,7 @@ def render_report_json(
     report: dict[str, Any] = {
         "scan_info": {
             "generated_at": ts,
-            "scanner": "Linux Health Security Scanner",
+            "scanner": "Auditless",
             "version": __version__,
         },
         "system": {
