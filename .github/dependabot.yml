@@ -33,3 +33,18 @@ updates:
       - docker
     commit-message:
       prefix: "chore(docker):"
+
+  # Keep pinned GitHub Actions (SHA + version comment) fresh
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    reviewers:
+      - Greg-2600
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(actions):"

@@ -14,9 +14,12 @@ If you discover a security vulnerability in Auditless, please report it
 **privately** — never through a public issue, social media, or chat:
 
 1. Go to the repository's **Security** tab and choose
-   **Report a vulnerability** (private vulnerability reporting).
+   **Report a vulnerability** (private vulnerability reporting —
+   [how it works](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)).
 2. Describe the issue, steps to reproduce, potential impact, and a
-   suggested fix if you have one.
+   suggested fix if you have one. See also our
+   [supported versions](#supported-versions) and
+   [security considerations](#security-considerations) below.
 3. Allow reasonable time (30 days) for a patch and coordinate disclosure.
 
 ### What to Expect
