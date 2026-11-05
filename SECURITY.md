@@ -12,7 +12,6 @@
 
 If you discover a security vulnerability in Auditless, please report it
 **privately** — never through a public issue, social media, or chat:
-
 1. Go to the repository's **Security** tab and choose
    **Report a vulnerability** (private vulnerability reporting —
    [how it works](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)).
@@ -86,3 +85,13 @@ cosign download sbom "$IMG" | python3 -c "import json,sys; print(len(json.load(s
 ---
 
 **Thank you for helping keep Auditless secure!**
+
+## Repository Hardening Notes
+
+- `main` requires pull requests with green CI (tests, e2e, CodeQL,
+  Trivy) and blocks force-pushes and deletions. During solo active
+  development the maintainer role retains bypass for break-glass
+  merges; every bypass is logged by GitHub and reviewed after the
+  fact. Revisit removing bypass once a second reviewer exists.
+- All GitHub Actions pin to full commit SHAs (Dependabot keeps them
+  fresh); workflows run with least-privilege tokens.
