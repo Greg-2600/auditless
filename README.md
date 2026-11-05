@@ -1770,6 +1770,15 @@ AUDITLESS_E2E=1 pytest tests/test_e2e.py -v
 
 CI runs the same in the `e2e` workflow job on every push/PR to `main`.
 
+#### Detection Accuracy (`test_detection_accuracy_weakened_target`)
+
+The suite deliberately weakens the throwaway SSH target (extra UID-0
+account, world-writable `/usr/bin` file, 30 extra SUID binaries, weak
+SSH directives, a fake `xmrig` process) and locks the expected verdict
+per check — planted threats must be caught, clean areas must stay
+green. It runs last and repairs the target afterwards. Lessons encoded
+as comments (busybox multicall binaries refuse renamed `argv[0]`).
+
 #### Fleet Benchmark (`scripts/bench_fleet.py`)
 
 Boots N throwaway SSH servers and times sequential API scans against one

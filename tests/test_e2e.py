@@ -612,3 +612,87 @@ def test_livefire_scheduled_range(stack):
     assert payload["host_id"] == host["id"]
     assert E2E_PASSWORD not in json.dumps(payload)
     assert E2E_KEY_COMMENT not in json.dumps(payload)
+
+
+def _weaken_target():
+    """Deliberately weaken the shared SSH target (root via docker exec)."""
+    cmds = [
+        "sed -i -E 's/^#?\\s*PasswordAuthentication\\s+.*/PasswordAuthentication yes/' /etc/ssh/sshd_config",
+        "useradd -o -u 0 -M evilroot 2>/dev/null || true",
+        "touch /usr/bin/evil-writable && chmod 777 /usr/bin/evil-writable",
+        "for i in $(seq 1 30); do cp /bin/true /usr/local/bin/evil-suid-$i; chmod 4755 /usr/local/bin/evil-suid-$i; done",
+    ]
+    for cmd in cmds:
+        docker("exec", "-u", "root", SSH_NAME, "sh", "-c", cmd)
+    # Fake miner as a background process named like the real thing: a
+    # wrapper script (busybox `sleep` is a multicall binary that refuses
+    # unknown argv[0], and shell `exec -a` does not survive here).
+    docker(
+        "exec",
+        "-u",
+        "root",
+        SSH_NAME,
+        "sh",
+        "-c",
+        "printf '#!/bin/sh\\nsleep 600\\n' > /tmp/xmrig && chmod +x /tmp/xmrig",
+        check=False,
+    )
+    docker("exec", "-d", SSH_NAME, "/tmp/xmrig", check=False)
+
+
+def _repair_target():
+    """Best-effort cleanup so later runs start from a sane target."""
+    for cmd in [
+        "userdel -r evilroot 2>/dev/null || true",
+        "rm -f /usr/bin/evil-writable /usr/local/bin/evil-suid-* /tmp/xmrig",
+        "pkill -f '/tmp/xmrig' 2>/dev/null || true",
+        "sed -i -E 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config",
+    ]:
+        docker("exec", "-u", "root", SSH_NAME, "sh", "-c", cmd, check=False)
+
+
+def _finding(report, test_id, item_part):
+    matches = [
+        c
+        for c in report.get("checks", [])
+        if c.get("test_id") == test_id
+        and item_part.lower() in c.get("item", "").lower()
+    ]
+    assert matches, f"no finding for {test_id}/{item_part}"
+    return matches[0]
+
+
+def test_detection_accuracy_weakened_target(stack):
+    """Verdict matrix: planted weaknesses must be detected, clean must pass.
+
+    Runs LAST (file order): it deliberately weakens the shared target.
+    Expected verdicts were established by measurement and are locked here.
+    """
+    api = stack["api"]
+    try:
+        _weaken_target()
+        host = api.create_host(
+            "e2e-accuracy", SSH_NAME, "tester", port=2222, auth="key"
+        )
+        api.put_host_key(host["id"], stack["private_key"])
+        done = api.wait_for(
+            api.start_scan(host_id=host["id"])["id"], deadline=420, interval=5.0
+        )
+        assert done["status"] == "done"
+        report = done["report"]
+
+        # Planted weaknesses: must all be caught. (World-writable system
+        # binaries fail outright: trivial privilege-escalation vector.)
+        assert (
+            _finding(report, "SSH-7408", "PasswordAuthentication")["status"] == "warn"
+        )
+        assert _finding(report, "AUTH-9234", "Root accounts")["status"] == "warn"
+        assert _finding(report, "FILE-7524", "World")["status"] == "fail"
+        assert _finding(report, "FILE-6310", "SUID")["status"] == "warn"
+        assert _finding(report, "MALW-3292", "min")["status"] == "fail"
+
+        # Negative controls: clean areas must stay green.
+        assert _finding(report, "MALW-3288", "Reverse")["status"] == "pass"
+        assert _finding(report, "NETW-3035", "DNS")["status"] == "pass"
+    finally:
+        _repair_target()
