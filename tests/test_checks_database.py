@@ -188,7 +188,7 @@ class TestCheckMySQLAnonymousAccounts:
 
         result = check_mysql_anonymous_accounts(ssh, password="test")
 
-        assert result.status == "warn"
+        assert result.status == "fail"
         assert "anonymous" in result.details.lower()
         assert "delete from mysql.user" in result.recommendation.lower()
         assert result.test_id == "DBS-1002"
@@ -299,7 +299,7 @@ class TestCheckPostgreSQLSecurity:
 
         result = check_postgresql_security(ssh, password="test")
 
-        assert result.status == "warn"
+        assert result.status == "fail"
         assert "trust" in result.details.lower()
         assert (
             "md5" in result.recommendation.lower()
@@ -450,7 +450,7 @@ class TestCheckDatabaseBackupConfiguration:
 
         result = check_database_backup_configuration(ssh, password="test")
 
-        assert result.status == "fail"
+        assert result.status == "warn"
         assert "no" in result.details.lower() and "backup" in result.details.lower()
         assert result.test_id == "DBS-1007"
 

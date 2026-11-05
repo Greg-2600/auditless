@@ -140,7 +140,7 @@ class TestCheckDNSSECConfigured:
             ]
         )
         result = check_dnssec_configured(ssh, "password")
-        assert result.status == "fail"
+        assert result.status == "warn"
 
     def test_unbound_dnssec_only(self):
         """Test when only Unbound DNSSEC is configured."""

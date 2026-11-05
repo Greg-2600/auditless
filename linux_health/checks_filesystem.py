@@ -218,7 +218,7 @@ def check_tmp_noexec(ssh: SSHSession, password: str = "") -> CheckResult:
             test_id,
         )
     else:
-        return _fail(
+        return _warn(
             "/tmp Noexec Protection",
             "/tmp allows code execution (missing noexec)",
             "Add noexec to /tmp in /etc/fstab: /tmp /tmp tmpfs defaults,noexec,nodev,nosuid 0 0",

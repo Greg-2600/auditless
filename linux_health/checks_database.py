@@ -148,7 +148,7 @@ def check_mysql_anonymous_accounts(ssh: SSHSession, password: str = "") -> Check
     )
 
     if ret == 0 and out and len(out.strip().split("\n")) > 0:
-        return _warn(
+        return _fail(
             "MySQL Anonymous Accounts",
             f"Found {len(out.strip().split())} anonymous MySQL accounts",
             "Remove anonymous accounts: DELETE FROM mysql.user WHERE User=''; FLUSH PRIVILEGES;",
@@ -308,7 +308,7 @@ def check_postgresql_security(ssh: SSHSession, password: str = "") -> CheckResul
         )
 
         if "trust" in out:
-            return _warn(
+            return _fail(
                 "PostgreSQL Security",
                 f"PostgreSQL using 'trust' authentication in {pg_hba_file}",
                 "Use stronger authentication methods (md5, scram-sha-256): Edit pg_hba.conf and reload PostgreSQL",
@@ -549,7 +549,7 @@ def check_database_backup_configuration(
             test_id,
         )
     else:
-        return _fail(
+        return _warn(
             "Database Backup Configuration",
             "No database backup configuration detected",
             "Implement automated database backups (mysqldump, pg_dump, mongodump) with proper retention",

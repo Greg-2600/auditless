@@ -215,7 +215,7 @@ class TestCheckSecurityHeaders:
             ]
         )
         result = check_security_headers(ssh, "password")
-        assert result.status == "fail"
+        assert result.status == "warn"
 
 
 class TestCheckHTTPToHTTPSRedirect:
@@ -241,7 +241,7 @@ class TestCheckHTTPToHTTPSRedirect:
             ]
         )
         result = check_http_to_https_redirect(ssh, "password")
-        assert result.status == "fail"
+        assert result.status == "warn"
 
 
 class TestCheckDirectoryListingDisabled:
@@ -267,7 +267,7 @@ class TestCheckDirectoryListingDisabled:
             ]
         )
         result = check_directory_listing_disabled(ssh, "password")
-        assert result.status == "fail"
+        assert result.status == "warn"
 
 
 class TestCheckAccessControls:

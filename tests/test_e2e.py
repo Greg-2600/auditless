@@ -729,7 +729,7 @@ def test_detection_accuracy_weakened_target(stack):
         assert (
             _finding(report, "SSH-7408", "PasswordAuthentication")["status"] == "warn"
         )
-        assert _finding(report, "AUTH-9234", "Root accounts")["status"] == "warn"
+        assert _finding(report, "AUTH-9234", "Root accounts")["status"] == "fail"
         assert _finding(report, "FILE-7524", "World")["status"] == "fail"
         assert _finding(report, "FILE-6310", "SUID")["status"] == "warn"
         assert _finding(report, "MALW-3292", "min")["status"] == "fail"

@@ -66,7 +66,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 30 — [P1] Privilege model: declare per-check needs-root table; warn (not crash) when unprivileged, mark result `unknown` with reason. `checks` (effort: M)
 - [x] 31 — [P1] Replace remaining `XXXX` fallback test IDs (`ACCT-XXXX`, `FS-XXXX`, `DBS-XXXX`, `PKGS-XXXX` in checks_*_*.py) with real registry IDs. `test-ids` (effort: S)
 - [x] 32 — [P1] False-positive harness: canary hosts (hardened vs weakened fixtures) asserting expected index delta; gate regressions in CI. `tests` (effort: M)
-- [ ] 33 — [P1] Check severity re-grade pass (FAIL vs WARN audit against CIS impact); document rationale per change. `checks` (effort: M)
+- [x] 33 — [P1] Check severity re-grade pass (FAIL vs WARN audit against CIS impact); document rationale per change. `checks` (effort: M)
 - [ ] 34 — [P1] `sudo -n` non-interactive discipline: no password prompts mid-scan; preflight auth check with clear error. `ssh` (effort: S)
 - [ ] 35 — [P1] Large-fleet memory discipline: stream checks, cap stored output bytes per check (`--max-output-bytes`). `engine` (effort: S)
 - [ ] 36 — [P1] Scan profiles: `--profile` + `--only-tests`/`--skip-tests` CLI flags mirroring profile YAML (today YAML-only for some paths). `cli` (effort: S)

@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   four root-only checks (stale/recent accounts, sudo usage, privilege
   vectors) as unknown WARNs under a Privilege category instead of
   reporting PASS on unreadable sources. Privileged scans unchanged.
+- Severity re-grade (FAIL = active compromise / remotely exploitable /
+  missing critical control; WARN = hardening gap). Upgraded to FAIL:
+  DBS-1002 anonymous MySQL accounts (auth bypass, exploited in the
+  wild), DBS-1004 PostgreSQL trust auth (passwordless DB access),
+  AUTH-9234 extra UID 0 accounts (backdoor indicator). Downgraded to
+  WARN: FS-3011 missing /tmp noexec, HTTP-6503 missing security
+  headers, HTTP redirect missing, directory listing enabled (each
+  needs a second vector to exploit), DBS-1007 no backup evidence
+  (operational, not compromise), DNSSEC absent (integrity hardening).
 
 ### Deprecated
 

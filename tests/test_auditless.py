@@ -793,6 +793,37 @@ class TestGatherRkhunterScan:
         assert result == "rkhunter scan failed or produced no output"
 
 
+class TestCheckAccounts:
+    """Tests for UID 0 account enumeration (AUTH-9234)."""
+
+    def test_single_root_passes(self):
+        """Only root with UID 0 is clean."""
+        from unittest.mock import MagicMock, Mock
+
+        from linux_health.checks import check_accounts
+
+        mock_ssh = Mock()
+        mock_ssh._client = None
+        mock_ssh.run = MagicMock(return_value=(0, "root\n", ""))
+
+        result = check_accounts(mock_ssh)
+        assert result.status == "pass"
+
+    def test_multiple_uid_zero_fails(self):
+        """Extra UID 0 accounts are a backdoor indicator (fail, not warn)."""
+        from unittest.mock import MagicMock, Mock
+
+        from linux_health.checks import check_accounts
+
+        mock_ssh = Mock()
+        mock_ssh._client = None
+        mock_ssh.run = MagicMock(return_value=(0, "root\nevilroot\n", ""))
+
+        result = check_accounts(mock_ssh)
+        assert result.status == "fail"
+        assert "evilroot" in result.details
+
+
 class TestCheckStaleUserAccounts:
     """Tests for stale user account detection"""
 

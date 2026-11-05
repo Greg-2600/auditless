@@ -220,7 +220,7 @@ def check_security_headers(ssh: SSHSession, password: str = "") -> CheckResult:
         headers_missing.append("Apache HSTS/X-Frame-Options")
 
     if not headers_found:
-        return _fail(
+        return _warn(
             "Security Headers",
             "No security headers configured",
             "Add headers: Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options, Content-Security-Policy",
@@ -272,7 +272,7 @@ def check_http_to_https_redirect(ssh: SSHSession, password: str = "") -> CheckRe
     apache_redirect = ret == 0 and int(out.strip() or "0") > 0
 
     if not nginx_redirect and not apache_redirect:
-        return _fail(
+        return _warn(
             "HTTP to HTTPS Redirect",
             "No HTTP to HTTPS redirect configured",
             "Configure permanent redirect (301) from HTTP to HTTPS",
@@ -321,7 +321,7 @@ def check_directory_listing_disabled(
         issues.append("Apache Indexes directive found")
 
     if issues:
-        return _fail(
+        return _warn(
             "Directory Listing",
             f"Directory listing enabled: {', '.join(issues)}",
             "Disable directory listing: set 'autoindex off' in Nginx or remove Indexes from Apache",
