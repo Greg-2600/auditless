@@ -303,6 +303,49 @@ class ApiClient:
         result: dict[str, Any] = self._request("POST", "/api/maintenance/backup")
         return result
 
+    def create_token(self, name: str) -> dict[str, Any]:
+        """Mint a named token (plaintext returned exactly once)."""
+        result: dict[str, Any] = self._request("POST", "/api/tokens", {"name": name})
+        return result
+
+    def list_tokens(self) -> list[dict[str, Any]]:
+        """Token metadata (GET /api/tokens)."""
+        result: list[dict[str, Any]] = self._request("GET", "/api/tokens")
+        return result
+
+    def delete_token(self, token_id: str) -> dict[str, Any]:
+        """Revoke a token (DELETE /api/tokens/{id})."""
+        result: dict[str, Any] = self._request("DELETE", f"/api/tokens/{token_id}")
+        return result
+
+    def list_audit(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Operator audit trail (GET /api/audit)."""
+        result: list[dict[str, Any]] = self._request(
+            "GET", "/api/audit", params={"limit": str(limit)}
+        )
+        return result
+
+    def verify_audit(self) -> dict[str, Any]:
+        """Verify the audit hash chain (GET /api/audit/verify)."""
+        result: dict[str, Any] = self._request("GET", "/api/audit/verify")
+        return result
+
+    def migrate_secrets(self) -> dict[str, Any]:
+        """Encrypt plaintext secrets in place (POST .../migrate-secrets)."""
+        result: dict[str, Any] = self._request(
+            "POST", "/api/maintenance/migrate-secrets"
+        )
+        return result
+
+    def rotate_key(self, current_key: str, new_key: str) -> dict[str, Any]:
+        """Re-encrypt all secrets (POST .../rotate-key; restart after)."""
+        result: dict[str, Any] = self._request(
+            "POST",
+            "/api/maintenance/rotate-key",
+            {"current_key": current_key, "new_key": new_key},
+        )
+        return result
+
     def list_remediations(self) -> list[dict[str, Any]]:
         """Remediation catalog with dry-run scripts (GET /api/remediations)."""
         result: list[dict[str, Any]] = self._request("GET", "/api/remediations")

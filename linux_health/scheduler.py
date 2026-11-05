@@ -112,7 +112,7 @@ def run_due_schedules(store: Any, scan_host: Any) -> list[dict]:
                 diff = diff_reports(previous, report) if previous else None
                 if should_notify(schedule, report, diff):
                     if post_webhook(
-                        schedule.get("webhook_url") or "",
+                        store.webhook_for(schedule),
                         {
                             "event": "scan.completed",
                             "schedule_id": schedule["id"],
