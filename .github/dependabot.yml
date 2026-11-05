@@ -48,3 +48,9 @@ updates:
       - github-actions
     commit-message:
       prefix: "chore(actions):"
+    groups:
+      # CodeQL init/analyze/upload-sarif must stay on the same version;
+      # without grouping Dependabot opens separate PRs that break analysis.
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
