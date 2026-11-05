@@ -14,6 +14,7 @@ from typing import List
 
 from .checks import CheckResult, _fail, _pass, _run, _warn
 from .ssh_client import SSHSession
+from .test_ids import CHECK_TEST_IDS
 
 
 def check_nfs_exports_security(ssh: SSHSession, password: str = "") -> CheckResult:
@@ -429,11 +430,7 @@ def run_all_filesystem_checks(ssh: SSHSession, password: str = "") -> List[Check
                     status="fail",
                     details=f"Check failed with error: {str(e)}",
                     recommendation="Review check implementation and SSH connection",
-                    test_id=(
-                        (check.__doc__ or "").split("Test ID: ")[1].split()[0]
-                        if "Test ID:" in (check.__doc__ or "")
-                        else "FS-XXXX"
-                    ),
+                    test_id=CHECK_TEST_IDS.get(check.__name__, "FS-XXXX"),
                 )
             )
 

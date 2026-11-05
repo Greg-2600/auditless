@@ -64,7 +64,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 28 — [P1] Command-output cache keyed on (host, command) with TTL + `--no-cache` escape hatch; document invalidation rules. `engine` (effort: S)
 - [x] 29 — [P1] Distro detection hardening (`/etc/os-release` + fallbacks) shared by all checks; one `get_distro()` helper, tested on Ubuntu/Debian/RHEL/Alpine. `checks` (effort: S)
 - [x] 30 — [P1] Privilege model: declare per-check needs-root table; warn (not crash) when unprivileged, mark result `unknown` with reason. `checks` (effort: M)
-- [ ] 31 — [P1] Replace remaining `XXXX` fallback test IDs (`ACCT-XXXX`, `FS-XXXX`, `DBS-XXXX`, `PKGS-XXXX` in checks_*_*.py) with real registry IDs. `test-ids` (effort: S)
+- [x] 31 — [P1] Replace remaining `XXXX` fallback test IDs (`ACCT-XXXX`, `FS-XXXX`, `DBS-XXXX`, `PKGS-XXXX` in checks_*_*.py) with real registry IDs. `test-ids` (effort: S)
 - [ ] 32 — [P1] False-positive harness:金丝雀 hosts (hardened vs weakened fixtures) asserting expected index delta; gate regressions in CI. `tests` (effort: M)
 - [ ] 33 — [P1] Check severity re-grade pass (FAIL vs WARN audit against CIS impact); document rationale per change. `checks` (effort: M)
 - [ ] 34 — [P1] `sudo -n` non-interactive discipline: no password prompts mid-scan; preflight auth check with clear error. `ssh` (effort: S)
