@@ -96,6 +96,66 @@ def test_jobs_flag_defaults_and_parses() -> None:
     assert build_parser().parse_args(["h", "u", "p", "--jobs", "16"]).jobs == 16
 
 
+def test_timeout_flag_defaults_and_parses() -> None:
+    """--check-timeout/--deadline defaults keep scans unbounded unless set."""
+    from linux_health.cli import build_parser
+
+    args = build_parser().parse_args(["h", "u", "p"])
+    assert args.check_timeout == 120.0
+    assert args.deadline == 0.0
+    tuned = build_parser().parse_args(
+        ["h", "u", "p", "--check-timeout", "30", "--deadline", "600"]
+    )
+    assert tuned.check_timeout == 30.0
+    assert tuned.deadline == 600.0
+
+
+def test_hung_check_becomes_warn_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One hung check yields a WARN placeholder; the rest still report."""
+    import time as time_mod
+
+    import linux_health.checks as checks_mod
+    from linux_health.test_ids import CHECK_TEST_IDS
+
+    baseline = run_all_checks_parallel(_mock_ssh(), password="", max_workers=8)
+
+    def hang(ssh: Any) -> Any:
+        time_mod.sleep(2.0)
+        raise AssertionError("should never finish")
+
+    monkeypatch.setattr(checks_mod, "check_memory", hang)
+    results = run_all_checks_parallel(
+        _mock_ssh(), password="", max_workers=8, check_timeout=0.3
+    )
+    slot = next(r for r in results if r.item == "check_memory timed out")
+    assert slot.status == "warn"
+    assert slot.category == "Scan"
+    assert slot.test_id == CHECK_TEST_IDS.get("check_memory", "")
+    assert len(results) == len(baseline)
+
+
+def test_check_timeout_disabled_waits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-positive check_timeout disables the ceiling entirely."""
+    import time as time_mod
+
+    import linux_health.checks as checks_mod
+    from linux_health.checks import CheckResult as _CheckResult
+
+    def slow(ssh: Any) -> Any:
+        time_mod.sleep(1.0)
+        return _CheckResult("C", "slow-check", "pass", "d", "r", test_id="")
+
+    monkeypatch.setattr(checks_mod, "check_memory", slow)
+    results = run_all_checks_parallel(
+        _mock_ssh(), password="", max_workers=8, check_timeout=0
+    )
+    assert any(r.item == "slow-check" for r in results)
+
+
 def test_run_scan_forwards_jobs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -113,8 +173,15 @@ def test_run_scan_forwards_jobs(
 
     monkeypatch.setattr(cli_mod, "main", fake_main)
     payload = dashboard.run_scan(
-        {"hostname": "h", "username": "u", "password": "pw", "jobs": 6}
+        {
+            "hostname": "h",
+            "username": "u",
+            "password": "pw",
+            "deadline": 300,
+            "check_timeout": 60,
+        }
     )
     assert payload == {"ok": True}
     argv = seen["argv"]
-    assert argv[argv.index("--jobs") + 1] == "6"
+    assert argv[argv.index("--deadline") + 1] == "300"
+    assert argv[argv.index("--check-timeout") + 1] == "60"

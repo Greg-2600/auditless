@@ -369,6 +369,10 @@ def run_scan(params: dict) -> dict:
         argv.append("--strict-host-key-checking")
     if params.get("jobs") is not None:
         argv += ["--jobs", str(params["jobs"])]
+    if params.get("check_timeout") is not None:
+        argv += ["--check-timeout", str(params["check_timeout"])]
+    if params.get("deadline") is not None:
+        argv += ["--deadline", str(params["deadline"])]
     if params.get("reuse_session", True):
         argv.append("--reuse-session")
     gateway = params.get("gateway") or {}
