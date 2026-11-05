@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import List
 
 from .checks import CheckResult, _fail, _pass, _run, _warn
+from .distro import get_distro
 from .ssh_client import SSHSession
 
 
@@ -27,6 +28,17 @@ def check_yum_security_plugin(ssh: SSHSession, password: str = "") -> CheckResul
     """
     category = "Package Management"
     test_id = "PKGS-7300"
+
+    # Non-RPM families skip the YUM/DNF probe (one os-release read,
+    # shared with every other check via the _run cache).
+    if get_distro(ssh).family not in ("rhel", "unknown"):
+        return _pass(
+            "YUM Security Plugin",
+            "Not a YUM/DNF-based system",
+            "No action required on non-RPM systems",
+            category,
+            test_id,
+        )
 
     # Check if this is a YUM-based system
     ret, out, err = _run(ssh, "which yum dnf 2>/dev/null")
@@ -103,6 +115,17 @@ def check_apt_security_updates(ssh: SSHSession, password: str = "") -> CheckResu
     """
     category = "Package Management"
     test_id = "PKGS-7301"
+
+    # Non-DEB families skip the APT probe (one os-release read, shared
+    # with every other check via the _run cache).
+    if get_distro(ssh).family not in ("debian", "unknown"):
+        return _pass(
+            "APT Security Updates",
+            "Not an APT-based system",
+            "No action required on non-DEB systems",
+            category,
+            test_id,
+        )
 
     # Check if this is an APT-based system
     ret, out, err = _run(ssh, "which apt-get apt 2>/dev/null")
