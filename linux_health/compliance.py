@@ -1,14 +1,17 @@
-"""CIS Benchmark mapping and compliance scoring (best effort).
+"""Compliance mapping and scoring across frameworks (best effort).
 
-Maps auditless test IDs to controls in the CIS Ubuntu Linux 22.04 LTS
-Benchmark v2.0.0. Mappings carry a level (direct = the check validates
+Ships CIS mappings for Ubuntu 22.04, Debian 12 and RHEL 9 plus a
+PCI-DSS 4.0 overlay. Mappings carry a level (direct = the check validates
 the control, partial = adjacent coverage); checks with no corresponding
 control land in the "extended" bucket and neither help nor hurt the
-compliance score. Coverage is always reported alongside the score so
-the number cannot mislead.
+score. Coverage is always reported alongside the score so the number
+cannot mislead. Control numbers come from working knowledge of the
+benchmarks — validate critical findings against CIS-CAT or an assessor.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 BENCHMARK = "CIS Ubuntu Linux 22.04 LTS Benchmark v2.0.0"
 
@@ -132,17 +135,203 @@ TEST_CIS: dict[str, list[tuple[str, str]]] = {
 }
 
 
+@dataclass(frozen=True)
+class Framework:
+    """One scorable benchmark: metadata plus its mapping tables."""
+
+    id: str
+    title: str
+    version: str
+    sections: dict
+    titles: dict
+    mapping: dict
+    unmapped: dict
+
+
+DEBIAN_SECTION_NAMES = dict(SECTION_NAMES)
+
+DEBIAN_CONTROL_TITLES = dict(CONTROL_TITLES)
+DEBIAN_CONTROL_TITLES.update(
+    {
+        "1.6": "Mandatory access control (AppArmor enforced)",
+        "3.4": "Host firewall enabled (nftables / iptables)",
+    }
+)
+
+RHEL_SECTION_NAMES = {
+    "1": "Initial Setup",
+    "2": "Services",
+    "3": "Network Configuration",
+    "4": "Logging and Auditing",
+    "5": "Access, Authentication and Authorization",
+    "6": "System Maintenance",
+}
+
+RHEL_CONTROL_TITLES = {
+    "1": "Filesystem, bootloader, and package hardening",
+    "2": "Unnecessary services removed",
+    "3": "Firewall and kernel networking parameters",
+    "4": "Auditing and centralized logging",
+    "5": "SSH, sudo, and account hardening",
+    "6": "File permissions and ownership",
+}
+
+
+# Section-level RHEL mapping (conservative granularity for v3 numbering).
+def _to_sections(
+    mapping: dict[str, list[tuple[str, str]]],
+) -> dict[str, list[tuple[str, str]]]:
+    sectioned: dict[str, list[tuple[str, str]]] = {}
+    for tid, controls in mapping.items():
+        seen: set[str] = set()
+        for control, _ in controls:
+            sec = control.split(".")[0]
+            if sec not in seen:
+                seen.add(sec)
+                sectioned.setdefault(tid, []).append((sec, "partial"))
+    return sectioned
+
+
+RHEL_MAPPING = _to_sections(TEST_CIS)
+
+PCI_SECTION_NAMES = {
+    "1": "Install and Maintain Network Security Controls",
+    "2": "Apply Secure Configurations",
+    "5": "Protect Against Malicious Software",
+    "6": "Develop and Maintain Secure Systems and Software",
+    "7": "Restrict Access by Business Need to Know",
+    "8": "Identify Users and Authenticate Access",
+    "10": "Log and Monitor All Access",
+    "11": "Test Security Regularly",
+}
+
+PCI_CONTROL_TITLES = {
+    "1.5": "Network security controls (firewall) in place",
+    "2.2": "System configuration standards (hardened services)",
+    "5.2": "Anti-malware mechanisms deployed and maintained",
+    "6.2": "System software patches kept current",
+    "7.2": "Least-privilege access control",
+    "8.3": "Strong authentication (passwords, lockout)",
+    "10.2": "Audit trails for access and actions",
+    "10.4": "Time synchronization for logs",
+    "11.5": "Change detection and integrity monitoring",
+}
+
+PCI_MAPPING: dict[str, list[tuple[str, str]]] = {
+    "FIRE-4512": [("1.5", "direct")],
+    "SSH-7408": [("2.2", "partial")],
+    "AUTH-9230": [("8.3", "partial")],
+    "AUTH-9252": [("8.3", "partial")],
+    "AUTH-9408": [("8.3", "partial")],
+    "AUTH-9328": [("7.2", "partial")],
+    "AUTH-9234": [("7.2", "partial")],
+    "AUTH-9262": [("2.2", "partial")],
+    "TIME-3104": [("10.4", "direct")],
+    "PKGS-7380": [("6.2", "partial")],
+    "MALW-3280": [("5.2", "partial")],
+    "MALW-3288": [("5.2", "partial")],
+    "MALW-3292": [("5.2", "partial")],
+    "FINT-4350": [("11.5", "partial")],
+    "FINT-4402": [("11.5", "partial")],
+    "FINT-4316": [("11.5", "partial")],
+    "LOGG-2138": [("10.2", "partial")],
+    "LOGG-2154": [("10.2", "partial")],
+    "ACCT-5000": [("10.2", "partial")],
+    "ACCT-5001": [("10.2", "partial")],
+    "ACCT-5002": [("10.2", "partial")],
+    "ACCT-5003": [("10.2", "partial")],
+    "ACCT-5004": [("10.2", "partial")],
+    "ACCT-5005": [("10.2", "partial")],
+    "ACCT-5006": [("10.2", "partial")],
+    "LOGG-2150": [("10.2", "partial")],
+}
+
+PCI_UNMAPPED: dict[str, str] = dict(UNMAPPED_REASONS)
+PCI_UNMAPPED.update(
+    {
+        tid: "no PCI-DSS 4.0 requirement maps to this check"
+        for tid in TEST_CIS
+        if tid not in PCI_MAPPING
+    }
+)
+
+FRAMEWORKS: dict[str, Framework] = {
+    "cis-ubuntu22": Framework(
+        id="cis-ubuntu22",
+        title="CIS Ubuntu Linux 22.04 LTS Benchmark",
+        version="v2.0.0",
+        sections=SECTION_NAMES,
+        titles=CONTROL_TITLES,
+        mapping=TEST_CIS,
+        unmapped=UNMAPPED_REASONS,
+    ),
+    "cis-debian12": Framework(
+        id="cis-debian12",
+        title="CIS Debian Linux 12 Benchmark",
+        version="v1.0.0",
+        sections=DEBIAN_SECTION_NAMES,
+        titles=DEBIAN_CONTROL_TITLES,
+        mapping=TEST_CIS,
+        unmapped=UNMAPPED_REASONS,
+    ),
+    "cis-rhel9": Framework(
+        id="cis-rhel9",
+        title="CIS Red Hat Enterprise Linux 9 Benchmark",
+        version="v3.0.0",
+        sections=RHEL_SECTION_NAMES,
+        titles=RHEL_CONTROL_TITLES,
+        mapping=RHEL_MAPPING,
+        unmapped=UNMAPPED_REASONS,
+    ),
+    "pci-dss4": Framework(
+        id="pci-dss4",
+        title="PCI-DSS",
+        version="v4.0",
+        sections=PCI_SECTION_NAMES,
+        titles=PCI_CONTROL_TITLES,
+        mapping=PCI_MAPPING,
+        unmapped=PCI_UNMAPPED,
+    ),
+}
+
+
+def detect_framework(os_string: str) -> str:
+    """Pick a framework from a report's OS string (auto mode).
+
+    Returns a framework id; unknown distros fall back to cis-ubuntu22
+    and the caller records what was detected.
+    """
+    text = (os_string or "").lower()
+    if "debian" in text:
+        return "cis-debian12"
+    for marker in ("rhel", "red hat", "centos", "rocky", "alma", "oracle"):
+        if marker in text:
+            return "cis-rhel9"
+    return "cis-ubuntu22"
+
+
 def _score_of(status: str) -> float:
     return {"pass": 1.0, "warn": 0.5, "fail": 0.0}.get(status, 0.0)
 
 
-def compliance_summary(report: dict) -> dict:
-    """Score a stored report dict against the CIS mapping.
+def compliance_summary(report: dict, framework: str = "auto") -> dict:
+    """Score a stored report dict against a compliance framework.
+
+    Args:
+        report: Stored report payload (checks + optional system info).
+        framework: Framework id, or "auto" to detect from report.system.os.
 
     Returns benchmark metadata, per-control verdicts (worst contributing
     check wins), per-section scores, an overall 0-100 score, coverage,
     and the unmapped "extended" checks.
     """
+    if framework == "auto":
+        detected = detect_framework((report.get("system") or {}).get("os", ""))
+    else:
+        detected = framework
+    if detected not in FRAMEWORKS:
+        raise ValueError(f"unknown framework {detected!r}")
+    active = FRAMEWORKS[detected]
     checks = report.get("checks", [])
     by_control: dict[str, dict] = {}
     extended: list[dict] = []
@@ -155,7 +344,7 @@ def compliance_summary(report: dict) -> dict:
             "status": check.get("status", ""),
             "recommendation": check.get("recommendation", ""),
         }
-        mappings = TEST_CIS.get(test_id)
+        mappings = active.mapping.get(test_id)
         if not mappings:
             extended.append(entry)
             continue
@@ -180,8 +369,8 @@ def compliance_summary(report: dict) -> dict:
         controls.append(
             {
                 "control": control,
-                "title": CONTROL_TITLES.get(control, ""),
-                "section": SECTION_NAMES.get(section, section),
+                "title": active.titles.get(control, ""),
+                "section": active.sections.get(section, section),
                 "level": bucket["level"],
                 "status": worst,
                 "score": round(score * 100),
@@ -190,7 +379,7 @@ def compliance_summary(report: dict) -> dict:
         )
         sec = sections.setdefault(
             control.split(".")[0],
-            {"section": SECTION_NAMES.get(section, section), "scores": []},
+            {"section": active.sections.get(section, section), "scores": []},
         )
         sec["scores"].append(score)
 
@@ -208,7 +397,8 @@ def compliance_summary(report: dict) -> dict:
     total = len(checks)
     mapped = total - len(extended)
     return {
-        "benchmark": BENCHMARK,
+        "benchmark": f"{active.title} {active.version}",
+        "framework": active.id,
         "overall_score": overall,
         "coverage": {
             "mapped_checks": mapped,

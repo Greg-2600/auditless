@@ -838,7 +838,9 @@ Binds to localhost; do not expose without auth + TLS.</div>
 <div class="toolbar"><button style="margin:0" onclick="loadFleet()">Refresh</button>
 <button style="margin:0" onclick="scanFleet()">Scan all (parallel)</button></div>
 <div id="fleet" class="hist">loading&hellip;</div>
-<div id="trend"></div></div>
+<div id="trend"></div>
+<div class="toolbar"><select id="compfw"><option value="auto">framework: auto</option><option value="cis-ubuntu22">CIS Ubuntu 22.04</option><option value="cis-debian12">CIS Debian 12</option><option value="cis-rhel9">CIS RHEL 9</option><option value="pci-dss4">PCI-DSS 4.0</option></select></div>
+</div>
 <div class="card"><h3 style="margin-top:0">Scan schedules</h3>
 <div class="row" style="grid-template-columns:1fr 1fr 140px 120px">
 <div><label>Host</label><select id="schedhost"></select></div>
@@ -1071,7 +1073,8 @@ async function delReport(id){await api("/api/reports/"+id,{method:"DELETE"});loa
 function setDiff(which,id){if(which==="A")diffA=id;else diffB=id;
  status("diff: A="+(diffA||"?")+" B="+(diffB||"?"))}
 async function showComp(hostId){
- const c=await api("/api/hosts/"+hostId+"/compliance");
+ const fw=(document.getElementById("compfw")||{}).value||"auto";
+ const c=await api("/api/hosts/"+hostId+"/compliance?framework="+fw);
  const rows=c.controls.map(x=>`<tr><td>${esc(x.control)}<br><span style="color:var(--dim)">${esc(x.title)}</span></td>`+
   `<td>${x.level}</td><td class="${x.status}"><b>${x.status.toUpperCase()}</b></td>`+
   `<td>${x.score}</td><td>${x.tests.map(t=>esc(t.test_id)).join(", ")}</td></tr>`).join("");
@@ -1358,35 +1361,42 @@ def _schedule_public(row: dict) -> SchedulePublic:
 
 @app.get(
     "/api/compliance/controls",
-    summary="CIS control catalog",
+    summary="Compliance control catalogs",
     dependencies=_guarded,
 )
-def api_compliance_controls() -> dict:
-    """Test-ID to CIS control mapping with benchmark metadata."""
-    from .compliance import BENCHMARK, CONTROL_TITLES, TEST_CIS, UNMAPPED_REASONS
+def api_compliance_controls(framework: str = "cis-ubuntu22") -> dict:
+    """Test-ID mappings per framework (best effort, unmapped listed)."""
+    from .compliance import FRAMEWORKS
 
+    if framework not in FRAMEWORKS:
+        raise HTTPException(status_code=400, detail="unknown framework")
+    active = FRAMEWORKS[framework]
     return {
-        "benchmark": BENCHMARK,
-        "controls": CONTROL_TITLES,
+        "benchmark": f"{active.title} {active.version}",
+        "framework": active.id,
+        "frameworks": sorted(FRAMEWORKS),
+        "controls": active.titles,
         "mapping": {
             tid: [{"control": c, "level": lvl} for c, lvl in mappings]
-            for tid, mappings in TEST_CIS.items()
+            for tid, mappings in active.mapping.items()
         },
-        "unmapped": UNMAPPED_REASONS,
+        "unmapped": active.unmapped,
     }
 
 
 @app.get(
     "/api/hosts/{host_id}/compliance",
-    summary="CIS compliance for a host's latest report",
+    summary="Compliance score for a host's latest report",
     dependencies=_guarded,
 )
-def api_host_compliance(host_id: str) -> dict:
-    """Score the host's latest completed report against CIS controls."""
+def api_host_compliance(host_id: str, framework: str = "auto") -> dict:
+    """Score the host's latest completed report (auto-detects distro)."""
     import json as _json
 
-    from .compliance import compliance_summary
+    from .compliance import FRAMEWORKS, compliance_summary
 
+    if framework != "auto" and framework not in FRAMEWORKS:
+        raise HTTPException(status_code=400, detail="unknown framework")
     if not get_store().get_host(host_id):
         raise HTTPException(status_code=404, detail="unknown host")
     latest = None
@@ -1398,7 +1408,10 @@ def api_host_compliance(host_id: str) -> dict:
                 break
     if latest is None:
         raise HTTPException(status_code=409, detail="no completed report")
-    result = compliance_summary(latest)
+    try:
+        result = compliance_summary(latest, framework)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     result["host_id"] = host_id
     return result
 

@@ -391,20 +391,25 @@ exposing it.
 
 Every check carries its Lynis-style test ID at runtime (`CHECK_TEST_IDS`
 registry in `linux_health/test_ids.py` — attached by decorator, no manual
-patching), and each ID maps to controls in the CIS Ubuntu Linux 22.04 LTS
-Benchmark v2.0.0 (`TEST_CIS` in `linux_health/compliance.py`, best effort
-with direct/partial levels; out-of-scope checks are explicitly listed in
-`UNMAPPED_REASONS`, never silent):
+patching), and each ID maps to controls across four frameworks
+(`linux_health/compliance.py`, best effort with direct/partial levels;
+out-of-scope checks are explicitly listed, never silent):
+
+- CIS Ubuntu Linux 22.04 LTS Benchmark v2.0.0
+- CIS Debian Linux 12 Benchmark v1.0.0
+- CIS Red Hat Enterprise Linux 9 Benchmark v3.0.0
+- PCI-DSS v4.0 (focused overlay: firewall, auth, logging, integrity)
 
 ```bash
 curl http://127.0.0.1:8080/api/compliance/controls | head -c 300
 ```
 
-- `GET /api/hosts/{id}/compliance` scores the host's latest report:
-  per-control verdicts (worst contributing check wins), per-section
-  scores, a 0–100 overall score, coverage (mapped vs total), and the
-  non-CIS "extended" checks. The UI renders it as score + section bars
-  + control table from any saved report.
+- `GET /api/hosts/{id}/compliance?framework=auto` scores the host's
+  latest report (auto-detects the distro from the report, `auto` is the
+  default; pass an explicit id to override): per-control verdicts
+  (worst contributing check wins), per-section scores, a 0–100 overall
+  score, coverage (mapped vs total), and the non-CIS "extended" checks.
+  The UI renders it with a framework picker.
 
 ### Guided remediation (propose → approve → verify)
 
