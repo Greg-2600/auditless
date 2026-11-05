@@ -371,14 +371,14 @@ def run_scan(params: dict) -> dict:
             out_path.unlink()
 
 
-def _persist_job(job: ScanJob, host_id: str | None) -> None:
+def _persist_job(job: ScanJob, host_id: str | None, status: str | None = None) -> None:
     """Best-effort persistence (must never break status reporting)."""
     try:
         get_store().save_report(
             job.id,
             job.hostname,
             job.username,
-            job.status,
+            status or job.status,
             job.report,
             job.error,
             host_id,
@@ -392,8 +392,9 @@ def _persist_job(job: ScanJob, host_id: str | None) -> None:
 def _run_job(
     job: ScanJob, params: dict, host_id: str | None = None, actor: str = "unknown"
 ) -> None:
-    # NOTE: terminal status flips only AFTER persisting, so pollers that
-    # observe done/error are guaranteed a stored row (no save race).
+    # NOTE: the stored row is written with its terminal status BEFORE the
+    # in-memory flag flips, so pollers that observe done/error are
+    # guaranteed a matching stored row (no save race).
     job.status = "running"
     job.progress = "connecting over SSH and gathering checks"
     try:
@@ -402,16 +403,16 @@ def _run_job(
         _save_report_copy(job.hostname, job.report)
         job.finished_at = time.time()
         _scrub_temp_key(params)
+        _persist_job(job, host_id, status="done")
         job.status = "done"
-        _persist_job(job, host_id)
         score = (job.report.get("summary") or {}).get("hardening_index")
         _audit(actor, "scan.completed", "scan", job.id, f"index={score}")
     except Exception as exc:  # keep the job record, report the failure
-        job.status = "error"
         job.progress = "failed"
         job.error = str(exc)[:1000]
         job.finished_at = time.time()
-        _persist_job(job, host_id)
+        _persist_job(job, host_id, status="error")
+        job.status = "error"
         _audit(actor, "scan.failed", "scan", job.id, job.error[:200])
     finally:
         _scrub_temp_key(params)
