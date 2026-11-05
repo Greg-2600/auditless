@@ -82,7 +82,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; registry (`test_ids.py`) is authoritative.
 
 - [x] 41 — [P1] Sudoers.d auditing (`/etc/sudoers.d/*`, `!authenticate`, `NOPASSWD` scope) — `AUTH-9341` (`AUTH-9340` was already taken by recent-accounts). `checks` (effort: S)
-- [ ] 42 — [P1] PAM faillock / pwquality completeness (deny, unlock_time, minlen, retry) — `AUTH-9350`. `checks` (effort: S)
+- [x] 42 — [P1] PAM faillock / pwquality completeness (deny, unlock_time, minlen, retry) — `AUTH-9350`. `checks` (effort: S)
 - [ ] 43 — [P1] SSH `AllowUsers/AllowGroups`, `MaxAuthTries`, `LoginGraceTime`, `ClientAlive*` hardening — extend `AUTH-9328` family. `checks` (effort: S)
 - [ ] 44 — [P1] Kernel Secure Boot + module signature enforcement (`mokutil --sb-state`, `module.sig_enforce`). `checks` (effort: S)
 - [ ] 45 — [P1] Kernel livepatch status (canonical/ubuntu-advantage, kpatch) informational. `checks` (effort: S)

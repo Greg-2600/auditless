@@ -2160,6 +2160,94 @@ def check_weak_password_policy(ssh: SSHSession, password: str = "") -> CheckResu
     )
 
 
+def _pam_option(text: str, key: str) -> str | None:
+    """First `key = value` (or `key=value`) from PAM-style config text."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name, _, value = stripped.partition("=")
+        if name.strip() == key:
+            return value.strip().strip("\"'")
+    return None
+
+
+def check_pam_faillock(ssh: SSHSession, password: str = "") -> CheckResult:
+    """Check PAM faillock and pwquality completeness.
+
+    Verifies account-lockout (deny, unlock_time) is enabled in the PAM
+    stacks and that pwquality retry limits are explicit. All sources
+    are world-readable, so this check is meaningful unprivileged.
+    """
+    category = "Authentication"
+
+    stack_cmd = (
+        "bash -lc 'grep -rh pam_faillock.so /etc/pam.d/system-auth "
+        "/etc/pam.d/password-auth /etc/pam.d/common-auth "
+        "/etc/pam.d/common-account 2>/dev/null | head -10'"
+    )
+    _, stack_out, _ = _run(ssh, stack_cmd)
+    if "pam_faillock" not in stack_out:
+        return _warn(
+            "PAM faillock",
+            "faillock not enabled in PAM stacks (no brute-force throttling)",
+            "Enable pam_faillock in system-auth/password-auth (or "
+            "common-auth/common-account): preauth, authfail, and account lines",
+            category,
+        )
+
+    conf_cmd = (
+        'bash -lc \'grep -hE "^(deny|unlock_time|even_deny_root|fail_interval)" '
+        "/etc/security/faillock.conf 2>/dev/null'"
+    )
+    _, conf_out, _ = _run(ssh, conf_cmd)
+    pwq_cmd = (
+        'bash -lc \'grep -hE "retry|minlen" /etc/security/pwquality.conf '
+        "/etc/pam.d/common-password /etc/pam.d/system-auth 2>/dev/null | head -10'"
+    )
+    _, pwq_out, _ = _run(ssh, pwq_cmd)
+
+    gaps: list[str] = []
+    deny = _pam_option(conf_out, "deny")
+    if deny is None:
+        gaps.append("deny unset (lockout threshold implicit; set deny to 3-5)")
+    else:
+        try:
+            if not 1 <= int(deny) <= 5:
+                gaps.append(f"deny={deny} outside the 1-5 range")
+        except ValueError:
+            gaps.append(f"deny has a non-numeric value: {deny}")
+    if _pam_option(conf_out, "unlock_time") is None:
+        gaps.append("unlock_time unset (lockout duration implicit)")
+    retry = _pam_option(pwq_out, "retry")
+    if retry is None:
+        gaps.append("pwquality retry unset (prompt-retry limit implicit)")
+    else:
+        try:
+            if int(retry) > 3:
+                gaps.append(f"pwquality retry={retry} above 3")
+        except ValueError:
+            gaps.append(f"pwquality retry has a non-numeric value: {retry}")
+
+    if gaps:
+        summary = "; ".join(gaps[:4])
+        if len(gaps) > 4:
+            summary += f"; +{len(gaps) - 4} more"
+        return _warn(
+            "PAM faillock / pwquality",
+            f"Lockout configuration incomplete: {summary}",
+            "Set explicit deny/unlock_time in faillock.conf and retry in "
+            "pwquality.conf; validate with faillock --user <name>",
+            category,
+        )
+    return _pass(
+        "PAM faillock / pwquality",
+        "Account lockout and retry limits explicitly configured",
+        "Review thresholds periodically against policy",
+        category,
+    )
+
+
 def check_container_escape_indicators(ssh: SSHSession) -> CheckResult:
     """Look for container escape attempts or suspicious container activity."""
     category = "Container Security"
@@ -3621,6 +3709,10 @@ def _check_thunks(ssh: SSHSession, password: str = "") -> list[tuple[str, _Check
         (
             "check_weak_password_policy",
             lambda: check_weak_password_policy(ssh, password),
+        ),
+        (
+            "check_pam_faillock",
+            lambda: check_pam_faillock(ssh, password),
         ),
         (
             "check_container_escape_indicators",

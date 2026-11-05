@@ -85,7 +85,7 @@ Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+
 | **System Resources** | 4 | Disk utilization, memory availability, CPU load analysis, process resource consumption |
 | **Patch Management** | 2 | Reboot requirements, pending security/standard updates (distribution-aware) |
 | **Network Security** | 7 | Firewall status, suspicious connections, ARP spoofing, DNS tampering, listener analysis, legacy services |
-| **Authentication** | 6 | SSH configuration hardening, password policies, authentication failures, root access, brute-force detection, sudoers auditing |
+| **Authentication** | 7 | SSH configuration hardening, password policies, authentication failures, root access, brute-force detection, sudoers auditing, account lockout |
 | **User Account Security** | 3 | Active accounts, dormant account detection, recently created account analysis |
 | **Malware/Backdoor Detection** | 4 | Reverse shell identification, cryptocurrency mining, hidden file discovery, rootkit indicators |
 | **File Integrity** | 3 | SUID binary monitoring, world-writable files, critical binary modification tracking |
