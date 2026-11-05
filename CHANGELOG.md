@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   headers, HTTP redirect missing, directory listing enabled (each
   needs a second vector to exploit), DBS-1007 no backup evidence
   (operational, not compromise), DNSSEC absent (integrity hardening).
+- Wrong sudo passwords now fail fast: with a password given, the scan
+  verifies `sudo -S true` up front and aborts with an actionable error
+  instead of degrading all sudo-gated checks one by one.
 
 ### Deprecated
 

@@ -263,6 +263,25 @@ def _warn_if_deprecated_alias() -> None:
         print(f"warning: {message}", file=sys.stderr)
 
 
+def _preflight_sudo(ssh: SSHSession, password: str) -> bool:
+    """Verify sudo works before the scan (no password prompts mid-scan).
+
+    All remote sudo invocations use ``sudo -S`` with stdin, so nothing
+    can block on a TTY prompt; this probe only decides whether a given
+    password actually elevates. Inconclusive probes (odd sessions in
+    tests) assume success so checks degrade exactly as before.
+    """
+    if not password:
+        return True
+    try:
+        from .checks import _run
+
+        ret, _, _ = _run(ssh, "sudo -S true 2>/dev/null", password=password)
+        return ret == 0
+    except Exception:
+        return True
+
+
 def _open_session(
     args: argparse.Namespace, password: str, gateway: dict | None
 ) -> AbstractContextManager[SSHSession]:
@@ -363,6 +382,13 @@ def main(argv: list[str] | None = None) -> int:
                 "key_path": args.jump_key_file or "",
             }
         with _open_session(args, password, gateway) as ssh:
+            if password and not _preflight_sudo(ssh, password):
+                parser.error(
+                    f"sudo authentication failed for user '{args.username}': "
+                    "wrong password or no sudo rights. Re-run with the "
+                    "correct password (--ask-password), or omit the password "
+                    "for an unprivileged assessment."
+                )
             system_info = gather_system_info(ssh)
             scan_start = time.monotonic()
             deadline = args.deadline if args.deadline and args.deadline > 0 else None
