@@ -165,6 +165,19 @@ See [Adding Security Checks](#adding-security-checks) in README.md for detailed 
 - Update CHANGELOG.md with your contribution
 - Use clear, concise language
 
+### Release Hygiene
+
+- `*.egg-info/` is gitignored build output — never commit it. If yours
+  looks stale (`Name: linux-health`, old version), delete it and rebuild:
+  `rm -rf linux_health.egg-info && python -m build`.
+- Version bumps touch `linux_health/__init__.py` (`__version__`) and
+  `pyproject.toml` together, plus a CHANGELOG entry.
+- After bumping, verify wheel metadata before tagging:
+  `python -m build`, then confirm the `.whl` METADATA shows
+  `Name: auditless`, the new version, and `Greg-2600/auditless` URLs.
+- Releases cut from `main` via `v*` tags; the release workflow builds,
+  signs (cosign), and verifies — see `.github/workflows/release.yml`.
+
 ## Pull Request Guidelines
 
 **Your PR should:**
