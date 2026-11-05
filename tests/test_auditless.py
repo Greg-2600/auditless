@@ -3175,3 +3175,106 @@ class TestCheckPamFaillock:
         result = check_pam_faillock(ssh, "")
         assert result.status == "warn"
         assert "retry=9" in result.details
+
+
+class TestCheckSSHConfigDirectives:
+    """Tests for extended sshd hardening directives (SSH-7408 family)."""
+
+    _host_seq = 0
+
+    def _session(self, routes):
+        from unittest.mock import Mock
+
+        TestCheckSSHConfigDirectives._host_seq += 1
+        hostname = f"sshd-test-{TestCheckSSHConfigDirectives._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            for key, response in routes:
+                if key in command:
+                    return response
+            return 1, "", ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    HARDENED_T = (
+        "passwordauthentication no\npermitrootlogin no\nport 2222\n"
+        "maxauthtries 4\nlogingracetime 60\nclientaliveinterval 300\n"
+        "clientalivecountmax 3\nallowusers deploy\n"
+    )
+    DEFAULT_T = (
+        "passwordauthentication yes\npermitrootlogin yes\nport 22\n"
+        "maxauthtries 6\nlogingracetime 120\nclientaliveinterval 0\n"
+        "clientalivecountmax 3\n"
+    )
+
+    def _by_item(self, results):
+        return {r.item: r for r in results}
+
+    def test_hardened_sshd_all_pass(self):
+        """Fully hardened sshd -T passes every directive incl. rating."""
+        from linux_health.checks import check_ssh_config
+
+        ssh = self._session([("sshd -T", (0, self.HARDENED_T, ""))])
+        found = self._by_item(check_ssh_config(ssh, ""))
+        for item in (
+            "SSH access allow-list",
+            "SSH MaxAuthTries",
+            "SSH LoginGraceTime",
+            "SSH ClientAlive",
+        ):
+            assert found[item].status == "pass", item
+        assert found["SSH Security Rating"].status == "pass"
+        assert "(9/9)" in found["SSH Security Rating"].details
+
+    def test_default_sshd_warns_new_directives(self):
+        """Stock defaults warn on all four new directives (Poor rating)."""
+        from linux_health.checks import check_ssh_config
+
+        ssh = self._session([("sshd -T", (0, self.DEFAULT_T, ""))])
+        found = self._by_item(check_ssh_config(ssh, ""))
+        for item in (
+            "SSH access allow-list",
+            "SSH MaxAuthTries",
+            "SSH LoginGraceTime",
+            "SSH ClientAlive",
+        ):
+            assert found[item].status == "warn", item
+        rating = found["SSH Security Rating"]
+        assert rating.status == "warn"
+        assert "Poor" in rating.details
+
+    def test_grep_fallback_with_directives(self):
+        """Config-grep path honors set directives and skips comments."""
+        from linux_health.checks import check_ssh_config
+
+        ssh = self._session(
+            [
+                ("sshd -T", (1, "", "no sshd")),
+                (
+                    "grep -E",
+                    (
+                        0,
+                        "#AllowUsers commented\nAllowUsers deploy\nMaxAuthTries 3\n",
+                        "",
+                    ),
+                ),
+            ]
+        )
+        found = self._by_item(check_ssh_config(ssh, ""))
+        assert found["SSH access allow-list"].status == "pass"
+        assert found["SSH MaxAuthTries"].status == "pass"
+
+    def test_time_parser_units(self):
+        """sshd time values parse across bare/s/m/h forms."""
+        from linux_health.checks import _parse_sshd_time
+
+        assert _parse_sshd_time("60") == 60
+        assert _parse_sshd_time("60s") == 60
+        assert _parse_sshd_time("2m") == 120
+        assert _parse_sshd_time("1h") == 3600
+        assert _parse_sshd_time(None) is None
+        assert _parse_sshd_time("bogus") is None
