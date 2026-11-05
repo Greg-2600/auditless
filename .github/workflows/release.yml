@@ -94,9 +94,14 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
+      - name: Resolve lowercase digest ref
+        id: img
+        run: |
+          echo "ref=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')@${{ needs.publish-docker.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
       - name: Sign image (keyless OIDC)
         env:
-          IMAGE: ghcr.io/${{ github.repository }}@${{ needs.publish-docker.outputs.digest }}
+          IMAGE: ${{ steps.img.outputs.ref }}
         run: cosign sign --yes "$IMAGE"
 
   verify-release:
@@ -111,9 +116,14 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
+      - name: Resolve lowercase digest ref
+        id: img
+        run: |
+          echo "ref=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')@${{ needs.publish-docker.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
       - name: Verify signature, provenance, and SBOM
         env:
-          IMAGE: ghcr.io/${{ github.repository }}@${{ needs.publish-docker.outputs.digest }}
+          IMAGE: ${{ steps.img.outputs.ref }}
           REPO: ${{ github.repository }}
         run: |
           cosign verify \
@@ -129,6 +139,6 @@ jobs:
 
       - name: Boot smoke test of the signed image
         env:
-          IMAGE: ghcr.io/${{ github.repository }}@${{ needs.publish-docker.outputs.digest }}
+          IMAGE: ${{ steps.img.outputs.ref }}
         run: |
           docker run --rm "$IMAGE" --help | head -3
