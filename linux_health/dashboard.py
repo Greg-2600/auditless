@@ -381,6 +381,10 @@ def run_scan(params: dict) -> dict:
         argv.append("--no-cache")
     if params.get("max_output_bytes") is not None:
         argv += ["--max-output-bytes", str(params["max_output_bytes"])]
+    if params.get("only_tests") is not None:
+        argv += ["--only-tests", str(params["only_tests"])]
+    if params.get("skip_tests") is not None:
+        argv += ["--skip-tests", str(params["skip_tests"])]
     if params.get("reuse_session", True):
         argv.append("--reuse-session")
     gateway = params.get("gateway") or {}

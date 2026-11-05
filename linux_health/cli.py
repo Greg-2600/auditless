@@ -52,7 +52,12 @@ from .scanner import COMMON_PORTS, scan_ports
 from .ssh_client import SSHSession, pooled_session
 
 try:
-    from .config import load_profile, should_skip_test
+    from .config import (
+        load_profile,
+        merge_cli_test_filters,
+        parse_test_id_list,
+        should_skip_test,
+    )
 
     HAS_CONFIG = True
 except ImportError:
@@ -183,6 +188,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Load scan profile from YAML file (allows test filtering)",
+    )
+    parser.add_argument(
+        "--only-tests",
+        type=str,
+        default=None,
+        help="Comma-separated test IDs to run exclusively "
+        "(intersects --profile only_tests)",
+    )
+    parser.add_argument(
+        "--skip-tests",
+        type=str,
+        default=None,
+        help="Comma-separated test IDs to skip (adds to --profile skip_tests)",
     )
     parser.add_argument(
         "--ask-password",
@@ -361,6 +379,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Loaded scan profile from {args.profile}")
         except (FileNotFoundError, ValueError) as e:
             print(f"Warning: Failed to load profile {args.profile}: {e}")
+
+    # CLI test filters layer over the profile (or stand alone without one)
+    if HAS_CONFIG and (args.only_tests or args.skip_tests):
+        profile = merge_cli_test_filters(
+            profile,
+            parse_test_id_list(args.only_tests),
+            parse_test_id_list(args.skip_tests),
+        )
 
     # Apply per-command timeout for all SSH execs
     set_command_timeout(args.command_timeout)

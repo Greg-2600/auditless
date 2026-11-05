@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Set
 
@@ -200,6 +200,36 @@ def load_profile_auto() -> ScanProfile | None:
                 continue
 
     return None
+
+
+def parse_test_id_list(raw: str | None) -> set[str]:
+    """Parse comma-separated test IDs (whitespace-tolerated, empties dropped)."""
+    if not raw:
+        return set()
+    return {part.strip() for part in raw.split(",") if part.strip()}
+
+
+def merge_cli_test_filters(
+    profile: ScanProfile | None,
+    only_tests: set[str] | None = None,
+    skip_tests: set[str] | None = None,
+) -> ScanProfile | None:
+    """Combine a YAML profile with CLI --only-tests/--skip-tests.
+
+    only_tests narrows (intersection when both constrain), skip_tests
+    accumulates (union). Returns the profile untouched when no CLI
+    flags are given, or None when nothing filters at all.
+    """
+    cli_only = only_tests or set()
+    cli_skip = skip_tests or set()
+    if not cli_only and not cli_skip:
+        return profile
+    base = profile if profile is not None else ScanProfile()
+    if cli_only and base.only_tests:
+        only = base.only_tests & cli_only
+    else:
+        only = cli_only or base.only_tests
+    return replace(base, only_tests=only, skip_tests=base.skip_tests | cli_skip)
 
 
 def should_skip_test(test_id: str, category: str, profile: ScanProfile | None) -> bool:

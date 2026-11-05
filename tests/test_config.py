@@ -6,10 +6,13 @@ from pathlib import Path
 import pytest
 
 from linux_health.config import (
+    ScanProfile,
     get_config_dirs,
     get_default_profile_paths,
     is_legacy_profile_path,
     load_profile_auto,
+    merge_cli_test_filters,
+    parse_test_id_list,
 )
 
 
@@ -137,3 +140,36 @@ def test_list_profiles_uses_shared_dirs(
     found = {entry["name"]: entry for entry in list_profiles()}
     assert found["quick"]["source"] == "profiles-dir"
     assert found["old"]["source"] == "profiles-dir"
+
+
+def test_parse_test_id_list() -> None:
+    """Comma-separated IDs parse with whitespace tolerance."""
+    assert parse_test_id_list(None) == set()
+    assert parse_test_id_list("") == set()
+    assert parse_test_id_list("STOR-6310") == {"STOR-6310"}
+    assert parse_test_id_list("STOR-6310, AUTH-9328 ,,") == {"STOR-6310", "AUTH-9328"}
+
+
+def test_merge_no_flags_returns_profile_untouched() -> None:
+    """Without CLI flags the YAML profile passes through by identity."""
+    profile = ScanProfile(name="prod")
+    assert merge_cli_test_filters(profile) is profile
+    assert merge_cli_test_filters(None) is None
+
+
+def test_merge_cli_only_builds_profile() -> None:
+    """CLI flags alone produce an effective profile from defaults."""
+    merged = merge_cli_test_filters(None, {"A-1"}, {"B-2"})
+    assert merged is not None
+    assert merged.only_tests == {"A-1"}
+    assert merged.skip_tests == {"B-2"}
+
+
+def test_merge_intersects_only_unions_skip() -> None:
+    """only_tests narrows, skip_tests accumulates across YAML + CLI."""
+    profile = ScanProfile(name="prod", only_tests={"A-1", "A-2"}, skip_tests={"B-1"})
+    merged = merge_cli_test_filters(profile, {"A-2", "A-3"}, {"B-2"})
+    assert merged is not None
+    assert merged.only_tests == {"A-2"}
+    assert merged.skip_tests == {"B-1", "B-2"}
+    assert merged.name == "prod"
