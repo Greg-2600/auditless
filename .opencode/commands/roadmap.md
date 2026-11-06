@@ -15,9 +15,29 @@ Next item (from the helper — do not skip ahead):
 
 ## Workflow
 
-1. **Sync and branch.** `git fetch origin`, update local `main`, then create `roadmap/<NNN>-<short-slug>` from `main`. Worktree must be clean before branching (stash nothing — stop and report if dirty).
-2. **Implement item N** plus proper tests (unit tests for new behavior; extend fixtures, not just happy paths). Follow `docs/REMEDIATION_AUTHORING.md` / existing module conventions for the area.
-3. **Quality gates — all must pass, no exceptions:**
+1. **Triage open PRs (unstick blockers first).** One stuck PR must never
+   block the backlog. Run `gh pr list --state open`:
+   - If YOUR previous item's branch is still open (a past run ended
+     mid-flight): finish it first (watch → merge on green) or close it
+     as superseded — never leave two roadmap branches open.
+   - Merge conflicts: `git fetch origin`, merge `origin/main` into the
+     branch (merge, never rebase — preserve review history), resolve,
+     push, re-watch CI.
+   - Red CI: fix on the branch (the 2-fix-round rule in step 7 below
+     applies per problem). Red a second time for infra reasons only
+     (registry pull flakes, runner network blips — see Stability notes
+     in past `ROADMAP-REVIEW-*.md`): `gh run rerun <run-id> --failed`
+     once, then watch again.
+   - Checks stuck pending with no progress: rerun once; if still
+     stuck, close + reopen the PR for a fresh check suite rather than
+     polling forever.
+   - Green + `REVIEW_REQUIRED` with no second reviewer: the documented
+     solo `--admin` bypass (see step 7).
+   - Never merge red, never force-push, never close someone else's
+     (non-roadmap) PR without asking. Report every unstick action.
+2. **Sync and branch.** `git fetch origin`, update local `main`, then create `roadmap/<NNN>-<short-slug>` from `main`. Worktree must be clean before branching (stash nothing — stop and report if dirty).
+3. **Implement item N** plus proper tests (unit tests for new behavior; extend fixtures, not just happy paths). Follow `docs/REMEDIATION_AUTHORING.md` / existing module conventions for the area.
+4. **Quality gates — all must pass, no exceptions:**
    - `.venv/bin/ruff check linux_health/ tests/ auditless.py`
    - `.venv/bin/black --check linux_health/ tests/ auditless.py` (run `black` to fix, then re-check)
    - `.venv/bin/pylint linux_health/ auditless.py --fail-under=10.0`
@@ -28,8 +48,8 @@ Next item (from the helper — do not skip ahead):
      headless Chrome against live uvicorn; skips cleanly with no browser;
      asserts zero SEVERE console errors, history → report render, fleet table)
    - Fix failures properly. Never lower a gate, never delete a failing test to make it pass.
-4. **Docs.** Update the relevant docs for the change, then check the box: `.venv/bin/python scripts/roadmap.py mark <NNN>`. Verify `scripts/roadmap.py status` advances by one.
-5. **Commit, push, merge.**
+5. **Docs.** Update the relevant docs for the change, then check the box: `.venv/bin/python scripts/roadmap.py mark <NNN>`. Verify `scripts/roadmap.py status` advances by one.
+6. **Commit, push, merge.**
    - Commit (pre-commit hooks run automatically — they must pass).
    - `git push -u origin roadmap/<NNN>-<slug>`, then `gh pr create --fill --base main`.
    - Wait for CI: `gh pr checks --watch --fail-fast` (generous timeout). If checks fail, fix on the same branch, push, and watch again — up to 2 fix rounds.
@@ -37,7 +57,7 @@ Next item (from the helper — do not skip ahead):
      repo ruleset reports `REVIEW_REQUIRED` with no second reviewer available
      (documented solo-dev bypass in `SECURITY.md`) and all checks are green,
      use `gh pr merge --squash --admin --delete-branch` and say so in the report. Confirm `git status` clean on the branch, then switch back to `main` and pull.
-6. **If stuck** (red after 2 fix rounds, ambiguous requirement, or a gate that cannot pass without lowering it): push the branch, convert the PR to draft, report the blocker clearly, and do NOT merge. Do not start another item.
+7. **If stuck** (red after 2 fix rounds, ambiguous requirement, or a gate that cannot pass without lowering it): push the branch, convert the PR to draft, report the blocker clearly, and do NOT merge. Do not start another item.
 
 ## Rules
 

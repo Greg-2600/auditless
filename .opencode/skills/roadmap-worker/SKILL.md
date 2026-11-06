@@ -15,17 +15,26 @@ relative to this skill's directory).
 
 ## Iteration
 
-1. **Status.** Run `.venv/bin/python scripts/roadmap.py status`. If it
+1. **Triage open PRs (unstick blockers first).** Run `gh pr list
+   --state open`: finish or close your own leftover roadmap branch
+   first (never leave two open); merge-conflicted branches get
+   `origin/main` merged in (never rebase), pushed, and re-watched;
+   red CI gets fixed per the 2-fix-round rule, or one
+   `gh run rerun <run-id> --failed` for proven infra flakes; stuck
+   pending checks get one rerun, then close + reopen. Never merge red,
+   never force-push, never touch others' PRs unasked. Report every
+   unstick action.
+2. **Status.** Run `.venv/bin/python scripts/roadmap.py status`. If it
    reports 200/200 (roadmap complete), stop the loop with a final
    summary instead of working.
-2. **Milestone check.** Run
+3. **Milestone check.** Run
    `.venv/bin/python scripts/roadmap.py milestone`. If it reports a
    milestone was just hit (done-count is a multiple of 10), run the
    `/roadmap-review` workflow this turn (see `../commands/roadmap-review.md`):
    write `ROADMAP-REVIEW-<NNN>.md` (Shipped, Quality, Stability,
    Security, Wow factor, Next horizon with `C-NN` candidates, Metrics),
    ship it through gates + PR, and end the turn.
-3. **Otherwise work exactly ONE unchecked item** per
+4. **Otherwise work exactly ONE unchecked item** per
    `../commands/roadmap.md`: sync + branch
    (`roadmap/<NNN>-<slug>` from `main`), implement with proper tests,
    run all gates (ruff, black --check, pylint 10.00, mypy, bandit
@@ -34,7 +43,7 @@ relative to this skill's directory).
    CI (`gh pr checks --watch --fail-fast`, up to 2 fix rounds),
    squash-merge ONLY on green (solo `--admin` bypass only under the
    documented conditions), back to `main`.
-4. **If blocked** (red after 2 fix rounds, ambiguous requirement, or a
+5. **If blocked** (red after 2 fix rounds, ambiguous requirement, or a
    gate that cannot pass unlowered): push the branch, convert the PR
    to draft, report clearly, do NOT merge, and stop the loop for
    human review.
