@@ -1,7 +1,7 @@
 # Auditless Roadmap — 200 Items, Prioritized
 
 > Canonical repo: `Greg-2600/auditless`. Status as of v2.5.3 (2026-11-05).
-> Test suite: **499 passed / 16 skipped**. Gates: ruff / black / mypy / pylint 10.00 / bandit HIGH-only — all green.
+> Test suite: **704 passed / 16 skipped** (coverage 89%). Gates: ruff / black / mypy / pylint 10.00 / bandit HIGH-only — all green.
 > This file is the single prioritized backlog. Check a box only when the work is merged to `main`.
 > Priority: **P0 = tech debt / correctness blocking**, **P1 = high-value next**, **P2 = important**, **P3 = nice-to-have**, **P4 = backlog / polish**.
 > Every 10 completed items the loop runs `/roadmap-review` (quality, stability, security, wow factor) and writes `ROADMAP-REVIEW-<NNN>.md`;
@@ -13,7 +13,7 @@ How to read: `— [P0] description \`area\` (effort: S/M/L)`. Effort S ≤ 1 day
 
 ## Naming decision (read first — frames items 1–20)
 
-Today three names coexist:
+Before the P0 block, three names coexisted (counts are the original snapshot):
 
 | Layer | Current | Proposed canonical |
 |---|---|---|
@@ -37,12 +37,12 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 4 — [P0] Retitle `README.md` H1 to `Auditless` with subtitle `Agentless Linux security scanner (formerly Linux Health)`; keep one `Linux Health` alias mention for searchability. `docs` (effort: S)
 - [x] 5 — [P0] Fix `README.md` badges: version `2.0.0` → `2.5.3` (or dynamic), tests `334/334` → `499`, coverage `76%` → actual. `docs` (effort: S)
 - [x] 6 — [P0] Unify `linux_health/dashboard.py` strings: module docstring + FastAPI `title/description` + `<title>`/`<h1>` currently mix `Linux Health Security Scanner` and `Auditless`. Canonical: `Auditless`. `dashboard` (effort: S)
-- [x] 7 — [P0] Unify `linux_health/report.py` + JSON `scan_info.scanner` (`Linux Health Security Scanner` → `Auditless`, keep `scanner_version`). Add test asserting the string. `report` (effort: S)
+- [x] 7 — [P0] Unify `linux_health/report.py` + JSON `scan_info.scanner` (`Linux Health Security Scanner` → `Auditless`, keep `version`). Add test asserting the string. `report` (effort: S)
 - [x] 8 — [P0] Unify CLI help/epilog (`cli.py`, `--help` output, Docker `HEALTHCHECK`) on `auditless` as primary, `linux-health` noted as alias. `cli` (effort: S)
 - [x] 9 — [P0] Add `auditless` import alias for the `linux_health` package (shim module + `sys.modules` fallback) so `import auditless` and `python -m auditless` work; keep `linux_health` working. `packaging` (effort: M)
 - [x] 10 — [P0] Dual config-path discovery: check `~/.config/auditless/`, `/etc/auditless/`, `auditless.yaml` **first**, fall back to existing `linux_health` paths with a one-time deprecation warning (no silent break). `config` (effort: M)
 - [x] 11 — [P0] Migrate `dashboard.py` profile search path (`~/.config/linux_health/profiles`) to the same dual-path helper as item 10; extract one shared `get_config_dirs()` used by both. `config` (effort: S)
-- [x] 12 — [P0] Decide and document `AUDITLESS_DATA_DIR` default (`./data` vs `/app/data` in container) in one place; remove contradictory comments in `store.py`/`cli.py`/`compose`. `store` (effort: S)
+- [x] 12 — [P0] Decide and document `AUDITLESS_DATA_DIR` default (`./data` vs `/app/data` in container) in one place (`store.py` docstring is canonical; `cli.py`/`dashboard.py` carry no data-dir comments). `store` (effort: S)
 - [x] 13 — [P0] Regenerate or gitignore `linux_health.egg-info/` (currently stale: `Name: linux-health`, `Version: 2.0.0`, stale URLs). Add egg-info hygiene to release checklist. `packaging` (effort: S)
 - [x] 14 — [P0] Align `setup.py` shim metadata with `pyproject.toml` (author, URLs already point at `Greg-2600/auditless` — lock them with a test so they can't drift again). `packaging` (effort: S)
 - [x] 15 — [P0] Add a `test_packaging_names.py` test that asserts dist-name `auditless`, both console scripts exist, import alias works, and no `yourusername` string survives in packaged metadata. `tests` (effort: S)
@@ -57,7 +57,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 ## P1 — Core scan engine & detection accuracy (21–40)
 
 - [x] 21 — [P1] Parallelize per-host SSH checks with bounded worker pool (configurable `--jobs`); measure wall-time on 100-check host, target ≥2× speedup. `engine` (effort: M)
-- [x] 22 — [P1] SSH multiplexing / persistent connection reuse across checks (no connect-per-check); fall back cleanly. `ssh` (effort: M)
+- [x] 22 — [P1] SSH multiplexing / persistent connection reuse across scans in the serving process (bounded pool, TTL, health-verified); fall back cleanly to fresh connects. `ssh` (effort: M)
 - [x] 23 — [P1] Per-check timeouts + global scan deadline with partial-report output (never lose completed checks on one hang). `engine` (effort: M)
 - [x] 24 — [P1] Retry with backoff for transient SSH failures (auth vs network distinguished); `--retries` flag. `ssh` (effort: S)
 - [x] 25 — [P1] Make `--strict-host-key-checking` default-on with `known_hosts` management docs; fail closed with actionable error. `ssh` (effort: S)
@@ -65,17 +65,17 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 27 — [P1] Port scanner: service banner grabbing + version inference for top 20 ports. `scanner` (effort: M)
 - [x] 28 — [P1] Command-output cache keyed on (host, command) with TTL + `--no-cache` escape hatch; document invalidation rules. `engine` (effort: S)
 - [x] 29 — [P1] Distro detection hardening (`/etc/os-release` + fallbacks) shared by all checks; one `get_distro()` helper, tested on Ubuntu/Debian/RHEL/Alpine. `checks` (effort: S)
-- [x] 30 — [P1] Privilege model: declare per-check needs-root table; warn (not crash) when unprivileged, mark result `unknown` with reason. `checks` (effort: M)
+- [x] 30 — [P1] Privilege model: declare per-check needs-root table; unevaluable checks become `unknown` results (not crash, not false-PASS). `checks` (effort: M)
 - [x] 31 — [P1] Replace remaining `XXXX` fallback test IDs (`ACCT-XXXX`, `FS-XXXX`, `DBS-XXXX`, `PKGS-XXXX` in checks_*_*.py) with real registry IDs. `test-ids` (effort: S)
 - [x] 32 — [P1] False-positive harness: canary hosts (hardened vs weakened fixtures) asserting expected index delta; gate regressions in CI. `tests` (effort: M)
 - [x] 33 — [P1] Check severity re-grade pass (FAIL vs WARN audit against CIS impact); document rationale per change. `checks` (effort: M)
 - [x] 34 — [P1] `sudo -n` non-interactive discipline: no password prompts mid-scan; preflight auth check with clear error. `ssh` (effort: S)
 - [x] 35 — [P1] Large-fleet memory discipline: stream checks, cap stored output bytes per check (`--max-output-bytes`). `engine` (effort: S)
 - [x] 36 — [P1] Scan profiles: `--profile` + `--only-tests`/`--skip-tests` CLI flags mirroring profile YAML (today YAML-only for some paths). `cli` (effort: S)
-- [x] 37 — [P1] Profile validation (`auditless profile lint`) with JSON-schema + unknown-ID suggestions. `config` (effort: M)
+- [x] 37 — [P1] Profile validation (`auditless profile lint`) with typed schema validation + unknown-ID suggestions. `config` (effort: M)
 - [x] 38 — [P1] Deterministic check ordering + stable JSON key order (diff-friendly reports). `report` (effort: S)
 - [x] 39 — [P1] Structured `unknown`/`skipped` status distinct from `warn` (tool missing ≠ vulnerable); update hardening-index math + docs. `report` (effort: M)
-- [x] 40 — [P1] Benchmark script (`scripts/bench_fleet.py`) promoted to CI perf gate (fail on >10% scan-time regression). `perf` (effort: M)
+- [x] 40 — [P1] Benchmark script promoted to CI perf gate: `bench_checks.py --check` fails unless parallel speedup stays ≥2.0x (hardware-independent ratio, not absolute seconds). `perf` (effort: M)
 
 ---
 
@@ -88,7 +88,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [x] 43 — [P1] SSH `AllowUsers/AllowGroups`, `MaxAuthTries`, `LoginGraceTime`, `ClientAlive*` hardening — extend `SSH-7408` family (item text misnamed `AUTH-9328`, which is sudo usage). `checks` (effort: S)
 - [x] 44 — [P1] Kernel Secure Boot + module signature enforcement (`mokutil --sb-state`, `module.sig_enforce`). `checks` (effort: S)
 - [ ] 45 — [P1] Kernel livepatch status (canonical/ubuntu-advantage, kpatch) informational. `checks` (effort: S)
-- [ ] 46 — [P1] Sysctl extended pass (`kernel.kptr_restrict`, `kernel.dmesg_restrict`, `kernel.unprivileged_bpf_disabled`, `net.*` forwarding). `checks` (effort: M)
+- [ ] 46 — [P1] Sysctl extended pass beyond `check_kernel_hardening`'s set (`kernel.unprivileged_bpf_disabled`, `net.*` forwarding, and friends). `checks` (effort: M)
 - [ ] 47 — [P1] AIDE / Samhain / OSSEC presence **and** DB freshness (not just installed). `checks` (effort: S)
 - [ ] 48 — [P1] USBGuard / USB authorization (`usbcore.authorized_default`, UDISKS rules) — extend `USB-1000`. `checks` (effort: S)
 - [ ] 49 — [P1] Firewall rich rules audit (default-deny, loopback, established, logging) for ufw/firewalld/nftables. `checks` (effort: M)
@@ -249,7 +249,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [ ] 174 — [P3] Systemd unit + logrotate example for `--serve` on bare metal. `ops` (effort: S)
 - [ ] 175 — [P3] Backup/restore runbook tested quarterly in CI (restore into scratch volume, verify). `ops` (effort: M)
 - [ ] 176 — [P3] Incident-response runbook (`docs/IR_RUNBOOK.md`: compromised-host scan profile + evidence capture). `docs` (effort: M)
-- [ ] 177 — [P3] `SECURITY.md` verify-example parameterized by release (no hardcoded `2.5.2` on next bump). `docs` (effort: S)
+- [x] 177 — [P3] `SECURITY.md` verify-example parameterized by release (done as item 20 — takes `VERSION`, no hardcoded release). `docs` (effort: S)
 - [ ] 178 — [P3] Scorecard remediation inbox-zero (keep score high; track deltas per release). `security` (effort: S)
 - [ ] 179 — [P3] Fuzz `verify-release` failure paths (bad digest, expired cert) with negative tests. `tests` (effort: M)
 - [ ] 180 — [P3] Release smoke matrix (amd64+arm64 boot test already — add `--serve` boot + one API call). `release` (effort: S)
@@ -258,10 +258,10 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 
 ## P4 — Testing, quality, docs & community (181–200)
 
-- [ ] 181 — [P4] Coverage 76% → 90% (exclude `dashboard.py` HTML template strings honestly; cover logic). `tests` (effort: L)
+- [ ] 181 — [P4] Coverage 89% → 90%+ (exclude `dashboard.py` HTML template strings honestly; cover logic). Nearly closed by drift — small push, not a project. `tests` (effort: S)
 - [ ] 182 — [P4] Mutation testing baseline (mutmut/cosmic-ray on `checks.py` pure parsers). `tests` (effort: M)
 - [ ] 183 — [P4] Property-based tests (Hypothesis) for parsers (sysctl, fstab, sshd_config, resolv.conf). `tests` (effort: M)
-- [ ] 184 — [P4] Windows/macOS CI parity audit (today matrix exists — fix/flake-hunt slow tests, e.g. generous client timeout follow-ups). `ci` (effort: M)
+- [ ] 184 — [P4] Windows/macOS CI parity audit — fix/flake-hunt slow tests (known flake classes: registry pull failures, Windows loopback resets, e2e timing; rerun-once policy for proven infra flakes). `ci` (effort: M)
 - [ ] 185 — [P4] E2E live-fire range expansion (more distros in `tests/test_e2e.py`, weakened-target matrix). `tests` (effort: L)
 - [ ] 186 — [P4] Performance regression suite (per-check timings published as artifact). `perf` (effort: M)
 - [ ] 187 — [P4] Type-strictness ratchet (mypy `disallow_untyped_defs` on new modules, grandfather old). `quality` (effort: M)
@@ -283,10 +283,15 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 
 ## Suggested build order (next 4 milestones)
 
-- **v2.5.4 (hygiene):** 1–8, 12–17, 31, 171, 177, 192 — naming surface + packaging tests, no behavior change.
-- **v2.6.0 (engine + checks):** 9–11, 21–30, 41–60 (subset), 37, 109–110 — dual paths, parallelism, 10 highest-signal new checks.
-- **v2.7.0 (platform):** 61–79 (subset), 121–140 (subset), 141–145 — dashboard/API hardening, scheduler observability, SARIF/JUnit.
-- **v3.0.0 (compliance + remediation):** 81–120 — framework expansion, remediation bundles/approvals, attestation packs.
+- **Done, unreleased:** P0 naming block (1–20) + P1 engine core (21–40)
+  all merged to `main`; no release cut yet — release decision (v2.6.0?)
+  is a maintainer call, not loop work.
+- **First review at 50/200** (`ROADMAP-REVIEW-050.md`): P1 checks
+  41–50, then reassess.
+- **v2.6.0 (platform):** 61–79 (subset), 121–140 (subset), 141–145 —
+  dashboard/API hardening, scheduler observability, SARIF/JUnit.
+- **v3.0.0 (compliance + remediation):** 81–120 — framework expansion,
+  remediation bundles/approvals, attestation packs.
 
 ## Supersedes
 
