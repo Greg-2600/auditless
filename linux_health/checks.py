@@ -2997,6 +2997,78 @@ def check_kernel_hardening(ssh: SSHSession) -> CheckResult:
     )
 
 
+def check_secure_boot(ssh: SSHSession, password: str = "") -> CheckResult:
+    """Check UEFI Secure Boot state and module signature enforcement."""
+    category = "Boot/Kernel"
+
+    code, out, _ = _run(ssh, "[ -d /sys/firmware/efi ] && echo EFI || echo NOEFI")
+    if code != 0 or "NOEFI" in out:
+        return _pass(
+            "Secure Boot",
+            "No EFI firmware detected (VM/container?) — Secure Boot not applicable",
+            "Enable Secure Boot if the platform supports UEFI",
+            category,
+        )
+
+    cmd = (
+        "bash -lc 'mokutil --sb-state 2>/dev/null; "
+        "od -An -t u1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null"
+        ' | awk "{print $NF}"; '
+        'dmesg 2>/dev/null | grep -i "secure boot" | head -2\''
+    )
+    if password:
+        cmd = f"sudo -S {cmd}"
+    _, sb_out, _ = _run(ssh, cmd, password)
+    sb_text = sb_out.lower()
+    sb_on = (
+        "secureboot enabled" in sb_text
+        or "secure boot enabled" in sb_text
+        or any(line.strip() == "1" for line in sb_out.splitlines())
+    )
+    sb_off = "secureboot disabled" in sb_text or "secure boot disabled" in sb_text
+
+    sig_cmd = (
+        'bash -lc \'grep -o "module\\.sig_enforce=[^ ]*" /proc/cmdline 2>/dev/null; '
+        "dmesg 2>/dev/null | grep -i lockdown | head -2'"
+    )
+    if password:
+        sig_cmd = f"sudo -S {sig_cmd}"
+    _, sig_out, _ = _run(ssh, sig_cmd, password)
+    sig_text = sig_out.lower()
+    enforced = "module.sig_enforce=1" in sig_text or (
+        "lockdown" in sig_text
+        and ("integrity" in sig_text or "confidentiality" in sig_text)
+    )
+
+    if not sb_on and not sb_off:
+        return _warn(
+            "Secure Boot",
+            "Could not determine Secure Boot state (no mokutil output, "
+            "unreadable efivars, restricted dmesg)",
+            "Run privileged with mokutil installed to assess Secure Boot",
+            category,
+        )
+    findings = []
+    if sb_off:
+        findings.append("Secure Boot disabled")
+    if sb_on and not enforced:
+        findings.append("module signatures not enforced (module.sig_enforce)")
+    if findings:
+        return _warn(
+            "Secure Boot",
+            "; ".join(findings),
+            "Enable Secure Boot in firmware and enforce module signatures "
+            "(module.sig_enforce=1 or kernel lockdown)",
+            category,
+        )
+    return _pass(
+        "Secure Boot",
+        "Secure Boot enabled with module signature enforcement",
+        "Keep Secure Boot enabled; verify after firmware updates",
+        category,
+    )
+
+
 def check_file_integrity_tools(ssh: SSHSession) -> CheckResult:
     """Check for presence of file integrity monitoring tools (AIDE, Tripwire, OSSEC)."""
     category = "System Integrity"
@@ -3876,6 +3948,10 @@ def _check_thunks(ssh: SSHSession, password: str = "") -> list[tuple[str, _Check
             lambda: check_boot_loader_password(ssh, password),
         ),
         ("check_kernel_hardening", lambda: check_kernel_hardening(ssh)),
+        (
+            "check_secure_boot",
+            lambda: check_secure_boot(ssh, password),
+        ),
         ("check_file_integrity_tools", lambda: check_file_integrity_tools(ssh)),
         (
             "check_package_manager_security",

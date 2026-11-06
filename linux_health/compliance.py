@@ -39,6 +39,7 @@ UNMAPPED_REASONS: dict[str, str] = {
     "HRDN-7220": "compiler presence has no CIS control",
     "HTTP-6622": "web servers are outside the CIS OS benchmark",
     "DBS-1804": "databases are outside the CIS OS benchmark",
+    "BOOT-5124": "Secure Boot attestation has no CIS control in this catalog",
     "DBS-1000": "databases are outside the CIS OS benchmark",
     "DBS-1001": "databases are outside the CIS OS benchmark",
     "DBS-1002": "databases are outside the CIS OS benchmark",

@@ -3278,3 +3278,101 @@ class TestCheckSSHConfigDirectives:
         assert _parse_sshd_time("1h") == 3600
         assert _parse_sshd_time(None) is None
         assert _parse_sshd_time("bogus") is None
+
+
+class TestCheckSecureBoot:
+    """Tests for Secure Boot + module signature enforcement (BOOT-5124)."""
+
+    _host_seq = 0
+
+    def _session(self, routes):
+        from unittest.mock import Mock
+
+        TestCheckSecureBoot._host_seq += 1
+        hostname = f"secureboot-test-{TestCheckSecureBoot._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            for key, response in routes:
+                if key in command:
+                    return response
+            return 1, "", ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    def test_no_efi_passes_not_applicable(self):
+        """VMs/containers without EFI firmware pass (not applicable)."""
+        from linux_health.checks import check_secure_boot
+
+        ssh = self._session([("[ -d /sys/firmware/efi ]", (0, "NOEFI", ""))])
+        result = check_secure_boot(ssh, "")
+        assert result.status == "pass"
+        assert "not applicable" in result.details.lower()
+
+    def test_enabled_and_enforced_passes(self):
+        """Secure Boot on with enforced module signatures is clean."""
+        from linux_health.checks import check_secure_boot
+
+        ssh = self._session(
+            [
+                ("[ -d /sys/firmware/efi ]", (0, "EFI", "")),
+                (
+                    "mokutil --sb-state",
+                    (0, "SecureBoot enabled\n", ""),
+                ),
+                (
+                    'grep -o "module',
+                    (0, "BOOT_IMAGE=/vmlinuz module.sig_enforce=1 quiet\n", ""),
+                ),
+            ]
+        )
+        result = check_secure_boot(ssh, "")
+        assert result.status == "pass"
+
+    def test_disabled_warns(self):
+        """Disabled Secure Boot is a hardening gap."""
+        from linux_health.checks import check_secure_boot
+
+        ssh = self._session(
+            [
+                ("[ -d /sys/firmware/efi ]", (0, "EFI", "")),
+                ("mokutil --sb-state", (0, "SecureBoot disabled\n", "")),
+                ('grep -o "module', (0, "BOOT_IMAGE=/vmlinuz quiet\n", "")),
+            ]
+        )
+        result = check_secure_boot(ssh, "")
+        assert result.status == "warn"
+        assert "disabled" in result.details.lower()
+
+    def test_unenforced_signatures_warns(self):
+        """Secure Boot without module enforcement is inconsistent."""
+        from linux_health.checks import check_secure_boot
+
+        ssh = self._session(
+            [
+                ("[ -d /sys/firmware/efi ]", (0, "EFI", "")),
+                ("mokutil --sb-state", (0, "SecureBoot enabled\n", "")),
+                ('grep -o "module', (0, "BOOT_IMAGE=/vmlinuz quiet\n", "")),
+            ]
+        )
+        result = check_secure_boot(ssh, "")
+        assert result.status == "warn"
+        assert "sig_enforce" in result.details.lower()
+
+    def test_indeterminable_warns(self):
+        """EFI present but unreadable state warns instead of passing."""
+        from linux_health.checks import check_secure_boot
+
+        ssh = self._session(
+            [
+                ("[ -d /sys/firmware/efi ]", (0, "EFI", "")),
+                ("mokutil --sb-state", (1, "", "")),
+                ('grep -o "module', (1, "", "")),
+            ]
+        )
+        result = check_secure_boot(ssh, "")
+        assert result.status == "warn"
+        assert "could not determine" in result.details.lower()
