@@ -48,6 +48,7 @@ CHECK_TEST_IDS: dict[str, str] = {
     "check_world_writable_system_files": "FILE-7524",
     "check_deleted_file_handles": "PROC-3602",
     "check_boot_loader_password": "BOOT-5122",
+    "check_secure_boot": "BOOT-5124",
     "check_kernel_hardening": "KERN-5820",
     "check_file_integrity_tools": "FINT-4316",
     "check_package_manager_security": "PKGS-7388",

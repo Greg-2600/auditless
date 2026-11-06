@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Unprivileged scans (non-root, no sudo, no password) now mark the
   four root-only checks (stale/recent accounts, sudo usage, privilege
-  vectors) as unknown WARNs under a Privilege category instead of
+  vectors) as `unknown` results under a Privilege category instead of
   reporting PASS on unreadable sources. Privileged scans unchanged.
 - Severity re-grade (FAIL = active compromise / remotely exploitable /
   missing critical control; WARN = hardening gap). Upgraded to FAIL:
@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counted separately and excluded from hardening-index math (overall
   and per-category) and compliance verdicts/averages. Same for the
   scan-deadline truncation marker.
+- New checks: AUTH-9341 sudoers drop-in auditing, AUTH-9350 PAM
+  faillock/pwquality completeness, SSH-7408 sshd hardening directives
+  (AllowUsers/AllowGroups, MaxAuthTries, LoginGraceTime, ClientAlive),
+  BOOT-5124 Secure Boot state plus module signature enforcement.
 
 ### Deprecated
 
