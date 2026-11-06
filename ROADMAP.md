@@ -1,6 +1,6 @@
 # Auditless Roadmap — 200 Items, Prioritized
 
-> Canonical repo: `Greg-2600/auditless`. Status as of v2.5.3 (2026-11-05).
+> Canonical repo: `Greg-2600/auditless`. Status as of v2.5.3 (2026-11-06).
 > Test suite: **704 passed / 16 skipped** (coverage 89%). Gates: ruff / black / mypy / pylint 10.00 / bandit HIGH-only — all green.
 > This file is the single prioritized backlog. Check a box only when the work is merged to `main`.
 > Priority: **P0 = tech debt / correctness blocking**, **P1 = high-value next**, **P2 = important**, **P3 = nice-to-have**, **P4 = backlog / polish**.
@@ -35,7 +35,7 @@ Do these first. They are cheap, blocking, and every later doc/feature assumes th
 - [x] 2 — [P0] Fix `pyproject.toml [project.urls]` (`yourusername/linux_health` → `Greg-2600/auditless` ×4). `packaging` (effort: S)
 - [x] 3 — [P0] Fix stale `yourusername/linux_health` links in `CHANGELOG.md` (releases section), `.github/CONTRIBUTING.md`, `.github/*.md`. `docs` (effort: S)
 - [x] 4 — [P0] Retitle `README.md` H1 to `Auditless` with subtitle `Agentless Linux security scanner (formerly Linux Health)`; keep one `Linux Health` alias mention for searchability. `docs` (effort: S)
-- [x] 5 — [P0] Fix `README.md` badges: version `2.0.0` → `2.5.3` (or dynamic), tests `334/334` → `499`, coverage `76%` → actual. `docs` (effort: S)
+- [x] 5 — [P0] Fix `README.md` badges: version → `2.5.3`, tests → `507`, coverage → `87%` (static shields — lasting drift guard tracked in item 192). `docs` (effort: S)
 - [x] 6 — [P0] Unify `linux_health/dashboard.py` strings: module docstring + FastAPI `title/description` + `<title>`/`<h1>` currently mix `Linux Health Security Scanner` and `Auditless`. Canonical: `Auditless`. `dashboard` (effort: S)
 - [x] 7 — [P0] Unify `linux_health/report.py` + JSON `scan_info.scanner` (`Linux Health Security Scanner` → `Auditless`, keep `version`). Add test asserting the string. `report` (effort: S)
 - [x] 8 — [P0] Unify CLI help/epilog (`cli.py`, `--help` output, Docker `HEALTHCHECK`) on `auditless` as primary, `linux-health` noted as alias. `cli` (effort: S)
@@ -87,7 +87,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [x] 42 — [P1] PAM faillock / pwquality completeness (deny, unlock_time, minlen, retry) — `AUTH-9350`. `checks` (effort: S)
 - [x] 43 — [P1] SSH `AllowUsers/AllowGroups`, `MaxAuthTries`, `LoginGraceTime`, `ClientAlive*` hardening — extend `SSH-7408` family (item text misnamed `AUTH-9328`, which is sudo usage). `checks` (effort: S)
 - [x] 44 — [P1] Kernel Secure Boot + module signature enforcement (`mokutil --sb-state`, `module.sig_enforce`). `checks` (effort: S)
-- [ ] 45 — [P1] Kernel livepatch status (canonical/ubuntu-advantage, kpatch) informational. `checks` (effort: S)
+- [ ] 45 — [P1] Kernel livepatch status (canonical/ubuntu-advantage, kpatch) — report-only, never FAIL; `unknown` when tooling absent (no alert fatigue). `checks` (effort: S)
 - [ ] 46 — [P1] Sysctl extended pass beyond `check_kernel_hardening`'s set (`kernel.unprivileged_bpf_disabled`, `net.*` forwarding, and friends). `checks` (effort: M)
 - [ ] 47 — [P1] AIDE / Samhain / OSSEC presence **and** DB freshness (not just installed). `checks` (effort: S)
 - [ ] 48 — [P1] USBGuard / USB authorization (`usbcore.authorized_default`, UDISKS rules) — extend `USB-1000`. `checks` (effort: S)
@@ -108,7 +108,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 
 ## P1 — Dashboard & API (61–80)
 
-- [ ] 61 — [P1] Token auth on by default when `AUDITLESS_TOKEN` set — audit remaining unauthenticated `/api/*` routes; add test matrix. `api` (effort: M)
+- [ ] 61 — [P1] Token auth on by default when `AUDITLESS_TOKEN` set — audit remaining unauthenticated `/api/*` routes; add test matrix; lock timing-safe compare (`hmac.compare_digest`) with a test; assert tokens/secrets never hit logs. `api` (effort: M)
 - [ ] 62 — [P1] RBAC-lite: `viewer` vs `operator` tokens (view vs scan/remediate/rotate). `api` (effort: M)
 - [ ] 63 — [P1] Pagination + filtering on `/api/reports`, `/api/hosts`, `/api/scans` (limit/offset, status, host, date range). `api` (effort: M)
 - [ ] 64 — [P1] Live scan progress via WebSocket/SSE (`/api/scans/{id}/events`) instead of poll-only. `api` (effort: M)
@@ -125,9 +125,9 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [ ] 75 — [P1] Secrets migration/rotation UI affordances (today curl-only `POST /api/maintenance/*`). `ui` (effort: S)
 - [ ] 76 — [P1] Dashboard accessibility pass (keyboard nav, ARIA, contrast) + mobile layout. `ui` (effort: M)
 - [ ] 77 — [P1] Dark mode + print stylesheet for reports. `ui` (effort: S)
-- [ ] 78 — [P1] CSRF + session hardening review for cookie paths (if any added); document bearer-only rationale. `security` (effort: S)
-- [ ] 79 — [P1] Rate limiting on scan-start + auth endpoints (per-IP token bucket). `api` (effort: S)
-- [x] 80 — [P1] UI e2e tests, Selenium harness (DONE: `tests/test_ui_selenium.py` — headless Chrome, skip-guarded, seeded via public API with stubbed `run_scan`; asserts index empty-state + zero SEVERE console errors, history → report render, fleet table; `selenium` in requirements-dev; runs in CI and in the `/roadmap` e2e gate). Follow-ups: login/token-bar flow, add-host form submit, diff-view click path. `tests` (effort: L)
+- [ ] 78 — [P1] CSRF + session hardening review for cookie paths (if any added); document bearer-only rationale; add CSP / `X-Frame-Options` / `X-Content-Type-Options` headers + XSS review of host-controlled rendering (hostnames, check output). `security` (effort: S)
+- [ ] 79 — [P1] Rate limiting on scan-start + auth endpoints (per-IP token bucket; `429` + `Retry-After`, covered by test). `api` (effort: S)
+- [x] 80 — [P1] UI e2e tests, Selenium harness (DONE: `tests/test_ui_selenium.py` — headless Chrome, skip-guarded, seeded via public API with stubbed `run_scan`; asserts index empty-state + zero SEVERE console errors, history → report render, fleet table; `selenium` in requirements-dev; runs in CI and in the `/roadmap` e2e gate). Follow-ups tracked in 69 (diff-view click path) and 74 (login/token-bar flow, add-host submit). `tests` (effort: L)
 
 ---
 
@@ -183,9 +183,9 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 
 ## P2 — Fleet, scheduler & automation (121–140)
 
-- [ ] 121 — [P2] Timezone-aware cron schedules (store TZ per schedule; DST-safe next-run). `scheduler` (effort: M)
+- [ ] 121 — [P2] Timezone-aware cron schedules (store TZ per schedule; DST-safe next-run; persisted `next_run` survives process restart — prove with restart test). `scheduler` (effort: M)
 - [ ] 122 — [P2] Schedule jitter + overlap guard audit (already partial — prove with contention tests). `scheduler` (effort: S)
-- [ ] 123 — [P2] Webhook delivery log + dead-letter replay UI (today retry-only). `scheduler` (effort: M)
+- [ ] 123 — [P2] Webhook delivery log + dead-letter replay UI (today retry-only) + SSRF guard (deny private-range URLs unless explicitly allowlisted). `scheduler` (effort: M)
 - [ ] 124 — [P2] Webhook signing (HMAC) + receiver verification docs. `security` (effort: S)
 - [ ] 125 — [P2] Threshold policies per group (not just per host) + hysteresis (no flapping alerts). `scheduler` (effort: M)
 - [ ] 126 — [P2] Drift-alert digest mode (daily summary instead of per-run spam). `scheduler` (effort: S)
@@ -198,7 +198,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [ ] 133 — [P2] Offline/air-gap bundle (`auditless bundle` → run elsewhere → `auditless ingest`). `cli` (effort: M)
 - [ ] 134 — [P2] `cron.py` ↔ `scheduler.py` consolidation (one scheduler; today two modules overlap). `scheduler` (effort: M)
 - [ ] 135 — [P2] Backup encryption + restore drill (`POST /api/maintenance/restore` tested in CI). `store` (effort: M)
-- [ ] 136 — [P2] SQLite → Postgres optional backend (fleet-scale deployments). `store` (effort: L)
+- [ ] 136 — [P2] SQLite → Postgres optional backend (fleet-scale deployments) with migration path + parity test (same scan → same score on both). `store` (effort: L)
 - [ ] 137 — [P2] Data retention policies (auto-prune old reports/snapshots/logs per policy). `store` (effort: M)
 - [ ] 138 — [P2] Fleet tagging + dynamic inventory sync (AWS/GCP/Azure/NetBox importers). `integrations` (effort: L)
 - [ ] 139 — [P2] Maintenance windows (suppress alerts during windows, still record). `scheduler` (effort: M)
@@ -221,7 +221,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [ ] 151 — [P3] Jenkins shared-library step + Azure DevOps task. `integrations` (effort: M)
 - [ ] 152 — [P3] OPA/Rego policy gate example (fail pipeline on FAIL in category X). `integrations` (effort: S)
 - [ ] 153 — [P3] Report redaction mode (`--redact ips,users`) for sharing/pasting. `reports` (effort: S)
-- [ ] 154 — [P3] Executive-summary template (one-page: index, delta, top-5 risks, trend). `reports` (effort: S)
+- [ ] 154 — [P3] Executive-summary template (one-page: index, delta, top-5 risks ranked by severity × exposure using item-50 socket attribution, trend). `reports` (effort: S)
 - [ ] 155 — [P3] i18n scaffolding for UI strings (en first, community locales later). `ui` (effort: M)
 - [ ] 156 — [P3] CLI interactive TUI (`auditless interactive`: pick host → scan → browse results). `cli` (effort: L)
 - [ ] 157 — [P3] Shell completions (bash/zsh/fish) for CLI flags + test IDs. `cli` (effort: S)
@@ -269,7 +269,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [ ] 189 — [P4] Docs site (MkDocs + `docs/` as source, versioned per release, hosted on GH Pages). `docs` (effort: M)
 - [ ] 190 — [P4] Check-authoring cookbook (`docs/CHECK_AUTHORING.md` mirroring `REMEDIATION_AUTHORING.md`) + template generator (`auditless new-check`). `docs` (effort: M)
 - [ ] 191 — [P4] Architecture Decision Records (`docs/adr/`: naming, scheduler, store backend, auth model). `docs` (effort: S)
-- [ ] 192 — [P4] `PROJECT_STRUCTURE.md` + `FEATURES_ADDED.md` refresh (both stale vs v2.5.x reality). `docs` (effort: M)
+- [ ] 192 — [P4] `PROJECT_STRUCTURE.md` + `FEATURES_ADDED.md` refresh (both stale vs v2.5.x reality) + README badge-freshness guard (static shields drifted `499`→`507` once already: test or automation) + remaining `Linux Health` stragglers in README body (comparison table, advantages, copyright) + `NAMING.md` upkeep. `docs` (effort: M)
 - [ ] 193 — [P4] Demo environment (`docker compose --profile demo`: scanner + vulnerable target + seeded data). `docs` (effort: M)
 - [ ] 194 — [P4] Video/GIF quickstart in README (60-second scan-to-report). `docs` (effort: S)
 - [ ] 195 — [P4] Community health: `CODE_OF_CONDUCT` enforcement contact, issue/PR templates triage, `good-first-issue` label pass. `community` (effort: S)
@@ -284,7 +284,8 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 ## Suggested build order (next 4 milestones)
 
 - **Done, unreleased:** P0 naming block (1–20) + P1 engine core (21–40)
-  all merged to `main`; no release cut yet — release decision (v2.6.0?)
+  + checks 41–44, UI e2e (80), SECURITY.md parameterize (177) — 46/200
+  merged to `main`; no release cut yet — release decision (v2.6.0?)
   is a maintainer call, not loop work.
 - **First review at 50/200** (`ROADMAP-REVIEW-050.md`): P1 checks
   41–50, then reassess.
