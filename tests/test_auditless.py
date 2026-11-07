@@ -3463,3 +3463,110 @@ class TestCheckKernelLivepatch:
         ):
             ssh = self._session(output)
             assert check_kernel_livepatch(ssh, "").status != "fail"
+
+
+class TestCheckSysctlExtended:
+    """Tests for extended sysctl hardening (KERN-5822)."""
+
+    _host_seq = 0
+
+    def _session(self, outputs, code=0):
+        from unittest.mock import Mock
+
+        TestCheckSysctlExtended._host_seq += 1
+        hostname = f"sysctlext-test-{TestCheckSysctlExtended._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            if "perf_event_paranoid" in command:
+                return code, outputs[1] if len(outputs) > 1 else "", ""
+            return code, outputs[0], ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    _HARDENED = (
+        "kernel.unprivileged_bpf_disabled = 2\n"
+        "kernel.unprivileged_userns_clone = 0\n"
+        "net.ipv4.ip_forward = 0\n"
+        "net.ipv6.conf.all.forwarding = 0\n"
+        "fs.protected_hardlinks = 1\n"
+        "fs.protected_symlinks = 1\n"
+        "net.ipv4.tcp_syncookies = 1\n"
+    )
+
+    def test_hardened_passes(self):
+        """Fully hardened extended set (incl. paranoid=4) passes."""
+        from linux_health.checks import check_sysctl_extended
+
+        ssh = self._session([self._HARDENED, "kernel.perf_event_paranoid = 4\n"])
+        result = check_sysctl_extended(ssh)
+        assert result.status == "pass"
+        assert result.test_id == "KERN-5822"
+
+    def test_bpf_enabled_warns(self):
+        """Unprivileged BPF allowed is a hardening gap."""
+        from linux_health.checks import check_sysctl_extended
+
+        out = self._HARDENED.replace(
+            "kernel.unprivileged_bpf_disabled = 2",
+            "kernel.unprivileged_bpf_disabled = 0",
+        )
+        ssh = self._session([out, "kernel.perf_event_paranoid = 2\n"])
+        result = check_sysctl_extended(ssh)
+        assert result.status == "warn"
+        assert "unprivileged_bpf_disabled" in result.details
+
+    def test_forwarding_warns(self):
+        """IP forwarding on warns."""
+        from linux_health.checks import check_sysctl_extended
+
+        out = self._HARDENED.replace(
+            "net.ipv4.ip_forward = 0", "net.ipv4.ip_forward = 1"
+        )
+        ssh = self._session([out, "kernel.perf_event_paranoid = 2\n"])
+        result = check_sysctl_extended(ssh)
+        assert result.status == "warn"
+        assert "ip_forward" in result.details
+
+    def test_paranoid_low_warns(self):
+        """perf_event_paranoid=1 warns; >=2 is accepted."""
+        from linux_health.checks import check_sysctl_extended
+
+        ssh = self._session([self._HARDENED, "kernel.perf_event_paranoid = 1\n"])
+        result = check_sysctl_extended(ssh)
+        assert result.status == "warn"
+        assert "perf_event_paranoid" in result.details
+
+    def test_missing_keys_skipped(self):
+        """Absent keys (old/RHEL kernels) skip without failing."""
+        from linux_health.checks import check_sysctl_extended
+
+        out = (
+            "net.ipv4.ip_forward = 0\n"
+            "net.ipv6.conf.all.forwarding = 0\n"
+            "fs.protected_hardlinks = 1\n"
+            "fs.protected_symlinks = 1\n"
+            "net.ipv4.tcp_syncookies = 1\n"
+        )
+        ssh = self._session([out, "kernel.perf_event_paranoid = 2\n"])
+        result = check_sysctl_extended(ssh)
+        assert result.status == "pass"
+
+    def test_no_keys_unknown(self):
+        """Zero readable keys is unknown, not a false pass."""
+        from linux_health.checks import check_sysctl_extended
+
+        ssh = self._session(["", ""], code=0)
+        result = check_sysctl_extended(ssh)
+        assert result.status == "unknown"
+
+    def test_sysctl_failed_unknown(self):
+        """sysctl failure is unknown, not a false pass."""
+        from linux_health.checks import check_sysctl_extended
+
+        ssh = self._session(["", ""], code=1)
+        result = check_sysctl_extended(ssh)
+        assert result.status == "unknown"
