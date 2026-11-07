@@ -3376,3 +3376,90 @@ class TestCheckSecureBoot:
         result = check_secure_boot(ssh, "")
         assert result.status == "warn"
         assert "could not determine" in result.details.lower()
+
+
+class TestCheckKernelLivepatch:
+    """Tests for kernel livepatch status (KRNL-5790). Report-only: never FAIL."""
+
+    _host_seq = 0
+
+    def _session(self, output, code=0):
+        from unittest.mock import Mock
+
+        TestCheckKernelLivepatch._host_seq += 1
+        hostname = f"livepatch-test-{TestCheckKernelLivepatch._host_seq}"
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = lambda command, timeout=10.0: (code, output, "")
+        return ssh
+
+    def test_no_tooling_is_unknown(self):
+        """Absent tooling is informational unknown, excluded from scoring."""
+        from linux_health.checks import check_kernel_livepatch
+
+        ssh = self._session("", code=1)
+        result = check_kernel_livepatch(ssh, "")
+        assert result.status == "unknown"
+        assert result.test_id == "KRNL-5790"
+
+    def test_canonical_active_passes(self):
+        """Enabled Canonical Livepatch with applied patches is clean."""
+        from linux_health.checks import check_kernel_livepatch
+
+        ssh = self._session(
+            "/usr/bin/canonical-livepatch\n"
+            "status: enabled\n"
+            "patch state: applied\n"
+        )
+        result = check_kernel_livepatch(ssh, "")
+        assert result.status == "pass"
+
+    def test_canonical_disabled_warns(self):
+        """Installed but not enabled warns (never fails)."""
+        from linux_health.checks import check_kernel_livepatch
+
+        ssh = self._session(
+            "/usr/bin/canonical-livepatch\n"
+            "Machine is not enabled. Please run `pro enable`.\n"
+        )
+        result = check_kernel_livepatch(ssh, "")
+        assert result.status == "warn"
+
+    def test_kpatch_loaded_passes(self):
+        """Loaded kpatch modules pass."""
+        from linux_health.checks import check_kernel_livepatch
+
+        ssh = self._session(
+            "/usr/bin/kpatch\nLoaded patch modules:\nkpatch_5_15_0_91\n"
+        )
+        result = check_kernel_livepatch(ssh, "")
+        assert result.status == "pass"
+
+    def test_kpatch_idle_warns(self):
+        """kpatch present with no loaded patches warns."""
+        from linux_health.checks import check_kernel_livepatch
+
+        ssh = self._session("/usr/bin/kpatch\nLoaded patch modules:\n")
+        result = check_kernel_livepatch(ssh, "")
+        assert result.status == "warn"
+
+    def test_sysfs_enabled_passes(self):
+        """A live /sys/kernel/livepatch enabled flag passes."""
+        from linux_health.checks import check_kernel_livepatch
+
+        ssh = self._session("/sys/kernel/livepatch/kpatch_5_15_0_91/enabled:1\n")
+        result = check_kernel_livepatch(ssh, "")
+        assert result.status == "pass"
+
+    def test_never_fails(self):
+        """Report-only contract: no input may produce FAIL."""
+        from linux_health.checks import check_kernel_livepatch
+
+        for output in (
+            "",
+            "garbage $$$ output\n",
+            "/usr/bin/canonical-livepatch\nstatus: unknown-thing\n",
+        ):
+            ssh = self._session(output)
+            assert check_kernel_livepatch(ssh, "").status != "fail"

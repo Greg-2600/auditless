@@ -87,7 +87,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [x] 42 — [P1] PAM faillock / pwquality completeness (deny, unlock_time, minlen, retry) — `AUTH-9350`. `checks` (effort: S)
 - [x] 43 — [P1] SSH `AllowUsers/AllowGroups`, `MaxAuthTries`, `LoginGraceTime`, `ClientAlive*` hardening — extend `SSH-7408` family (item text misnamed `AUTH-9328`, which is sudo usage). `checks` (effort: S)
 - [x] 44 — [P1] Kernel Secure Boot + module signature enforcement (`mokutil --sb-state`, `module.sig_enforce`). `checks` (effort: S)
-- [ ] 45 — [P1] Kernel livepatch status (canonical/ubuntu-advantage, kpatch) — report-only, never FAIL; `unknown` when tooling absent (no alert fatigue). `checks` (effort: S)
+- [x] 45 — [P1] Kernel livepatch status (canonical/ubuntu-advantage, kpatch) — report-only, never FAIL; `unknown` when tooling absent (no alert fatigue). `checks` (effort: S)
 - [ ] 46 — [P1] Sysctl extended pass beyond `check_kernel_hardening`'s set (`kernel.unprivileged_bpf_disabled`, `net.*` forwarding, and friends). `checks` (effort: M)
 - [ ] 47 — [P1] AIDE / Samhain / OSSEC presence **and** DB freshness (not just installed). `checks` (effort: S)
 - [ ] 48 — [P1] USBGuard / USB authorization (`usbcore.authorized_default`, UDISKS rules) — extend `USB-1000`. `checks` (effort: S)

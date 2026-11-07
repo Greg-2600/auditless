@@ -42,7 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New checks: AUTH-9341 sudoers drop-in auditing, AUTH-9350 PAM
   faillock/pwquality completeness, SSH-7408 sshd hardening directives
   (AllowUsers/AllowGroups, MaxAuthTries, LoginGraceTime, ClientAlive),
-  BOOT-5124 Secure Boot state plus module signature enforcement.
+  BOOT-5124 Secure Boot state plus module signature enforcement,
+  KRNL-5790 kernel livepatch status (report-only: active passes,
+  idle warns, absent tooling is unknown — never FAIL).
 
 ### Deprecated
 
