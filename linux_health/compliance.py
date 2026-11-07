@@ -89,6 +89,7 @@ CONTROL_TITLES = {
 TEST_CIS: dict[str, list[tuple[str, str]]] = {
     "BOOT-5122": [("1.4.1", "direct")],
     "KERN-5820": [("3.2", "direct")],
+    "KERN-5822": [("3.2", "partial")],
     "KRNL-5788": [("1.1", "partial")],
     "SSH-7408": [("5.2", "direct")],
     "FIRE-4512": [("3.4", "direct")],

@@ -2997,6 +2997,95 @@ def check_kernel_hardening(ssh: SSHSession) -> CheckResult:
     )
 
 
+def check_sysctl_extended(ssh: SSHSession) -> CheckResult:
+    """Check extended sysctl hardening beyond check_kernel_hardening's set.
+
+    Covers unprivileged-BPF lockdown, user-namespace clone, IP forwarding,
+    hardlink/symlink protection, SYN cookies, and perf-event paranoia.
+    Keys absent on a kernel are skipped (distro variance); if no key is
+    readable at all the result is unknown, not a false pass.
+    """
+    category = "Boot/Kernel"
+
+    security_params = {
+        "kernel.unprivileged_bpf_disabled": "2",
+        "kernel.unprivileged_userns_clone": "0",
+        "net.ipv4.ip_forward": "0",
+        "net.ipv6.conf.all.forwarding": "0",
+        "fs.protected_hardlinks": "1",
+        "fs.protected_symlinks": "1",
+        "net.ipv4.tcp_syncookies": "1",
+    }
+
+    cmd = "bash -lc 'sysctl " + " ".join(security_params.keys()) + " 2>/dev/null'"
+    code, out, _ = _run(ssh, cmd)
+
+    if code != 0:
+        return _unknown(
+            "Extended sysctl hardening",
+            "sysctl not available or failed — could not assess",
+            "Check kernel parameters manually",
+            category,
+        )
+
+    values: dict[str, str] = {}
+    for line in out.splitlines():
+        for param in security_params:
+            if line.startswith(param + " =") or line.startswith(param + "="):
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                    values[param] = parts[1].strip()
+
+    # kernel.perf_event_paranoid accepts 2 or higher (distros vary: 2/3/4).
+    paranoid_cmd = "bash -lc 'sysctl kernel.perf_event_paranoid 2>/dev/null'"
+    _, paranoid_out, _ = _run(ssh, paranoid_cmd)
+    paranoid_read = False
+    for line in paranoid_out.splitlines():
+        if line.startswith("kernel.perf_event_paranoid"):
+            parts = line.split("=", 1)
+            if len(parts) == 2:
+                paranoid_read = True
+                try:
+                    if int(parts[1].strip()) < 2:
+                        values["kernel.perf_event_paranoid"] = parts[1].strip()
+                    else:
+                        values["kernel.perf_event_paranoid"] = "2"
+                except ValueError:
+                    values["kernel.perf_event_paranoid"] = parts[1].strip()
+
+    if not values and not paranoid_read:
+        return _unknown(
+            "Extended sysctl hardening",
+            "No extended sysctl keys readable on this kernel — informational only",
+            "Verify hardening parameters for this distro manually",
+            category,
+        )
+
+    expected = dict(security_params)
+    expected["kernel.perf_event_paranoid"] = "2"
+    issues = [
+        f"{param}={actual} (expected {expected[param]})"
+        for param, actual in values.items()
+        if param in expected and actual != expected[param]
+    ]
+    checked = len(values)
+
+    if issues:
+        return _warn(
+            "Extended sysctl hardening",
+            f"Insecure extended kernel parameters: {', '.join(issues[:5])}",
+            "Configure hardening parameters in /etc/sysctl.conf or /etc/sysctl.d/",
+            category,
+        )
+
+    return _pass(
+        "Extended sysctl hardening",
+        f"Extended kernel security parameters properly configured ({checked} checked)",
+        "No action",
+        category,
+    )
+
+
 def check_secure_boot(ssh: SSHSession, password: str = "") -> CheckResult:
     """Check UEFI Secure Boot state and module signature enforcement."""
     category = "Boot/Kernel"
@@ -4010,6 +4099,7 @@ def _check_thunks(ssh: SSHSession, password: str = "") -> list[tuple[str, _Check
             lambda: check_boot_loader_password(ssh, password),
         ),
         ("check_kernel_hardening", lambda: check_kernel_hardening(ssh)),
+        ("check_sysctl_extended", lambda: check_sysctl_extended(ssh)),
         (
             "check_secure_boot",
             lambda: check_secure_boot(ssh, password),

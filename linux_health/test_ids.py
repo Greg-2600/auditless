@@ -51,6 +51,7 @@ CHECK_TEST_IDS: dict[str, str] = {
     "check_secure_boot": "BOOT-5124",
     "check_kernel_livepatch": "KRNL-5790",
     "check_kernel_hardening": "KERN-5820",
+    "check_sysctl_extended": "KERN-5822",
     "check_file_integrity_tools": "FINT-4316",
     "check_package_manager_security": "PKGS-7388",
     "check_logging_and_auditing": "LOGG-2138",
