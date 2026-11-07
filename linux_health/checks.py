@@ -3069,6 +3069,68 @@ def check_secure_boot(ssh: SSHSession, password: str = "") -> CheckResult:
     )
 
 
+def check_kernel_livepatch(ssh: SSHSession, password: str = "") -> CheckResult:
+    """Check kernel livepatch status (canonical-livepatch, kpatch).
+
+    Report-only: never FAIL. Active patching passes; installed-but-idle
+    warns; absent tooling is unknown (informational, excluded from
+    hardening-index math).
+    """
+    category = "Boot/Kernel"
+
+    cmd = (
+        "bash -lc 'command -v canonical-livepatch 2>/dev/null; "
+        "canonical-livepatch status 2>/dev/null; "
+        "command -v kpatch 2>/dev/null; kpatch list 2>/dev/null; "
+        "for d in /sys/kernel/livepatch/*/enabled; do "
+        '[ -f "$d" ] && echo "$d:$(cat $d 2>/dev/null)"; done\''
+    )
+    if password:
+        cmd = f"sudo -S {cmd}"
+    _, out, _ = _run(ssh, cmd, password)
+    text = out.lower()
+
+    canonical_on = (
+        "enabled: true" in text
+        or "status: enabled" in text
+        or "patch state: applied" in text
+    )
+    canonical_off = (
+        "enabled: false" in text
+        or "machine is not enabled" in text
+        or "not enabled" in text
+    )
+    sysfs_on = any(
+        line.split(":")[-1].strip() == "1"
+        for line in out.splitlines()
+        if "/sys/kernel/livepatch/" in line
+    )
+    kpatch_loaded = any(line.strip().startswith("kpatch_") for line in out.splitlines())
+
+    if canonical_on or sysfs_on or kpatch_loaded:
+        return _pass(
+            "Kernel livepatch",
+            "Kernel live patching is active",
+            "No action — live patches apply without reboot",
+            category,
+        )
+    if "canonical-livepatch" in text or "kpatch" in text or canonical_off:
+        return _warn(
+            "Kernel livepatch",
+            "Livepatch tooling installed but no active patches",
+            "Enable Canonical Livepatch (pro enable) or load kpatch "
+            "modules so reboots are not required for kernel fixes",
+            category,
+        )
+    return _unknown(
+        "Kernel livepatch",
+        "No livepatch tooling detected (canonical-livepatch/kpatch/"
+        "sysfs livepatch absent) — informational only",
+        "Install livepatch tooling if reboot-free kernel updates matter",
+        category,
+    )
+
+
 def check_file_integrity_tools(ssh: SSHSession) -> CheckResult:
     """Check for presence of file integrity monitoring tools (AIDE, Tripwire, OSSEC)."""
     category = "System Integrity"
@@ -3951,6 +4013,10 @@ def _check_thunks(ssh: SSHSession, password: str = "") -> list[tuple[str, _Check
         (
             "check_secure_boot",
             lambda: check_secure_boot(ssh, password),
+        ),
+        (
+            "check_kernel_livepatch",
+            lambda: check_kernel_livepatch(ssh, password),
         ),
         ("check_file_integrity_tools", lambda: check_file_integrity_tools(ssh)),
         (
