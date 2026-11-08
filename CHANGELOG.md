@@ -46,7 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   KRNL-5790 kernel livepatch status (report-only: active passes,
   idle warns, absent tooling is unknown — never FAIL),
   KERN-5822 extended sysctl pass (unprivileged BPF, userns clone,
-  forwarding, hardlink/symlink protection, SYN cookies, perf paranoia).
+  forwarding, hardlink/symlink protection, SYN cookies, perf paranoia),
+  FINT-4316 FIM database freshness (AIDE/Tripwire DB age + schedule,
+  Samhain/OSSEC daemons — presence alone no longer passes).
 
 ### Deprecated
 

@@ -3221,7 +3221,13 @@ def check_kernel_livepatch(ssh: SSHSession, password: str = "") -> CheckResult:
 
 
 def check_file_integrity_tools(ssh: SSHSession) -> CheckResult:
-    """Check for presence of file integrity monitoring tools (AIDE, Tripwire, OSSEC)."""
+    """Check file integrity monitoring tools AND database freshness.
+
+    Presence alone is not enough: an uninitialized or unscheduled AIDE
+    install detects nothing. Stage 1 detects tool binaries; stage 2
+    verifies each found tool has an initialized database plus scheduled
+    checks (cron/systemd timer) or a running daemon.
+    """
     category = "System Integrity"
 
     tools = ["aide", "tripwire", "ossec-control", "samhain"]
@@ -3242,10 +3248,128 @@ def check_file_integrity_tools(ssh: SSHSession) -> CheckResult:
         )
 
     tools_found = out.strip().split("\n")
+
+    probe = (
+        "bash -lc 'echo NOW:$(date +%s 2>/dev/null); "
+        "for db in /var/lib/aide/aide.db /var/lib/aide/aide.db.new; do "
+        '[ -f "$db" ] && echo AIDE_DB:$(stat -c %Y "$db" 2>/dev/null); done; '
+        "ls /etc/cron.d/aide /etc/cron.daily/aide /etc/cron.weekly/aide 2>/dev/null; "
+        "systemctl list-timers --all 2>/dev/null | grep -i aide | head -1; "
+        "for twd in /var/lib/tripwire/*.twd; do "
+        '[ -f "$twd" ] && echo TRIPWIRE_DB:$(stat -c %Y "$twd" 2>/dev/null); done; '
+        "ls /etc/cron.d/tripwire /etc/cron.daily/tripwire 2>/dev/null; "
+        "systemctl list-timers --all 2>/dev/null | grep -i tripwire | head -1; "
+        "for sdb in /var/lib/samhain/samhain_file /var/lib/samhain/samhain.db; do "
+        '[ -f "$sdb" ] && echo SAMHAIN_DB:$(stat -c %Y "$sdb" 2>/dev/null); done; '
+        "pgrep -f samhain >/dev/null 2>&1 && echo SAMHAIN_PROC:running; "
+        "pgrep -f ossec-syscheckd >/dev/null 2>&1 && echo OSSEC_PROC:running; "
+        "pgrep -f ossec-agentd >/dev/null 2>&1 && echo OSSEC_AGENT:running; "
+        "true'"
+    )
+    _, probe_out, _ = _run(ssh, probe)
+
+    now = 0
+    for line in probe_out.splitlines():
+        if line.startswith("NOW:"):
+            try:
+                now = int(line.split(":", 1)[1].strip())
+            except ValueError:
+                now = 0
+
+    if now == 0 and not any(
+        marker in probe_out
+        for marker in ("AIDE_DB:", "TRIPWIRE_DB:", "SAMHAIN_DB:", "PROC:running")
+    ):
+        return _unknown(
+            "File integrity monitoring",
+            f"Tools installed ({', '.join(tools_found)}) but database "
+            "freshness is unverifiable (restricted access?)",
+            "Re-run privileged to verify FIM database freshness",
+            category,
+        )
+
+    stale_limit = 90 * 86400
+    fresh = []
+    problems = []
+
+    def scheduled(tool: str) -> bool:
+        """True if a cron path or systemd timer line names this tool."""
+        return any(
+            tool in line and ("cron" in line or ".timer" in line)
+            for line in probe_out.splitlines()
+        )
+
+    if "aide" in tools_found:
+        db_times = [
+            int(line.split(":", 1)[1])
+            for line in probe_out.splitlines()
+            if line.startswith("AIDE_DB:") and line.split(":", 1)[1].strip().isdigit()
+        ]
+        has_sched = scheduled("aide")
+        if not db_times:
+            problems.append("AIDE database not initialized (run aideinit)")
+        elif not has_sched:
+            problems.append("AIDE has no scheduled checks (cron/systemd timer)")
+        elif now and now - min(db_times) > stale_limit:
+            problems.append("AIDE database older than 90 days (re-initialize)")
+        else:
+            fresh.append("AIDE database fresh with scheduled checks")
+
+    if "tripwire" in tools_found:
+        db_times = [
+            int(line.split(":", 1)[1])
+            for line in probe_out.splitlines()
+            if line.startswith("TRIPWIRE_DB:")
+            and line.split(":", 1)[1].strip().isdigit()
+        ]
+        has_sched = scheduled("tripwire")
+        if not db_times:
+            problems.append("Tripwire database not initialized (run tripwire --init)")
+        elif not has_sched:
+            problems.append("Tripwire has no scheduled checks (cron/systemd timer)")
+        elif now and now - min(db_times) > stale_limit:
+            problems.append("Tripwire database older than 90 days (re-initialize)")
+        else:
+            fresh.append("Tripwire database fresh with scheduled checks")
+
+    if "samhain" in tools_found:
+        has_db = "SAMHAIN_DB:" in probe_out
+        running = "SAMHAIN_PROC:running" in probe_out
+        has_sched = scheduled("samhain")
+        if not has_db:
+            problems.append("Samhain database not initialized")
+        elif not running and not has_sched:
+            problems.append("Samhain neither running nor scheduled")
+        else:
+            fresh.append("Samhain database present and monitored")
+
+    if "ossec-control" in tools_found:
+        if "OSSEC_PROC:running" in probe_out or "OSSEC_AGENT:running" in probe_out:
+            fresh.append("OSSEC syscheck daemon running")
+        else:
+            problems.append("OSSEC installed but syscheck/agent daemons not running")
+
+    if problems:
+        return _warn(
+            "File integrity monitoring",
+            "; ".join(problems),
+            "Initialize databases and schedule recurring integrity checks",
+            category,
+        )
+
+    if not fresh:
+        return _unknown(
+            "File integrity monitoring",
+            f"Tools installed ({', '.join(tools_found)}) but no freshness "
+            "evidence collected",
+            "Re-run privileged to verify FIM database freshness",
+            category,
+        )
+
     return _pass(
         "File integrity monitoring",
-        f"Tools installed: {', '.join(tools_found)}",
-        "Ensure database is initialized and scheduled scans are configured",
+        "; ".join(fresh),
+        "No action",
         category,
     )
 

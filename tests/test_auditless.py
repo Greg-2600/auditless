@@ -3570,3 +3570,141 @@ class TestCheckSysctlExtended:
         ssh = self._session(["", ""], code=1)
         result = check_sysctl_extended(ssh)
         assert result.status == "unknown"
+
+
+class TestCheckFileIntegrityFreshness:
+    """Tests for FIM database freshness (item 47, FINT-4316)."""
+
+    _host_seq = 0
+    NOW = 1794000000
+
+    def _session(self, presence, probe):
+        from unittest.mock import Mock
+
+        TestCheckFileIntegrityFreshness._host_seq += 1
+        hostname = f"fim-test-{TestCheckFileIntegrityFreshness._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            if "for tool in" in command:
+                return 0, presence, ""
+            return 0, probe, ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    def _probe(self, *lines):
+        return f"NOW:{self.NOW}\n" + "".join(line + "\n" for line in lines)
+
+    def test_no_tools_warns(self):
+        """No FIM tooling still warns as before."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session("", "")
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "warn"
+        assert "No file integrity" in result.details
+
+    def test_aide_fresh_passes(self):
+        """AIDE with fresh DB and cron schedule passes."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session(
+            "aide",
+            self._probe(
+                f"AIDE_DB:{self.NOW - 86400}",
+                "/etc/cron.daily/aide",
+            ),
+        )
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "pass"
+        assert "AIDE" in result.details
+        assert result.test_id == "FINT-4316"
+
+    def test_aide_uninitialized_warns(self):
+        """AIDE binary with no database warns (presence is not enough)."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session("aide", self._probe())
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "warn"
+        assert "not initialized" in result.details
+
+    def test_aide_unscheduled_warns(self):
+        """AIDE with DB but no scheduled checks warns."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session("aide", self._probe(f"AIDE_DB:{self.NOW - 86400}"))
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "warn"
+        assert "no scheduled checks" in result.details.lower()
+
+    def test_aide_stale_warns(self):
+        """AIDE database older than 90 days warns despite schedule."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session(
+            "aide",
+            self._probe(
+                f"AIDE_DB:{self.NOW - 100 * 86400}",
+                "/etc/cron.daily/aide",
+            ),
+        )
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "warn"
+        assert "90 days" in result.details
+
+    def test_tripwire_timer_passes(self):
+        """Tripwire with DB and systemd timer passes."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session(
+            "tripwire",
+            self._probe(
+                f"TRIPWIRE_DB:{self.NOW - 86400}",
+                "tripwire-check.timer",
+            ),
+        )
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "pass"
+
+    def test_ossec_running_passes(self):
+        """OSSEC with live syscheck daemon passes."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session("ossec-control", self._probe("OSSEC_PROC:running"))
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "pass"
+
+    def test_ossec_dead_warns(self):
+        """OSSEC installed with dead daemons warns."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session("ossec-control", self._probe())
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "warn"
+        assert "not running" in result.details
+
+    def test_samhain_running_passes(self):
+        """Samhain with DB and running daemon passes."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session(
+            "samhain",
+            self._probe(
+                f"SAMHAIN_DB:{self.NOW - 86400}",
+                "SAMHAIN_PROC:running",
+            ),
+        )
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "pass"
+
+    def test_unreadable_probe_unknown(self):
+        """Tools present but unreadable freshness is unknown, not pass."""
+        from linux_health.checks import check_file_integrity_tools
+
+        ssh = self._session("aide", "")
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "unknown"
