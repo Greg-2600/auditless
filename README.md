@@ -95,7 +95,7 @@ Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+
 | **Log Security** | 2 | Log tampering detection, unexpected privilege usage monitoring |
 | **Scheduled Tasks** | 1 | Cron job analysis, at job scanning, systemd timer review |
 | **Boot/Kernel Hardening** | 5 | GRUB password protection, kernel security parameters (sysctl), Secure Boot + module signature enforcement, livepatch status (report-only), extended sysctl pass (BPF, userns, forwarding) |
-| **System Integrity** | 1 | File integrity monitoring tools (AIDE, Tripwire, OSSEC) detection |
+| **System Integrity** | 1 | File integrity monitoring tools (AIDE, Tripwire, OSSEC) detection + database freshness |
 | **Package Management** | 1 | GPG verification, repository security, unsigned packages |
 | **Logging & Auditing** | 1 | Syslog/rsyslog/journald, auditd status and configuration |
 | **MAC Security** | 1 | SELinux/AppArmor detection, enforcement status, policy validation |
