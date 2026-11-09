@@ -3716,7 +3716,13 @@ def check_legacy_services(ssh: SSHSession) -> CheckResult:
 
 
 def check_usb_storage(ssh: SSHSession, password: str = "") -> CheckResult:
-    """Check if USB storage is disabled."""
+    """Check USB storage disablement plus device-authorization policy.
+
+    Stage 1 (unchanged): usb-storage module must not be loadable.
+    Stage 2 (item 48): new-device authorization — kernel
+    usbcore.authorized_default=0, an active USBGuard policy, or UDISKS
+    polkit rules. Hosts without any USB subsystem pass as not applicable.
+    """
     category = "Hardware Security"
 
     cmd = (
@@ -3736,10 +3742,96 @@ def check_usb_storage(ssh: SSHSession, password: str = "") -> CheckResult:
             category,
         )
 
-    return _pass(
+    probe = (
+        "bash -lc 'cat /sys/module/usbcore/parameters/authorized_default "
+        '2>/dev/null | sed "s/^/AUTH_DEFAULT:/"; '
+        "ls /sys/bus/usb/devices 2>/dev/null | head -3; "
+        "command -v usbguard 2>/dev/null; "
+        'usbguard list-rules 2>/dev/null | wc -l | sed "s/^/USBGUARD_RULES:/"; '
+        'systemctl is-active usbguard 2>/dev/null | sed "s/^/USBGUARD_ACTIVE:/"; '
+        "pgrep -f usbguard >/dev/null 2>&1 && echo USBGUARD_ACTIVE:active; "
+        "grep -rliq udisks /etc/polkit-1/rules.d/ 2>/dev/null && echo UDISKS_RULE:yes; "
+        "true'"
+    )
+    if password:
+        probe = f"sudo -S {probe}"
+    _, probe_out, _ = _run(ssh, probe, password)
+    lines = probe_out.splitlines()
+
+    auth_default = ""
+    for line in lines:
+        if line.startswith("AUTH_DEFAULT:"):
+            auth_default = line.split(":", 1)[1].strip()
+
+    usb_devices = [
+        line for line in lines if line and ":" not in line and "/" not in line
+    ]
+    usb_present = bool(usb_devices) or auth_default != ""
+
+    if not usb_present and "usbguard" not in probe_out:
+        return _pass(
+            "USB storage",
+            "USB storage disabled; no USB subsystem detected (VM/container?) "
+            "— device authorization not applicable",
+            "No action",
+            category,
+        )
+
+    rule_count = 0
+    for line in lines:
+        if line.startswith("USBGUARD_RULES:"):
+            try:
+                rule_count = int(line.split(":", 1)[1].strip())
+            except ValueError:
+                rule_count = 0
+    guard_active = any(
+        line.startswith("USBGUARD_ACTIVE:")
+        and line.split(":", 1)[1].strip() == "active"
+        for line in lines
+    )
+    guard_enforcing = rule_count > 0 and guard_active
+    udisks_enforcing = "UDISKS_RULE:yes" in lines
+    controls = []
+    if auth_default == "0":
+        controls.append("new USB devices denied by default (authorized_default=0)")
+    if rule_count > 0 and guard_active:
+        controls.append(f"USBGuard policy active ({rule_count} rules)")
+    elif rule_count > 0:
+        controls.append(f"USBGuard rules present ({rule_count}) but daemon inactive")
+    if udisks_enforcing:
+        controls.append("UDISKS polkit authorization rules present")
+
+    if auth_default == "0" or guard_enforcing:
+        return _pass(
+            "USB storage",
+            "USB storage disabled; " + "; ".join(controls),
+            "No action",
+            category,
+        )
+
+    if udisks_enforcing:
+        return _pass(
+            "USB storage",
+            "USB storage disabled; " + "; ".join(controls),
+            "Consider USBGuard or authorized_default=0 for default-deny",
+            category,
+        )
+
+    # -1 is the kernel's unset marker: the compiled-in default applies,
+    # which authorizes new devices — treat like default-allow.
+    detail = (
+        "USB devices authorized by default "
+        f"(authorized_default={auth_default or 'unreadable'}) with no active "
+        "USBGuard policy or UDISKS rules"
+    )
+    inactive = [c for c in controls if "daemon inactive" in c]
+    if inactive:
+        detail += "; " + "; ".join(inactive)
+    return _warn(
         "USB storage",
-        "USB storage appears disabled or controlled",
-        "No action",
+        detail,
+        "Set usbcore.authorized_default=0 via modprobe.d/udev, or enforce "
+        "a USBGuard policy",
         category,
     )
 

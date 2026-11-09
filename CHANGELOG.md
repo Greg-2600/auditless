@@ -48,7 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   KERN-5822 extended sysctl pass (unprivileged BPF, userns clone,
   forwarding, hardlink/symlink protection, SYN cookies, perf paranoia),
   FINT-4316 FIM database freshness (AIDE/Tripwire DB age + schedule,
-  Samhain/OSSEC daemons — presence alone no longer passes).
+  Samhain/OSSEC daemons — presence alone no longer passes),
+  USB-1000 USB device authorization (usbcore.authorized_default,
+  USBGuard policy, UDISKS rules; no-USB hosts pass as not applicable).
 
 ### Deprecated
 

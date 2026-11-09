@@ -3708,3 +3708,110 @@ class TestCheckFileIntegrityFreshness:
         ssh = self._session("aide", "")
         result = check_file_integrity_tools(ssh)
         assert result.status == "unknown"
+
+
+class TestCheckUsbAuthorization:
+    """Tests for USB device authorization (item 48, USB-1000)."""
+
+    _host_seq = 0
+
+    def _session(self, stage1, probe):
+        from unittest.mock import Mock
+
+        TestCheckUsbAuthorization._host_seq += 1
+        hostname = f"usb-test-{TestCheckUsbAuthorization._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            if "lsmod" in command:
+                return 0, stage1, ""
+            return 0, probe, ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    def test_module_loaded_warns(self):
+        """Loaded usb-storage without modprobe kill still warns."""
+        from linux_health.checks import check_usb_storage
+
+        ssh = self._session("usb_storage 12345 0\n", "")
+        result = check_usb_storage(ssh, "")
+        assert result.status == "warn"
+        assert "loaded and not disabled" in result.details
+
+    def test_no_subsystem_passes_na(self):
+        """Container/VM without USB subsystem passes as not applicable."""
+        from linux_health.checks import check_usb_storage
+
+        ssh = self._session(
+            "install usb-storage /bin/true",
+            "USBGUARD_RULES:0\nUSBGUARD_ACTIVE:inactive\n",
+        )
+        result = check_usb_storage(ssh, "")
+        assert result.status == "pass"
+        assert "not applicable" in result.details
+        assert result.test_id == "USB-1000"
+
+    def test_authorized_default_zero_passes(self):
+        """Kernel default-deny for new devices passes."""
+        from linux_health.checks import check_usb_storage
+
+        ssh = self._session(
+            "install usb-storage /bin/true",
+            "AUTH_DEFAULT:0\nusb1\nUSBGUARD_RULES:0\nUSBGUARD_ACTIVE:inactive\n",
+        )
+        result = check_usb_storage(ssh, "")
+        assert result.status == "pass"
+        assert "authorized_default=0" in result.details
+
+    def test_usbguard_active_passes(self):
+        """Active USBGuard policy with rules passes."""
+        from linux_health.checks import check_usb_storage
+
+        ssh = self._session(
+            "install usb-storage /bin/true",
+            "AUTH_DEFAULT:1\nusb1\n/usr/bin/usbguard\n"
+            "USBGUARD_RULES:12\nUSBGUARD_ACTIVE:active\n",
+        )
+        result = check_usb_storage(ssh, "")
+        assert result.status == "pass"
+        assert "USBGuard" in result.details
+
+    def test_default_allow_no_policy_warns(self):
+        """authorized_default=1 with no policy control warns."""
+        from linux_health.checks import check_usb_storage
+
+        ssh = self._session(
+            "install usb-storage /bin/true",
+            "AUTH_DEFAULT:1\nusb1\nUSBGUARD_RULES:0\nUSBGUARD_ACTIVE:inactive\n",
+        )
+        result = check_usb_storage(ssh, "")
+        assert result.status == "warn"
+        assert "authorized by default" in result.details
+
+    def test_udisks_rules_pass_with_note(self):
+        """UDISKS polkit rules pass with a hardening suggestion."""
+        from linux_health.checks import check_usb_storage
+
+        ssh = self._session(
+            "install usb-storage /bin/true",
+            "AUTH_DEFAULT:1\nusb1\nUSBGUARD_RULES:0\n"
+            "USBGUARD_ACTIVE:inactive\nUDISKS_RULE:yes\n",
+        )
+        result = check_usb_storage(ssh, "")
+        assert result.status == "pass"
+        assert "UDISKS" in result.details
+
+    def test_authorized_default_unset_warns(self):
+        """authorized_default=-1 (compiled default = allow) warns."""
+        from linux_health.checks import check_usb_storage
+
+        ssh = self._session(
+            "install usb-storage /bin/true",
+            "AUTH_DEFAULT:-1\nusb1\nUSBGUARD_RULES:0\nUSBGUARD_ACTIVE:inactive\n",
+        )
+        result = check_usb_storage(ssh, "")
+        assert result.status == "warn"
+        assert "authorized by default" in result.details
