@@ -103,7 +103,7 @@ Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+
 | **File System** | 1 | Mount options (noexec, nosuid, nodev), /tmp security, partition hardening |
 | **Shell Security** | 1 | Umask settings, shell timeout (TMOUT), command history configuration |
 | **System Tools** | 1 | Compiler presence on production, development tools audit |
-| **Hardware Security** | 1 | USB storage controls, hardware security module checks |
+| **Hardware Security** | 2 | USB storage controls, hardware security module checks, USB device authorization (authorized_default, USBGuard, UDISKS) |
 | **Web Server** | 1 | Apache/Nginx configuration, version disclosure, SSL/TLS setup |
 | **Database** | 1 | MySQL/PostgreSQL security, authentication, remote access controls |
 | **Mail Server** | 1 | Postfix/Exim/Sendmail relay protection, TLS configuration |
