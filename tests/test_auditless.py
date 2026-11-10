@@ -3815,3 +3815,119 @@ class TestCheckUsbAuthorization:
         result = check_usb_storage(ssh, "")
         assert result.status == "warn"
         assert "authorized by default" in result.details
+
+
+class TestCheckFirewallRichRules:
+    """Tests for firewall rich-rules audit (item 49, FIRE-4512)."""
+
+    _host_seq = 0
+
+    def _session(self, stage1, probe, code=0):
+        from unittest.mock import Mock
+
+        TestCheckFirewallRichRules._host_seq += 1
+        hostname = f"fw-test-{TestCheckFirewallRichRules._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            if "ufw status; " in command or "firewall-cmd --state" in command:
+                return code, stage1, ""
+            return 0, probe, ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    _HARDENED_IPT = (
+        "-P INPUT DROP\n"
+        "-P FORWARD DROP\n"
+        "-A INPUT -i lo -j ACCEPT\n"
+        "-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n"
+        '-A INPUT -m limit --limit 5/min -j LOG --log-prefix "iptables denied: "\n'
+    )
+
+    def test_inactive_warns(self):
+        """Inactive firewall still warns as before."""
+        from linux_health.checks import check_firewall
+
+        ssh = self._session("Status: inactive\n", "")
+        result = check_firewall(ssh, "")
+        assert result.status == "warn"
+        assert "inactive" in result.details.lower()
+
+    def test_hardened_iptables_passes(self):
+        """Full rich ruleset passes with all four controls named."""
+        from linux_health.checks import check_firewall
+
+        ssh = self._session("Status: active\n", self._HARDENED_IPT)
+        result = check_firewall(ssh, "")
+        assert result.status == "pass"
+        assert "default-deny" in result.details
+        assert "loopback" in result.details
+        assert "established" in result.details
+        assert "logging" in result.details
+        assert result.test_id == "FIRE-4512"
+
+    def test_open_policy_warns(self):
+        """ACCEPT-by-default policy warns even when active."""
+        from linux_health.checks import check_firewall
+
+        probe = self._HARDENED_IPT.replace("-P INPUT DROP", "-P INPUT ACCEPT")
+        ssh = self._session("Status: active\n", probe)
+        result = check_firewall(ssh, "")
+        assert result.status == "warn"
+        assert "default-deny" in result.details
+
+    def test_missing_logging_warns(self):
+        """No LOG target warns about logging specifically."""
+        from linux_health.checks import check_firewall
+
+        probe = "\n".join(
+            line for line in self._HARDENED_IPT.splitlines() if "-j LOG" not in line
+        )
+        ssh = self._session("Status: active\n", probe + "\n")
+        result = check_firewall(ssh, "")
+        assert result.status == "warn"
+        assert "logging" in result.details
+
+    def test_nft_ruleset_passes(self):
+        """nftables backend signals are understood."""
+        from linux_health.checks import check_firewall
+
+        probe = (
+            "table inet filter {\n"
+            "\tchain input {\n"
+            "\t\ttype filter hook input priority 0; policy drop;\n"
+            '\t\tiif "lo" accept\n'
+            "\t\tct state established,related accept\n"
+            '\t\tlog prefix "nft denied: "\n'
+            "\t}\n"
+            "}\n"
+        )
+        ssh = self._session("table inet filter\n", probe)
+        result = check_firewall(ssh, "")
+        assert result.status == "pass"
+
+    def test_ufw_verbose_passes(self):
+        """ufw default-deny plus before.rules evidence passes."""
+        from linux_health.checks import check_firewall
+
+        probe = (
+            "Status: active\n"
+            "Logging: on (low)\n"
+            "Default: deny (incoming), allow (outgoing), disabled (routed)\n"
+            "-A ufw-before-input -i lo -j ACCEPT\n"
+            "-A ufw-before-input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n"
+        )
+        ssh = self._session("Status: active\n", probe)
+        result = check_firewall(ssh, "")
+        assert result.status == "pass"
+
+    def test_unreadable_rules_unknown(self):
+        """Active but unreadable ruleset is unknown, not a pass."""
+        from linux_health.checks import check_firewall
+
+        ssh = self._session("Status: active\n", "")
+        result = check_firewall(ssh, "")
+        assert result.status == "unknown"

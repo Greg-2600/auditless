@@ -835,10 +835,19 @@ def check_ssh_config(ssh: SSHSession, password: str = "") -> List[CheckResult]:
 
 
 def check_firewall(ssh: SSHSession, password: str = "") -> CheckResult:
+    """Check firewall state plus rich-rules audit.
+
+    Stage 1 (unchanged semantics): a firewall backend (ufw, firewalld,
+    nftables) must be active. Stage 2 (item 49): the active ruleset must
+    evidence default-deny, loopback acceptance, established-traffic
+    acceptance, and logging. Active-but-unreadable rules (unprivileged)
+    are unknown, not a pass.
+    """
     category = "Network"
     cmd = (
         "bash -lc 'if command -v ufw >/dev/null 2>&1; then ufw status; "
         "elif command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --state; "
+        "elif command -v nft >/dev/null 2>&1; then nft list tables; "
         "else echo none; fi'"
     )
     if password:
@@ -851,16 +860,86 @@ def check_firewall(ssh: SSHSession, password: str = "") -> CheckResult:
             "Verify ufw or firewalld manually",
             category,
         )
-    if "inactive" in out.lower() or "none" in out.lower():
+    if "inactive" in out.lower() or "none" in out.lower() or not out.strip():
         return _warn(
             "Firewall",
             "Firewall inactive",
             "Enable host firewall (ufw enable or firewall-cmd --permanent --add-service=ssh)",
             category,
         )
+
+    probe = (
+        "bash -lc 'ufw status verbose 2>/dev/null; "
+        "firewall-cmd --list-all 2>/dev/null; "
+        "grep LogDenied /etc/firewalld/firewalld.conf 2>/dev/null; "
+        "iptables -S 2>/dev/null | head -40; "
+        "nft list ruleset 2>/dev/null | head -60; "
+        'grep -E "^-A.*(-i lo|ESTABLISHED)" /etc/ufw/before.rules '
+        "2>/dev/null | head -4; true'"
+    )
+    if password:
+        probe = f"sudo -S {probe}"
+    _, probe_out, _ = _run(ssh, probe, password)
+    if not probe_out.strip():
+        return _unknown(
+            "Firewall",
+            "Firewall active but ruleset unreadable — re-run privileged "
+            "to audit rich rules",
+            "Run privileged so ufw/iptables/nft rules can be assessed",
+            category,
+        )
+    lowered = probe_out.lower()
+
+    default_deny = (
+        "-P INPUT DROP" in probe_out
+        or "policy drop" in lowered
+        or "Default: deny (incoming)" in probe_out
+        or "target: DROP" in probe_out
+    )
+    loopback = (
+        ("-i lo" in probe_out and "ACCEPT" in probe_out)
+        or ('iif "lo"' in probe_out and "accept" in lowered)
+        or (" on lo" in probe_out and "ALLOW" in probe_out)
+    )
+    established = "established" in lowered
+    logging = (
+        "-j LOG" in probe_out
+        or "Logging: on" in probe_out
+        or "logdenied=all" in lowered.replace(" ", "")
+        or " log " in lowered.replace("\t", " ")
+    )
+
+    controls = []
+    missing = []
+    if default_deny:
+        controls.append("default-deny inbound")
+    else:
+        missing.append("no default-deny inbound policy")
+    if loopback:
+        controls.append("loopback accepted")
+    else:
+        missing.append("no loopback accept rule")
+    if established:
+        controls.append("established traffic accepted")
+    else:
+        missing.append("no established-traffic rule")
+    if logging:
+        controls.append("logging enabled")
+    else:
+        missing.append("no firewall logging")
+
+    if missing:
+        return _warn(
+            "Firewall",
+            "Firewall active but incomplete: " + "; ".join(missing),
+            "Harden the ruleset (default-deny inbound, loopback accept, "
+            "established accept, deny logging)",
+            category,
+        )
+
     return _pass(
         "Firewall",
-        f"Firewall state: {out.splitlines()[0] if out else 'active'}",
+        f"Firewall active with rich rules: {'; '.join(controls)}",
         "Keep rules documented",
         category,
     )
