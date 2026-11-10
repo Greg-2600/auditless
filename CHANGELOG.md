@@ -50,7 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   FINT-4316 FIM database freshness (AIDE/Tripwire DB age + schedule,
   Samhain/OSSEC daemons — presence alone no longer passes),
   USB-1000 USB device authorization (usbcore.authorized_default,
-  USBGuard policy, UDISKS rules; no-USB hosts pass as not applicable).
+  USBGuard policy, UDISKS rules; no-USB hosts pass as not applicable),
+  FIRE-4512 firewall rich-rules audit (default-deny, loopback,
+  established, logging across ufw/firewalld/nftables/iptables).
 
 ### Deprecated
 
