@@ -3931,3 +3931,131 @@ class TestCheckFirewallRichRules:
         ssh = self._session("Status: active\n", "")
         result = check_firewall(ssh, "")
         assert result.status == "unknown"
+
+
+class TestCheckSocketAttribution:
+    """Tests for socket -> process -> package attribution (item 50)."""
+
+    _host_seq = 0
+
+    _SS_SSHD = "tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:* " 'users:(("sshd",pid=101,fd=3))'
+    _SS_NGINX = (
+        "tcp LISTEN 0 511 0.0.0.0:80 0.0.0.0:* " 'users:(("nginx",pid=202,fd=6))'
+    )
+
+    def _session(self, ss_out, attr_out):
+        from unittest.mock import Mock
+
+        TestCheckSocketAttribution._host_seq += 1
+        hostname = f"sockattr-test-{TestCheckSocketAttribution._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            if "for pid in" in command:
+                return 0, attr_out, ""
+            return 0, ss_out, ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    def test_attributed_passes(self):
+        """Listeners owned by packages pass with attribution counts."""
+        from linux_health.checks import check_listening_services
+
+        attr = (
+            "PID:101\nEXE:/usr/sbin/sshd\n/usr/sbin/sshd -D\n\n"
+            "openssh-server: /usr/sbin/sshd\n"
+            "PID:202\nEXE:/usr/sbin/nginx\nnginx: master process\n\n"
+            "nginx: /usr/sbin/nginx\n"
+        )
+        ssh = self._session(f"{self._SS_SSHD}\n{self._SS_NGINX}\n", attr)
+        result = check_listening_services(ssh)
+        assert result.status == "pass"
+        assert "2/2 attributed" in result.details
+        assert result.test_id == "NETW-3030"
+
+    def test_rogue_tmp_binary_warns(self):
+        """Unpackaged listener from /tmp warns as possible rogue."""
+        from linux_health.checks import check_listening_services
+
+        ss_evil = (
+            "tcp LISTEN 0 5 0.0.0.0:4444 0.0.0.0:* " 'users:(("evil",pid=666,fd=3))'
+        )
+        attr = "PID:666\nEXE:/tmp/evil\n/tmp/evil --listen\n\nPKG:none\n"
+        ssh = self._session(f"{self._SS_SSHD}\n{ss_evil}\n", attr)
+        result = check_listening_services(ssh)
+        assert result.status == "warn"
+        assert "rogue" in result.details.lower()
+        assert "4444" in result.details
+
+    def test_deleted_exe_warns(self):
+        """Listener on a deleted executable warns."""
+        from linux_health.checks import check_listening_services
+
+        ss_del = (
+            "tcp LISTEN 0 5 0.0.0.0:5555 0.0.0.0:* " 'users:(("gone",pid=777,fd=3))'
+        )
+        attr = "PID:777\nEXE:/usr/bin/gone (deleted)\n/usr/bin/gone\n\nPKG:none\n"
+        ssh = self._session(ss_del + "\n", attr)
+        result = check_listening_services(ssh)
+        assert result.status == "warn"
+
+    def test_no_visibility_unknown(self):
+        """Public listeners with no process info are unknown, not pass."""
+        from linux_health.checks import check_listening_services
+
+        ssh = self._session("tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n", "")
+        result = check_listening_services(ssh)
+        assert result.status == "unknown"
+
+    def test_kernel_thread_skipped(self):
+        """Kernel-thread listeners (no exe/cmdline) are benign."""
+        from linux_health.checks import check_listening_services
+
+        attr = (
+            "PID:101\nEXE:/usr/sbin/sshd\n/usr/sbin/sshd -D\n\n"
+            "openssh-server: /usr/sbin/sshd\n"
+            "PID:2\nEXE:\n\n\n"
+        )
+        ss_k = "tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:* " 'users:(("sshd",pid=101,fd=3))'
+        ssh = self._session(ss_k + "\n", attr)
+        result = check_listening_services(ssh)
+        assert result.status == "pass"
+
+    def test_many_listeners_warns(self):
+        """>15 public listeners still warns without attribution cost."""
+        from linux_health.checks import check_listening_services
+
+        from unittest.mock import Mock
+
+        lines = "\n".join(
+            f"tcp LISTEN 0 128 0.0.0.0:{8000 + i} 0.0.0.0:* "
+            f'users:(("svc{i}",pid={1000 + i},fd=3))'
+            for i in range(16)
+        )
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = "sockattr-many"
+        seen = []
+        ssh.run = lambda command, timeout=10.0: (
+            seen.append(command) or (0, lines + "\n", "")
+        )
+        result = check_listening_services(ssh)
+        assert result.status == "warn"
+        assert "16" in result.details
+        assert not any("for pid in" in c for c in seen)
+
+    def test_parse_helpers(self):
+        """Unit-cover the ss/attribution parsers."""
+        from linux_health.checks import _parse_attribution, _parse_ss_process
+
+        assert _parse_ss_process(self._SS_SSHD) == ("sshd", "101")
+        assert _parse_ss_process("tcp LISTEN 0 1 0.0.0.0:1 0.0.0.0:*") == (
+            "",
+            "",
+        )
+        parsed = _parse_attribution("PID:9\nEXE:/bin/x\n/bin/x -d\n\npkg: /bin/x\n")
+        assert parsed == {"9": ("/bin/x", "/bin/x -d", "pkg: /bin/x")}
+        assert _parse_attribution("garbage\n") == {}

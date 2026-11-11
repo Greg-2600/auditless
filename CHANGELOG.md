@@ -52,7 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   USB-1000 USB device authorization (usbcore.authorized_default,
   USBGuard policy, UDISKS rules; no-USB hosts pass as not applicable),
   FIRE-4512 firewall rich-rules audit (default-deny, loopback,
-  established, logging across ufw/firewalld/nftables/iptables).
+  established, logging across ufw/firewalld/nftables/iptables),
+  NETW-3030 socket-to-package attribution (ss pid to dpkg/rpm owner;
+  unpackaged /tmp or deleted-exe listeners warn as possible rogues).
 
 ### Deprecated
 
