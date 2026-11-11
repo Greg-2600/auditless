@@ -1076,6 +1076,34 @@ def check_root_logins(ssh: SSHSession) -> CheckResult:
     )
 
 
+def _parse_ss_process(line: str) -> tuple[str, str]:
+    """Extract (process name, pid) from an `ss -ltnp` line's users field."""
+    match = re.search(r'users:\(\("([^"]+)",pid=(\d+)', line)
+    if match:
+        return match.group(1), match.group(2)
+    return "", ""
+
+
+def _parse_attribution(output: str) -> dict[str, tuple[str, str, str]]:
+    """Parse attribution probe output into {pid: (exe, cmdline, pkg)}.
+
+    Each PID block is positional: `PID:<pid>`, `EXE:<path-or-empty>`,
+    one cmdline line (possibly blank), then package-owner lines.
+    """
+    info: dict[str, tuple[str, str, str]] = {}
+    for block in re.split(r"^PID:", output, flags=re.M)[1:]:
+        pid, _, rest = block.partition("\n")
+        pid = pid.strip()
+        if not pid:
+            continue
+        lines = rest.split("\n")
+        exe = lines[0][4:] if lines and lines[0].startswith("EXE:") else ""
+        cmdline = lines[1].strip() if len(lines) > 1 else ""
+        pkg = " ".join(line.strip() for line in lines[2:] if line.strip())
+        info[pid] = (exe.strip(), cmdline, pkg)
+    return info
+
+
 def check_listening_services(ssh: SSHSession) -> CheckResult:
     category = "Network"
     code, out, err = _run(ssh, "ss -tulpn 2>/dev/null || netstat -tulpn 2>/dev/null")
@@ -1129,9 +1157,82 @@ def check_listening_services(ssh: SSHSession) -> CheckResult:
             "Review 'ss -tulpn' for unexpected services; tighten firewall/hosts.allow",
             category,
         )
+
+    # Stage 2 (item 50): attribute each public listener to its owning
+    # package — socket -> pid/process -> /proc exe -> dpkg/rpm owner.
+    # Unattributed + suspicious location = possible rogue binary.
+    targets: list[tuple[str, str, str]] = []
+    for line in public:
+        proc_name, pid = _parse_ss_process(line)
+        addr = line.split()[4] if len(line.split()) >= 5 else "?"
+        if pid:
+            targets.append((addr, proc_name, pid))
+    unattributed = len(public) - len(targets)
+
+    rogues: list[str] = []
+    packaged = 0
+    if targets:
+        pids = " ".join(pid for _, _, pid in targets[:30])
+        attr_cmd = (
+            "bash -lc 'for pid in " + pids + "; do echo PID:$pid; "
+            "exe=$(readlink /proc/$pid/exe 2>/dev/null); echo EXE:$exe; "
+            'tr "\\0" " " </proc/$pid/cmdline 2>/dev/null; echo; '
+            'if [ -n "$exe" ]; then '
+            'dpkg -S "$exe" 2>/dev/null || rpm -qf "$exe" 2>/dev/null '
+            "|| echo PKG:none; fi; done'"
+        )
+        _, attr_out, _ = _run(ssh, attr_cmd)
+        info = _parse_attribution(attr_out)
+        wanted = {p for _, _, p in targets}
+        addr_of = {p: a for a, _, p in targets}
+        proc_of = {p: proc for _, proc, p in targets}
+        for pid, (exe, cmdline, pkg) in info.items():
+            if pid not in wanted:
+                continue
+            addr = addr_of[pid]
+            proc = proc_of[pid]
+            if not exe and not cmdline:
+                continue  # kernel thread: no userspace binary
+            if pkg and "PKG:none" not in pkg and "not owned" not in pkg:
+                packaged += 1
+                continue
+            suspect = (
+                "(deleted)" in exe
+                or exe.startswith(("/tmp/", "/dev/shm", "/var/tmp/"))
+                or cmdline.startswith(("/tmp/", "/dev/shm", "/var/tmp/"))
+            )
+            if suspect:
+                rogues.append(f"{addr} by {proc or '?'} ({exe or cmdline})")
+
+    if rogues:
+        return _warn(
+            "Listening services",
+            f"Unattributed public listeners (possible rogue binaries): "
+            f"{'; '.join(rogues[:5])}",
+            "Investigate the owning processes; kill rogue listeners and "
+            "remove persistence",
+            category,
+        )
+
+    detail = f"Public listeners: {len(public)} [{service_summary}]"
+    if targets:
+        detail += f"; {packaged}/{len(targets)} attributed to packages"
+    if unattributed:
+        detail += (
+            f"; {unattributed} without process visibility "
+            "(re-run privileged for full attribution)"
+        )
+    if public and not targets:
+        return _unknown(
+            "Listening services",
+            f"{len(public)} public listeners but no process visibility "
+            "(unprivileged ss omits owners) — attribution impossible",
+            "Re-run privileged (sudo) to attribute listeners to packages",
+            category,
+        )
     return _pass(
         "Listening services",
-        f"Public listeners: {len(public)} [{service_summary}]",
+        detail,
         "Ensure only required services bind publicly and are firewalled",
         category,
     )
