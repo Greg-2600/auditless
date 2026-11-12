@@ -25,7 +25,7 @@ relative to this skill's directory).
    never force-push, never touch others' PRs unasked. Report every
    unstick action.
 2. **Status.** Run `.venv/bin/python scripts/roadmap.py status`. If it
-   reports 200/200 (roadmap complete), stop the loop with a final
+   reports roadmap complete, stop the loop with a final
    summary instead of working.
 3. **Milestone check.** Run
    `.venv/bin/python scripts/roadmap.py milestone`. If it reports a
@@ -54,7 +54,7 @@ relative to this skill's directory).
   never push `main` directly, never force-push.
 - Never lower a gate or delete a failing test to make it pass.
 - Keep diffs scoped (item + tests/docs + checkbox).
-- `ROADMAP.md` numbering stays exactly 1–200 (locked by test);
+- `ROADMAP.md` numbering stays sequential 1–N (locked by test);
   future ideas live as `C-NN` candidates inside reviews.
 - Typing everywhere (repo gate: mypy strict-ish on `linux_health/`;
   new test/script code fully annotated too).
