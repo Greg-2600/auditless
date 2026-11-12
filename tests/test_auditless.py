@@ -4059,3 +4059,103 @@ class TestCheckSocketAttribution:
         parsed = _parse_attribution("PID:9\nEXE:/bin/x\n/bin/x -d\n\npkg: /bin/x\n")
         assert parsed == {"9": ("/bin/x", "/bin/x -d", "pkg: /bin/x")}
         assert _parse_attribution("garbage\n") == {}
+
+
+class TestCheckCronAllowDeny:
+    """Tests for cron/at allow-deny + world-writable jobs (item 51)."""
+
+    _host_seq = 0
+
+    _STAGE1_CLEAN = "2\n3\n1\n0\n12\n"
+
+    def _session(self, stage1, probe):
+        from unittest.mock import Mock
+
+        TestCheckCronAllowDeny._host_seq += 1
+        hostname = f"cron-test-{TestCheckCronAllowDeny._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            if "cron.daily" in command and "perm -0002" not in command:
+                return 0, stage1, ""
+            return 0, probe, ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    def _probe(self, access, ww=()):
+        lines = list(access) + ["---"] + list(ww)
+        return "\n".join(lines) + "\n"
+
+    def test_controlled_passes(self):
+        """Allow files present and no ww jobs passes."""
+        from linux_health.checks import check_cron_and_timers
+
+        ssh = self._session(
+            self._STAGE1_CLEAN,
+            self._probe(
+                [
+                    "-rw------- 1 root root 6 Jan 1 2020 /etc/cron.allow",
+                    "-rw------- 1 root root 6 Jan 1 2020 /etc/at.allow",
+                ]
+            ),
+        )
+        result = check_cron_and_timers(ssh)
+        assert result.status == "pass"
+        assert "access controlled" in result.details
+        assert result.test_id == "SCHD-7230"
+
+    def test_world_writable_warns(self):
+        """World-writable job file warns even when counts are clean."""
+        from linux_health.checks import check_cron_and_timers
+
+        ssh = self._session(
+            self._STAGE1_CLEAN,
+            self._probe(
+                ["-rw------- 1 root root 6 Jan 1 2020 /etc/cron.allow"],
+                ["/etc/cron.d/sneaky"],
+            ),
+        )
+        result = check_cron_and_timers(ssh)
+        assert result.status == "warn"
+        assert "world-writable" in result.details
+        assert "sneaky" in result.details
+
+    def test_missing_allow_files_warns(self):
+        """No allow/deny files warns about unrestricted scheduling."""
+        from linux_health.checks import check_cron_and_timers
+
+        ssh = self._session(self._STAGE1_CLEAN, self._probe([]))
+        result = check_cron_and_timers(ssh)
+        assert result.status == "warn"
+        assert "cron.allow" in result.details
+        assert "at.allow" in result.details
+
+    def test_deny_only_counts_as_controlled(self):
+        """cron.deny alone still gates scheduling (partial control)."""
+        from linux_health.checks import check_cron_and_timers
+
+        ssh = self._session(
+            self._STAGE1_CLEAN,
+            self._probe(
+                [
+                    "-rw------- 1 root root 0 Jan 1 2020 /etc/cron.deny",
+                    "-rw------- 1 root root 0 Jan 1 2020 /etc/at.deny",
+                ]
+            ),
+        )
+        result = check_cron_and_timers(ssh)
+        assert result.status == "pass"
+
+    def test_stage1_warn_preserved(self):
+        """Busy user crontab still warns (stage 1 unchanged)."""
+        from linux_health.checks import check_cron_and_timers
+
+        ssh = self._session(
+            "2\n3\n1\n5\n12\n",
+            self._probe(["-rw------- 1 root root 6 Jan 1 2020 /etc/cron.allow"]),
+        )
+        result = check_cron_and_timers(ssh)
+        assert result.status == "warn"

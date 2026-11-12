@@ -1800,15 +1800,53 @@ def check_cron_and_timers(ssh: SSHSession) -> CheckResult:
             category,
         )
     details = f"cron.d={cron_d}, daily={cron_daily}, hourly={cron_hourly}, user crontab lines={crontab_lines}, timers={timers}"
-    if crontab_lines > 0 or cron_d > 10:
+    stage1_warn = crontab_lines > 0 or cron_d > 10
+
+    # Stage 2 (item 51): allow/deny access control plus world-writable
+    # job detection. A world-writable cron job is a persistence/privesc
+    # vector; missing allow/deny files mean any user may schedule.
+    probe = (
+        "bash -lc 'ls -la /etc/cron.allow /etc/cron.deny /etc/at.allow "
+        "/etc/at.deny 2>/dev/null; echo ---; "
+        "find /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly "
+        "/etc/cron.monthly /etc/crontab /var/spool/cron /var/spool/crontabs "
+        "/var/spool/at /etc/cron.allow /etc/cron.deny /etc/at.allow "
+        "/etc/at.deny -perm -0002 -print 2>/dev/null | head -10; true'"
+    )
+    _, probe_out, _ = _run(ssh, probe)
+    probe_lines = probe_out.splitlines()
+    sep = probe_lines.index("---") if "---" in probe_lines else len(probe_lines)
+    access_lines = probe_lines[:sep]
+    ww_lines = probe_lines[sep + 1 :]
+    present = {line.split()[-1] for line in access_lines if line.split()}
+    world_writable = [line.strip() for line in ww_lines if line.strip()]
+
+    gaps = []
+    if world_writable:
+        gaps.append(f"world-writable job paths: {', '.join(world_writable[:5])}")
+    cron_controlled = "/etc/cron.allow" in present or "/etc/cron.deny" in present
+    at_controlled = "/etc/at.allow" in present or "/etc/at.deny" in present
+    if not cron_controlled:
+        gaps.append("no cron.allow/cron.deny access control (any user may use cron)")
+    if not at_controlled:
+        gaps.append("no at.allow/at.deny access control (any user may use at)")
+
+    if stage1_warn or gaps:
+        parts = [details] if details else []
+        parts.extend(gaps)
         return _warn(
             "Cron/Timers",
-            details,
-            "Review cron entries and systemd timers for legitimacy; check /etc/cron.* and systemctl list-timers",
+            "; ".join(parts),
+            "Review cron entries and systemd timers for legitimacy; lock "
+            "job files to root (chmod o-w), create cron.allow/at.allow "
+            "with only authorized users",
             category,
         )
     return _pass(
-        "Cron/Timers", details, "Keep cron/timers minimal and documented", category
+        "Cron/Timers",
+        details + "; cron/at access controlled, no world-writable jobs",
+        "Keep cron/timers minimal and documented",
+        category,
     )
 
 
