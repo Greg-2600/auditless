@@ -44,12 +44,12 @@ def test_render_marked_missing_raises() -> None:
     raise AssertionError("expected KeyError")
 
 
-def test_roadmap_has_200_numbered_items() -> None:
-    """Guard: ROADMAP.md stays exactly items 1..200, unique."""
+def test_roadmap_has_sequential_numbered_items() -> None:
+    """Guard: ROADMAP.md stays exactly items 1..N, unique, sequential."""
     mod = _mod()
     items = mod.parse_items(ROADMAP.read_text(encoding="utf-8"))
     nums = sorted(i["n"] for i in items)
-    assert nums == list(range(1, 201))
+    assert nums == list(range(1, len(nums) + 1))
 
 
 def test_milestone_report_not_hit() -> None:

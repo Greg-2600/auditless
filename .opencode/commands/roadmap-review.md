@@ -34,7 +34,7 @@ Milestone under review (from the helper — do not compute by hand):
    - `## Wow factor` — user-visible improvements, demo-worthy moments
    - `## Next horizon` — focus adjustments and concrete backlog
      candidates for the future (numbered `C-01`, `C-02`, … — do NOT
-     renumber `ROADMAP.md`; the 1–200 list is locked by test)
+     renumber `ROADMAP.md`; the sequential list is locked by test)
    - `## Metrics` — items done/total, PRs merged, tests added, suite
      totals, wall-time observations if measured
    Be specific and evidence-backed. If a section has nothing to say,
@@ -52,9 +52,9 @@ Milestone under review (from the helper — do not compute by hand):
 - One review per run. Never mix a review file with feature work.
 - Review files are append-only history (`ROADMAP-REVIEW-050.md`,
   `-060.md`, …). Never rewrite past reviews.
-- `ROADMAP.md` numbering stays exactly 1–200 (locked by
-  `test_roadmap_has_200_numbered_items`). Future items live as
-  `C-NN` candidates inside reviews until a v2 backlog is cut.
+- `ROADMAP.md` numbering stays sequential 1–N (locked by
+  `test_roadmap_has_sequential_numbered_items`). Future items live as
+  `C-NN` candidates inside reviews until the next backlog is cut.
 - Final report: review filename, per-driver highlights (2–3 bullets
   each max), PR number + merge commit.
 
