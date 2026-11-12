@@ -54,7 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   FIRE-4512 firewall rich-rules audit (default-deny, loopback,
   established, logging across ufw/firewalld/nftables/iptables),
   NETW-3030 socket-to-package attribution (ss pid to dpkg/rpm owner;
-  unpackaged /tmp or deleted-exe listeners warn as possible rogues).
+  unpackaged /tmp or deleted-exe listeners warn as possible rogues),
+  SCHD-7230 cron/at allow-deny audit (missing allow/deny files warn;
+  world-writable job paths flagged as persistence vectors).
 
 ### Deprecated
 

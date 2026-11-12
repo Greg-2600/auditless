@@ -93,7 +93,7 @@ Each item = check + test IDs + fixtures + docs. Proposed IDs are suggestions; re
 - [x] 48 — [P1] USBGuard / USB authorization (`usbcore.authorized_default`, UDISKS rules) — extend `USB-1000`. `checks` (effort: S)
 - [x] 49 — [P1] Firewall rich rules audit (default-deny, loopback, established, logging) for ufw/firewalld/nftables. `checks` (effort: M)
 - [x] 50 — [P1] Listening-socket → process → package attribution (`ss -ltnp` × `dpkg -S`/`rpm -qf`). `checks` (effort: M)
-- [ ] 51 — [P1] Cron/at/systemd-timer allow/deny files (`cron.allow`, `cron.deny`, `at.allow`) + world-writable job detection. `checks` (effort: S)
+- [x] 51 — [P1] Cron/at/systemd-timer allow/deny files (`cron.allow`, `cron.deny`, `at.allow`) + world-writable job detection. `checks` (effort: S)
 - [ ] 52 — [P1] Logrotate presence + auth/syslog rotation config. `checks` (effort: S)
 - [ ] 53 — [P1] Journald persistence (`Storage=persistent`, `SystemMaxUse`, forwarding). `checks` (effort: S)
 - [ ] 54 — [P1] PHP-FPM / opcache / `disable_functions` audit (where PHP present). `checks` (effort: S)
