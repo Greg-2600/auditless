@@ -97,7 +97,7 @@ Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+
 | **Boot/Kernel Hardening** | 5 | GRUB password protection, kernel security parameters (sysctl), Secure Boot + module signature enforcement, livepatch status (report-only), extended sysctl pass (BPF, userns, forwarding) |
 | **System Integrity** | 1 | File integrity monitoring tools (AIDE, Tripwire, OSSEC) detection + database freshness |
 | **Package Management** | 1 | GPG verification, repository security, unsigned packages |
-| **Logging & Auditing** | 1 | Syslog/rsyslog/journald, auditd status and configuration |
+| **Logging & Auditing** | 1 | Syslog/rsyslog/journald, auditd status and configuration, logrotate retention directives and log-file permissions |
 | **MAC Security** | 1 | SELinux/AppArmor detection, enforcement status, policy validation |
 | **Security Tools** | 1 | Fail2ban, ClamAV, IDS/IPS (Snort/Suricata), rootkit scanners |
 | **File System** | 1 | Mount options (noexec, nosuid, nodev), /tmp security, partition hardening |

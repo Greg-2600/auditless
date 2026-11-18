@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counted separately and excluded from hardening-index math (overall
   and per-category) and compliance verdicts/averages. Same for the
   scan-deadline truncation marker.
+- ACCT-5006 log-retention stage 2: auth/syslog/audit configs are now
+  audited for rotate/maxage directives, world-writable `create` modes,
+  world-writable live log files, and stale logrotate status; a config
+  file's presence alone no longer passes.
 - New checks: AUTH-9341 sudoers drop-in auditing, AUTH-9350 PAM
   faillock/pwquality completeness, SSH-7408 sshd hardening directives
   (AllowUsers/AllowGroups, MaxAuthTries, LoginGraceTime, ClientAlive),
