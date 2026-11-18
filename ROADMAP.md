@@ -40,7 +40,7 @@ History: v1 items, per-item merges, and review `ROADMAP-REVIEW-050.md` remain in
 
 Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is authoritative.
 
-- [ ] 12 — [P1] Logrotate presence + auth/syslog rotation config. `checks` (effort: S)
+- [x] 12 — [P1] Logrotate presence + auth/syslog rotation config. `checks` (effort: S)
 - [ ] 13 — [P1] Journald persistence (`Storage=persistent`, `SystemMaxUse`, forwarding). `checks` (effort: S)
 - [ ] 14 — [P1] PHP-FPM / opcache / `disable_functions` audit (where PHP present). `checks` (effort: S)
 - [ ] 15 — [P1] Redis/Memcached/Elasticsearch bind + auth checks (no open `0.0.0.0` without password). `checks` (effort: M)

@@ -425,6 +425,29 @@ class TestCheckKernelAuditEnabled:
 class TestCheckLogRetentionPolicy:
     """Test check_log_retention_policy function (ACCT-5006)."""
 
+    _CLEAN_PROBE = (
+        "===STATUS\n"
+        "===TIMER\n"
+        "active\n"
+        "===DIRECTIVES\n"
+        "FILE:/etc/logrotate.d/rsyslog\n"
+        "weekly\n"
+        "rotate 4\n"
+        "create 0640 root adm\n"
+        "===LOGS\n"
+        "-rw-r----- 1 0 4 4096 Jan 1 12:00 /var/log/syslog\n"
+    )
+
+    def _with_probe(self, probe: str):
+        return mock_ssh_exec(
+            [
+                (0, "/usr/sbin/logrotate", ""),  # which logrotate
+                (0, "5", ""),  # ls | wc -l
+                (0, "/etc/logrotate.d/rsyslog", ""),  # grep relevant configs
+                (0, probe, ""),  # stage 2
+            ]
+        )
+
     def test_logrotate_not_installed(self):
         """Test when logrotate is not installed."""
         ssh = mock_ssh_exec(
@@ -460,6 +483,7 @@ class TestCheckLogRetentionPolicy:
                 (0, "/usr/sbin/logrotate", ""),  # which logrotate
                 (0, "5", ""),  # ls | wc -l (5 config files)
                 (0, "/etc/logrotate.d/rsyslog\n/etc/logrotate.d/audit", ""),  # grep
+                (0, self._CLEAN_PROBE, ""),  # stage 2 directives/status
             ]
         )
 
@@ -468,6 +492,63 @@ class TestCheckLogRetentionPolicy:
         assert result.status == "pass"
         assert "configured" in result.details.lower()
         assert "2 relevant configs" in result.details.lower()
+        assert "retention directives present" in result.details.lower()
+
+    def test_world_writable_log_file_warns(self):
+        """A world-writable live log is a tampering vector."""
+        probe = self._CLEAN_PROBE.replace(
+            "-rw-r----- 1 0 4 4096", "-rw-rw-rw- 1 0 4 4096"
+        )
+        result = check_log_retention_policy(self._with_probe(probe))
+        assert result.status == "warn"
+        assert "world-writable log files" in result.details
+        assert "/var/log/syslog" in result.details
+
+    def test_world_writable_create_mode_warns(self):
+        """``create 0666`` makes every rotated log world-writable."""
+        probe = self._CLEAN_PROBE.replace(
+            "create 0640 root adm", "create 0666 root adm"
+        )
+        result = check_log_retention_policy(self._with_probe(probe))
+        assert result.status == "warn"
+        assert "world-writable rotation mode" in result.details
+
+    def test_missing_retention_directive_warns(self):
+        """A config that rotates without rotate/maxage is a disk-fill risk."""
+        probe = self._CLEAN_PROBE.replace("rotate 4\n", "")
+        result = check_log_retention_policy(self._with_probe(probe))
+        assert result.status == "warn"
+        assert "no rotate/maxage retention directive" in result.details
+
+    def test_rotate_zero_warns(self):
+        """``rotate 0`` deletes the current log immediately."""
+        probe = self._CLEAN_PROBE.replace("rotate 4", "rotate 0")
+        result = check_log_retention_policy(self._with_probe(probe))
+        assert result.status == "warn"
+        assert "rotate 0" in result.details
+
+    def test_stale_rotation_status_warns(self):
+        """An ancient logrotate status file means rotation stopped running."""
+        probe = self._CLEAN_PROBE.replace(
+            "===STATUS\n", "===STATUS\n1000000000 /var/lib/logrotate/status\n"
+        )
+        result = check_log_retention_policy(self._with_probe(probe))
+        assert result.status == "warn"
+        assert "days old" in result.details
+
+    def test_unavailable_probe_is_unknown_not_pass(self):
+        """A failed stage-2 probe must never masquerade as a pass."""
+        result = check_log_retention_policy(self._with_probe(""))
+        assert result.status == "unknown"
+        assert "stage-2 probe" in result.details
+
+    def test_symlinked_log_is_not_flagged_as_world_writable(self):
+        """Symlink mode bits (0777) are not the target file's permissions."""
+        probe = self._CLEAN_PROBE.replace(
+            "-rw-r----- 1 0 4 4096", "lrwxrwxrwx 1 0 4 12"
+        ).replace("/var/log/syslog", "/var/log/syslog -> /var/log/messages")
+        result = check_log_retention_policy(self._with_probe(probe))
+        assert result.status == "pass"
 
     def test_logrotate_configs_without_audit(self):
         """Test when logrotate is configured but no audit/syslog configs."""
@@ -542,6 +623,7 @@ class TestRunAllAuditChecks:
                 (0, "/usr/sbin/logrotate", ""),  # logrotate installed
                 (0, "5", ""),  # logrotate configs
                 (0, "/etc/logrotate.d/rsyslog", ""),  # relevant configs
+                (0, TestCheckLogRetentionPolicy._CLEAN_PROBE, ""),  # stage 2
             ]
         )
 

@@ -145,7 +145,7 @@ Examples:
 | ACCT-5003 | Syslog Config | LOGG-2080 | Planned |
 | ACCT-5004 | Auth Logging | LOGG-2010 | Planned |
 | ACCT-5005 | Kernel Audit | ACCT-9630 | Planned |
-| ACCT-5006 | Log Retention | LOGG-2150 | Planned |
+| ACCT-5006 | Log Retention | LOGG-2150 | Implemented |
 
 ---
 

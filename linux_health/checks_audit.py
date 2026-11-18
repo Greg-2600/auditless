@@ -9,9 +9,11 @@ Category: Accounting & Audit
 
 from __future__ import annotations
 
+import re
+import time
 from typing import List
 
-from .checks import CheckResult, _fail, _pass, _run, _warn
+from .checks import CheckResult, _fail, _pass, _run, _unknown, _warn
 from .ssh_client import SSHSession
 from .test_ids import CHECK_TEST_IDS
 
@@ -356,13 +358,111 @@ def check_kernel_audit_enabled(ssh: SSHSession, _password: str = "") -> CheckRes
             )
 
 
+# Stage 2 probe for ACCT-5006. Single read-only shell: rotation status
+# freshness, timer evidence, retention directives for the relevant configs,
+# and permissions of the current auth/syslog/audit log files.
+_LOG_RETENTION_PROBE = (
+    "bash -lc '"
+    "echo ===STATUS; "
+    'stat -c "%Y %n" /var/lib/logrotate/status /var/lib/logrotate.status '
+    "2>/dev/null; "
+    "echo ===TIMER; "
+    "systemctl is-active logrotate.timer 2>/dev/null; "
+    "echo ===DIRECTIVES; "
+    'for f in /etc/logrotate.d/*; do [ -f "$f" ] || continue; '
+    'case "$f" in *syslog*|*auth*|*audit*|*messages*|*secure*) ;; '
+    "*) continue;; esac; "
+    'echo "FILE:$f"; '
+    'grep -hE "^[[:space:]]*(rotate|maxage|compress|create|daily|weekly|'
+    'monthly|size)[[:space:]]" "$f" 2>/dev/null; '
+    "done; "
+    "echo ===LOGS; "
+    "ls -ln /var/log/auth.log /var/log/secure /var/log/syslog "
+    "/var/log/messages /var/log/audit/audit.log 2>/dev/null; "
+    "true'"
+)
+
+_STALE_ROTATION_SECONDS = 7 * 24 * 60 * 60
+
+
+def _probe_sections(output: str) -> dict[str, list[str]]:
+    """Split a marker-delimited remote probe into named sections."""
+    sections: dict[str, list[str]] = {}
+    current = ""
+    for line in output.splitlines():
+        if line.startswith("==="):
+            current = line[3:].strip()
+            sections[current] = []
+        elif current:
+            sections[current].append(line)
+    return sections
+
+
+def _log_retention_gaps(sections: dict[str, list[str]]) -> list[str]:
+    """Derive rotation weaknesses from the stage-2 probe sections."""
+    gaps: list[str] = []
+
+    # Retention directives: a config that rotates but never expires logs is
+    # a disk-fill risk; ``rotate 0`` deletes the current log immediately.
+    directives = [line.strip() for line in sections.get("DIRECTIVES", []) if line]
+    has_retention = any(
+        re.match(r"(rotate|maxage)\b", line, re.IGNORECASE) for line in directives
+    )
+    if not has_retention:
+        gaps.append("no rotate/maxage retention directive in auth/syslog configs")
+
+    for line in directives:
+        if re.match(r"rotate\s+0\b", line, re.IGNORECASE) and not any(
+            re.match(r"maxage\b", other, re.IGNORECASE) for other in directives
+        ):
+            gaps.append("rotate 0 deletes the current log with no maxage fallback")
+            break
+
+    for line in directives:
+        match = re.match(r"create\s+0?([0-7]{3,4})\b", line, re.IGNORECASE)
+        if match and int(match.group(1), 8) & 0o002:
+            gaps.append(f"world-writable rotation mode in '{line}'")
+            break
+
+    # World-writable live log files are a tampering/forgery vector.
+    world_writable = []
+    for line in sections.get("LOGS", []):
+        parts = line.split()
+        if (
+            len(parts) >= 9
+            and parts[0].startswith("-")  # regular file, not a symlink
+            and len(parts[0]) >= 10
+            and parts[0][8] == "w"
+        ):
+            world_writable.append(parts[-1])
+    if world_writable:
+        gaps.append(f"world-writable log files: {', '.join(world_writable[:3])}")
+
+    # Staleness only when a status file exists: absence is not proof of
+    # failure (some images rotate via cron without a status file).
+    timestamps = []
+    for line in sections.get("STATUS", []):
+        parts = line.split()
+        if len(parts) >= 2 and parts[0].isdigit():
+            timestamps.append(int(parts[0]))
+    if timestamps:
+        age = time.time() - max(timestamps)
+        if age > _STALE_ROTATION_SECONDS:
+            gaps.append(f"last rotation status is {age / 86400:.0f} days old")
+
+    return gaps
+
+
 def check_log_retention_policy(ssh: SSHSession, _password: str = "") -> CheckResult:
     """Check if log retention/rotation is configured.
 
     Test ID: ACCT-5006 (Lynis equivalent: LOGG-2150)
     Category: Accounting
 
-    Verifies that log rotation is configured via logrotate.
+    Stage 1 verifies logrotate is installed, config exists, and auth/syslog/
+    audit logs have a rotation policy. Stage 2 audits the policy itself:
+    rotate/maxage retention, world-writable ``create`` modes, world-writable
+    live log files, and whether rotation has run recently.
     """
     category = "Accounting"
     test_id = "ACCT-5006"
@@ -401,16 +501,7 @@ def check_log_retention_policy(ssh: SSHSession, _password: str = "") -> CheckRes
         "grep -l -E '(syslog|auth|audit|messages)' /etc/logrotate.d/* 2>/dev/null | head -5",
     )
 
-    if out:
-        configs = out.strip().split("\n")
-        return _pass(
-            "Log Retention Policy",
-            f"Log rotation configured ({len(configs)} relevant configs)",
-            "Review retention periods: /etc/logrotate.conf",
-            category,
-            test_id,
-        )
-    else:
+    if not out:
         return _warn(
             "Log Retention Policy",
             f"Logrotate configured ({config_count} files) but no audit/syslog configs found",
@@ -418,6 +509,59 @@ def check_log_retention_policy(ssh: SSHSession, _password: str = "") -> CheckRes
             category,
             test_id,
         )
+
+    configs = [line for line in out.strip().splitlines() if line]
+    summary = f"Log rotation configured ({len(configs)} relevant configs)"
+
+    # Stage 2 (item 12): audit the directives, log permissions and rotation
+    # status instead of trusting the presence of a config file.
+    _, probe_out, _ = _run(ssh, _LOG_RETENTION_PROBE)
+    sections = _probe_sections(probe_out)
+    if "STATUS" not in sections:
+        return _unknown(
+            "Log Retention Policy",
+            "Log rotation configured but the stage-2 probe could not run "
+            "(no bash/stat output)",
+            "Verify bash, stat and ls are available; re-run the scan with a "
+            "POSIX shell or an account allowed to read /var/log",
+            category,
+            test_id,
+        )
+    gaps = _log_retention_gaps(sections)
+    timer = " ".join(sections.get("TIMER", [])).strip().lower()
+
+    evidence = []
+    if any(
+        re.match(r"(rotate|maxage)\b", line.strip(), re.IGNORECASE)
+        for line in sections.get("DIRECTIVES", [])
+    ):
+        evidence.append("retention directives present")
+    if timer.startswith("active"):
+        evidence.append("logrotate.timer active")
+
+    if gaps:
+        parts = [summary] + gaps
+        return _warn(
+            "Log Retention Policy",
+            "; ".join(parts),
+            "Rotate auth/syslog/audit logs daily or weekly with rotate >= 4 "
+            "and maxage; use a root-owned mode such as create 0640; keep "
+            "live logs non-world-writable; confirm logrotate.timer or "
+            "cron.daily runs",
+            category,
+            test_id,
+        )
+
+    detail = summary
+    if evidence:
+        detail += "; " + ", ".join(evidence)
+    return _pass(
+        "Log Retention Policy",
+        detail,
+        "Review retention periods: /etc/logrotate.conf",
+        category,
+        test_id,
+    )
 
 
 def run_all_audit_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
