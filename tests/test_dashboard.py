@@ -242,6 +242,7 @@ def test_openapi_spec_is_complete(client):
         "/healthz",
         "/api/version",
         "/api/scans",
+        "/api/scans/range",
         "/api/scans/{job_id}",
         "/api/scans/{job_id}/report",
         "/api/profiles",
@@ -598,6 +599,70 @@ def test_trend_and_fleet(client, monkeypatch):
     with pytest.raises(ApiError) as exc_info:
         client.host_trend("missing")
     assert exc_info.value.status == 404
+
+
+def test_range_scan_discovers_and_launches(client, monkeypatch):
+    from linux_health import dashboard
+
+    def fake_run_scan(params):
+        params["password"] = None
+        return canned_report()
+
+    seen: dict = {}
+
+    def fake_probe(hosts, **kwargs):
+        seen["hosts"] = hosts
+        seen["kwargs"] = kwargs
+        return hosts[:2]
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    monkeypatch.setattr(dashboard, "probe_hosts", fake_probe)
+
+    result = client.range_scan(
+        "192.168.1.0/29", "admin", "PW-SENTINEL-9z9z", port=2222, probe_timeout=0.5
+    )
+    assert result["network"] == "192.168.1.0/29"
+    assert result["candidates"] == 6
+    assert result["discovered"] == 2
+    assert [job["host"] for job in result["jobs"]] == [
+        "192.168.1.1",
+        "192.168.1.2",
+    ]
+    assert seen["hosts"][0] == "192.168.1.1"
+    assert seen["kwargs"]["port"] == 2222
+    assert seen["kwargs"]["timeout"] == 0.5
+
+    done = client.wait_for(result["jobs"][0]["job_id"])
+    assert done["status"] == "done"
+    assert done["report"]["summary"]["hardening_index"] == 50
+    assert "PW-SENTINEL-9z9z" not in str(result)
+    assert "PW-SENTINEL-9z9z" not in str(done)
+
+
+def test_range_scan_rejects_invalid_input(client, monkeypatch):
+    from linux_health import dashboard
+
+    monkeypatch.setattr(dashboard, "probe_hosts", lambda hosts, **kw: hosts)
+    cases = [
+        ("not-a-range", "u", "p"),
+        ("10.0.0.0/8", "u", "p"),
+        ("192.168.1.0/30", "", "p"),
+        ("192.168.1.0/30", "u", ""),
+    ]
+    for network, username, password in cases:
+        with pytest.raises(ApiError) as exc_info:
+            client.range_scan(network, username, password)
+        assert exc_info.value.status == 400
+
+
+def test_range_scan_with_no_reachable_hosts(client, monkeypatch):
+    from linux_health import dashboard
+
+    monkeypatch.setattr(dashboard, "probe_hosts", lambda hosts, **kw: [])
+    result = client.range_scan("192.168.1.0/30", "u", "p")
+    assert result["candidates"] == 2
+    assert result["discovered"] == 0
+    assert result["jobs"] == []
 
 
 def test_fleet_heatmap_host_and_issue_modes(client, monkeypatch):

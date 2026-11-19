@@ -74,6 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   category, sizes them by finding weight or affected-host count, and
   colours them by hardening index or worst status. Raw check details and
   credentials are never included in the response.
+- Range scanning: the New scan card accepts a network range (CIDR, hyphen
+  range or single IP), probes it for open SSH, and launches one bounded
+  scan per reachable host with per-host progress. New
+  `POST /api/scans/range` and `ApiClient.range_scan()` return a discovery
+  summary plus job ids. Ranges are capped (256 addresses by default) and
+  no credentials are used during the port probe.
+
 - Fleet operations helpers: `ops/onboard_fleet.py` registers hosts from a
   TSV/CSV inventory and/or runs one baseline scan each through the public
   API; `ops/serve.sh` / `ops/stop.sh` manage a loopback dashboard with a

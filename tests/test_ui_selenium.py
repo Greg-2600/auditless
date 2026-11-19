@@ -258,3 +258,41 @@ def test_heatmap_toggle_renders_hosts_and_issues(
     )
     assert any("Firewall" in tile.text for tile in issue_tiles)
     _assert_no_severe_console_errors(driver)
+
+
+def test_range_scan_renders_per_host_table(
+    driver: Chrome, server: tuple[str, ApiClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A range scan probes, launches per-host jobs, and renders their reports."""
+    base_url, _api = server
+
+    def fake_run_scan(params: dict[str, Any]) -> dict[str, Any]:
+        params["password"] = None
+        return _canned_report()
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    monkeypatch.setattr(dashboard, "probe_hosts", lambda hosts, **kw: hosts[:2])
+    driver.get(base_url + "/")
+    wait = WebDriverWait(driver, WAIT_SECONDS)
+
+    driver.find_element(By.ID, "net").send_keys("192.168.1.0/29")
+    driver.find_element(By.ID, "user").send_keys("operator")
+    driver.find_element(By.ID, "pass").send_keys("pw")
+    driver.find_element(By.ID, "go").click()
+
+    wait.until(EC.text_to_be_present_in_element((By.ID, "status"), "scans launched"))
+    rows = wait.until(
+        EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#status tr"))
+    )
+    assert len(rows) == 3  # header + two hosts
+    assert "192.168.1.1" in rows[1].text
+    wait.until(
+        EC.text_to_be_present_in_element(
+            (By.CSS_SELECTOR, "#rj0 td:nth-child(2)"), "done"
+        )
+    )
+    assert "50" in driver.find_element(By.ID, "rj0").text
+
+    driver.find_element(By.CSS_SELECTOR, "#rj0 a").click()
+    wait.until(EC.text_to_be_present_in_element((By.ID, "result"), "Hardening index"))
+    _assert_no_severe_console_errors(driver)
