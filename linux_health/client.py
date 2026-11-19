@@ -309,6 +309,13 @@ class ApiClient:
         result: list[dict[str, Any]] = self._request("GET", "/api/fleet")
         return result
 
+    def heatmap(self, mode: str = "host") -> dict[str, Any]:
+        """Treemap data for hosts or fleet-wide issues (GET /api/fleet/heatmap)."""
+        result: dict[str, Any] = self._request(
+            "GET", "/api/fleet/heatmap", params={"mode": mode}
+        )
+        return result
+
     def fleet_scan(
         self,
         host_ids: list[str] | None = None,

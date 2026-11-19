@@ -256,6 +256,7 @@ def test_openapi_spec_is_complete(client):
         "/api/schedules/{schedule_id}/run",
         "/api/hosts/{host_id}/trend",
         "/api/fleet",
+        "/api/fleet/heatmap",
         "/api/compliance/controls",
         "/api/hosts/{host_id}/compliance",
         "/api/remediations",
@@ -597,6 +598,45 @@ def test_trend_and_fleet(client, monkeypatch):
     with pytest.raises(ApiError) as exc_info:
         client.host_trend("missing")
     assert exc_info.value.status == 404
+
+
+def test_fleet_heatmap_host_and_issue_modes(client, monkeypatch):
+    def fake_run_scan(params):
+        params["password"] = None
+        return canned_report()
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    host = client.create_host("hm", "192.168.5.9", "u", auth="password")
+    empty = client.heatmap("host")
+    assert empty["total_hosts"] == 1
+    assert empty["groups"][0]["tiles"][0]["sublabel"] == "not scanned"
+
+    done = client.wait_for(client.start_scan(host_id=host["id"], password="x")["id"])
+    assert done["status"] == "done"
+
+    host_map = client.heatmap("host")
+    assert host_map["mode"] == "host"
+    assert host_map["total_hosts"] == 1
+    group = host_map["groups"][0]
+    assert group["name"] == "192.168.5.0/24"
+    tile = group["tiles"][0]
+    assert tile["label"] == "hm"
+    assert tile["sublabel"] == "50/100"
+    assert tile["meta"]["host_id"] == host["id"]
+
+    issue_map = client.heatmap("issue")
+    assert issue_map["mode"] == "issue"
+    assert issue_map["total_tiles"] == 1
+    issue = issue_map["groups"][0]["tiles"][0]
+    assert issue["id"] == "FIRE-4512"
+    assert issue["meta"]["worst"] == "fail"
+    assert "off" not in str(issue)  # raw check details never leave the endpoint
+
+
+def test_fleet_heatmap_rejects_unknown_mode(client):
+    with pytest.raises(ApiError) as exc_info:
+        client.heatmap("bogus")
+    assert exc_info.value.status == 400
 
 
 def test_json_report_carries_package_version():

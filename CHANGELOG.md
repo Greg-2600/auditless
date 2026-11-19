@@ -67,6 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `linux-health` console script: emits a deprecation notice, use
   `auditless` instead. Kept through v3.x, removal slated for v4.0.
 
+### Added
+
+- Fleet heatmap: a treemap card in the dashboard with a host/issue toggle.
+  `GET /api/fleet/heatmap?mode=host|issue` groups tiles by subnet or check
+  category, sizes them by finding weight or affected-host count, and
+  colours them by hardening index or worst status. Raw check details and
+  credentials are never included in the response.
+
 ## [2.5.3] - 2026-11-05
 
 ### Fixed
