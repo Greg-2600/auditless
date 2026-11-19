@@ -3,7 +3,7 @@
 This module implements audit and accounting security checks for process accounting,
 auditd, syslog, and authentication logging following Lynis-compatible test patterns.
 
-Test IDs: ACCT-5000 to ACCT-5006
+Test IDs: ACCT-5000 to ACCT-5007
 Category: Accounting & Audit
 """
 
@@ -564,6 +564,203 @@ def check_log_retention_policy(ssh: SSHSession, _password: str = "") -> CheckRes
     )
 
 
+# Stage 2 probe for ACCT-5007. One read-only shell: service state, config
+# files in systemd's override order, journal directories, disk usage, and
+# evidence of remote forwarding (journal-upload, rsyslog or syslog-ng).
+_JOURNALD_PROBE = (
+    "bash -lc '"
+    "echo ===ACTIVE; "
+    "systemctl is-active systemd-journald.service 2>/dev/null; "
+    "echo ===CONFIG; "
+    "for f in /usr/lib/systemd/journald.conf.d/*.conf "
+    "/usr/local/lib/systemd/journald.conf.d/*.conf "
+    "/etc/systemd/journald.conf /etc/systemd/journald.conf.d/*.conf "
+    "/run/systemd/journald.conf.d/*.conf; do "
+    '[ -f "$f" ] || continue; echo "FILE:$f"; cat "$f" 2>/dev/null; '
+    "done; "
+    "echo ===DISK; "
+    "ls -ld /var/log/journal /run/log/journal 2>/dev/null; "
+    "echo ===USAGE; "
+    "journalctl --disk-usage 2>/dev/null; "
+    "echo ===UPLOAD; "
+    "systemctl is-active systemd-journal-upload.service 2>/dev/null; "
+    "echo ===FORWARD; "
+    'grep -hE "^[[:space:]]*URL[[:space:]]*=" /etc/systemd/journal-upload.conf '
+    "/etc/systemd/journal-upload.conf.d/*.conf 2>/dev/null; "
+    'grep -hE "(imjournal|omfwd|omrelp|@@)" /etc/rsyslog.conf '
+    "/etc/rsyslog.d/*.conf 2>/dev/null; "
+    'grep -hE "journal[(]" /etc/syslog-ng/syslog-ng.conf '
+    "/etc/syslog-ng/conf.d/*.conf 2>/dev/null; "
+    "true'"
+)
+
+# Any of these directives bounds journal growth; SystemMaxUse is preferred.
+_JOURNAL_SIZE_LABELS = {
+    "systemmaxuse": "SystemMaxUse",
+    "systemkeepfree": "SystemKeepFree",
+    "systemmaxfilesize": "SystemMaxFileSize",
+    "runtimemaxuse": "RuntimeMaxUse",
+    "runtimekeepfree": "RuntimeKeepFree",
+    "runtimemaxfilesize": "RuntimeMaxFileSize",
+}
+_JOURNAL_SIZE_KEYS = tuple(_JOURNAL_SIZE_LABELS)
+
+
+def _journald_settings(sections: dict[str, list[str]]) -> dict[str, str]:
+    """Return effective journald.conf settings (last assignment wins).
+
+    Comments, section headers and malformed lines are ignored so a commented
+    out ``#SystemMaxUse=`` cannot be mistaken for a configured limit. Later
+    files in the probe's override order supersede earlier ones.
+    """
+    values: dict[str, str] = {}
+    for line in sections.get("CONFIG", []):
+        text = line.strip()
+        if not text or text.startswith(("#", ";", "[")):
+            continue
+        key, separator, value = text.partition("=")
+        if separator and key.strip():
+            values[key.strip().lower()] = value.strip()
+    return values
+
+
+def _journald_gaps(
+    sections: dict[str, list[str]], settings: dict[str, str]
+) -> list[str]:
+    """Derive persistence, bounding and forwarding gaps from the probe."""
+    gaps: list[str] = []
+
+    storage = settings.get("storage", "auto").lower()
+    on_disk = any(
+        line.strip().startswith("d") and line.strip().endswith("/var/log/journal")
+        for line in sections.get("DISK", [])
+    )
+    if storage not in {"persistent", "auto"}:
+        gaps.append(f"journald storage is {storage!r}, not persistent")
+    elif storage == "auto" and not on_disk:
+        gaps.append("Storage=auto but /var/log/journal is absent (logs are volatile)")
+
+    if not any(settings.get(key) for key in _JOURNAL_SIZE_KEYS):
+        gaps.append("no journal size limit (SystemMaxUse/SystemKeepFree) configured")
+
+    upload = " ".join(sections.get("UPLOAD", [])).strip().lower()
+    forward = [line.strip() for line in sections.get("FORWARD", []) if line.strip()]
+    configured_url = any(re.match(r"url\s*=", line, re.IGNORECASE) for line in forward)
+    other_forwarding = [
+        line for line in forward if not re.match(r"url\s*=", line, re.IGNORECASE)
+    ]
+    if not upload.startswith("active") and not other_forwarding:
+        if configured_url:
+            gaps.append(
+                "systemd-journal-upload has a URL but the service is not active"
+            )
+        else:
+            gaps.append(
+                "no journal forwarding configured (journal-upload/rsyslog/syslog-ng)"
+            )
+
+    return gaps
+
+
+def check_journald_persistence(ssh: SSHSession, _password: str = "") -> CheckResult:
+    """Check journald persistence, size limits and forwarding.
+
+    Test ID: ACCT-5007 (Lynis equivalent: LOGG-2150)
+    Category: Accounting
+
+    Verifies that ``Storage=persistent`` (or ``auto`` with an on-disk
+    journal) is configured, journal growth is bounded by a size directive,
+    and logs are forwarded off the host. A failed probe returns unknown,
+    never a false pass.
+    """
+    category = "Accounting"
+    test_id = "ACCT-5007"
+
+    ret, _, _ = _run(
+        ssh, "command -v journalctl 2>/dev/null || which journalctl 2>/dev/null"
+    )
+    if ret != 0:
+        return _warn(
+            "Journald Persistence",
+            "journalctl not found; journald persistence cannot be confirmed",
+            "Install systemd-journald, or document the alternative persistent logging mechanism",
+            category,
+            test_id,
+        )
+
+    _, probe_out, _ = _run(ssh, _JOURNALD_PROBE)
+    sections = _probe_sections(probe_out)
+    if "ACTIVE" not in sections or "CONFIG" not in sections:
+        return _unknown(
+            "Journald Persistence",
+            "journald probe could not run (no bash/systemctl output)",
+            "Verify bash and systemctl are available and the account may read "
+            "/etc/systemd/journald.conf",
+            category,
+            test_id,
+        )
+
+    state = " ".join(sections["ACTIVE"]).strip().lower()
+    if not state:
+        return _unknown(
+            "Journald Persistence",
+            "could not determine the systemd-journald service state",
+            "Verify systemctl is available and systemd-journald is enabled",
+            category,
+            test_id,
+        )
+    if not state.startswith("active"):
+        return _warn(
+            "Journald Persistence",
+            f"systemd-journald is not active (state: {state})",
+            "Enable and start systemd-journald, or document another persistent logger",
+            category,
+            test_id,
+        )
+
+    settings = _journald_settings(sections)
+    gaps = _journald_gaps(sections, settings)
+    if gaps:
+        return _warn(
+            "Journald Persistence",
+            "; ".join(gaps),
+            "Set Storage=persistent (or Storage=auto with /var/log/journal present), "
+            "set SystemMaxUse= and SystemKeepFree=, and enable forwarding via "
+            "systemd-journal-upload or an rsyslog/syslog-ng journal source",
+            category,
+            test_id,
+        )
+
+    evidence = ["journald active"]
+    if settings.get("storage", "").lower() == "persistent":
+        evidence.append("Storage=persistent")
+    else:
+        evidence.append("Storage=auto with /var/log/journal")
+    limits = [
+        f"{_JOURNAL_SIZE_LABELS[key]}={settings[key]}"
+        for key in _JOURNAL_SIZE_KEYS
+        if settings.get(key)
+    ]
+    evidence.append("size limit: " + ", ".join(limits))
+    if sections.get("UPLOAD") and " ".join(
+        sections["UPLOAD"]
+    ).strip().lower().startswith("active"):
+        evidence.append("journal upload active")
+    else:
+        evidence.append("journal forwarding configured")
+    detail = "; ".join(evidence)
+    usage = " ".join(sections.get("USAGE", [])).strip()
+    if usage:
+        detail += f"; {usage}"
+    return _pass(
+        "Journald Persistence",
+        detail,
+        "Review /etc/systemd/journald.conf and the journal-upload destination",
+        category,
+        test_id,
+    )
+
+
 def run_all_audit_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
     """Run all audit and accounting security checks.
 
@@ -578,6 +775,7 @@ def run_all_audit_checks(ssh: SSHSession, password: str = "") -> List[CheckResul
         check_authentication_logging,
         check_kernel_audit_enabled,
         check_log_retention_policy,
+        check_journald_persistence,
     ]
 
     results = []

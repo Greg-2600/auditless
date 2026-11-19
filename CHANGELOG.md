@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   audited for rotate/maxage directives, world-writable `create` modes,
   world-writable live log files, and stale logrotate status; a config
   file's presence alone no longer passes.
+- ACCT-5007 journald persistence: new check verifies `Storage=persistent`
+  (or `auto` with `/var/log/journal`), a configured journal size limit
+  (`SystemMaxUse`/`SystemKeepFree` and friends) and off-host forwarding
+  via journal-upload, rsyslog or syslog-ng. Commented-out directives are
+  ignored, drop-in overrides win, and failed probes return `unknown`.
 - New checks: AUTH-9341 sudoers drop-in auditing, AUTH-9350 PAM
   faillock/pwquality completeness, SSH-7408 sshd hardening directives
   (AllowUsers/AllowGroups, MaxAuthTries, LoginGraceTime, ClientAlive),

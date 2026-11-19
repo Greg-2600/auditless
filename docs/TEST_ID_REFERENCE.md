@@ -146,6 +146,7 @@ Examples:
 | ACCT-5004 | Auth Logging | LOGG-2010 | Planned |
 | ACCT-5005 | Kernel Audit | ACCT-9630 | Planned |
 | ACCT-5006 | Log Retention | LOGG-2150 | Implemented |
+| ACCT-5007 | Journald Persistence | LOGG-2150 | Implemented |
 
 ---
 

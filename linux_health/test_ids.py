@@ -77,6 +77,7 @@ CHECK_TEST_IDS: dict[str, str] = {
     "check_authentication_logging": "ACCT-5004",
     "check_kernel_audit_enabled": "ACCT-5005",
     "check_log_retention_policy": "ACCT-5006",
+    "check_journald_persistence": "ACCT-5007",
     # Filesystem module (checks_filesystem.py)
     "check_nfs_exports_security": "NFS-3000",
     "check_mount_options_security": "FS-3010",

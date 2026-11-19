@@ -144,6 +144,7 @@ TEST_CIS: dict[str, list[tuple[str, str]]] = {
     "ACCT-5004": [("4.2", "partial")],
     "ACCT-5005": [("4.2", "partial")],
     "ACCT-5006": [("4.2", "partial")],
+    "ACCT-5007": [("4.2", "partial")],
     "LOGG-2150": [("4.1", "partial")],
 }
 
@@ -258,6 +259,7 @@ PCI_MAPPING: dict[str, list[tuple[str, str]]] = {
     "ACCT-5004": [("10.2", "partial")],
     "ACCT-5005": [("10.2", "partial")],
     "ACCT-5006": [("10.2", "partial")],
+    "ACCT-5007": [("10.2", "partial")],
     "LOGG-2150": [("10.2", "partial")],
 }
 
