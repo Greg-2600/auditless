@@ -39,6 +39,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, SecretStr
 
+from .discovery import parse_network, probe_hosts
 from .heatmap import build_heatmap
 from .store import Store
 
@@ -172,6 +173,61 @@ class ScanRequest(BaseModel):
     strict_host_key_checking: bool = Field(
         default=False, description="Reject unknown host keys (MITM protection)."
     )
+
+
+class RangeScanRequest(BaseModel):
+    """Probe a network range for SSH and scan each reachable host.
+
+    Credentials follow the same write-only rule as ``ScanRequest``: the
+    password lives in server memory for the duration of the batch only.
+    """
+
+    network: str = Field(
+        examples=["192.168.1.0/24", "192.168.1.10-20"],
+        description="CIDR, hyphen range or single IP (bounded to max_hosts).",
+    )
+    username: str = Field(default="", examples=["admin"])
+    password: SecretStr | None = Field(
+        default=None, description="SSH password. Memory-only; never stored or returned."
+    )
+    port: int = 22
+    max_hosts: int = Field(
+        default=256, ge=1, le=1024, description="Cap on addresses in the range."
+    )
+    probe_timeout: float = Field(
+        default=1.0, ge=0.1, le=10.0, description="Seconds per SSH port probe."
+    )
+    probe_concurrency: int = Field(
+        default=32, ge=1, le=64, description="Parallel TCP probes."
+    )
+    max_concurrent: int = Field(
+        default=4, ge=1, le=8, description="Cap simultaneous scan jobs."
+    )
+    timeout: float = 5.0
+    command_timeout: float = 60.0
+    scan_ports: str = ""
+    profile: str = ""
+    enable_rootkit_scan: bool = False
+    check_package_hygiene: bool = False
+    strict_host_key_checking: bool = Field(
+        default=False, description="Reject unknown host keys."
+    )
+
+
+class RangeJob(BaseModel):
+    """One launched job, paired with the host it targets."""
+
+    host: str
+    job_id: str
+
+
+class RangeScanResponse(BaseModel):
+    """Discovery summary plus the launched jobs (never credentials)."""
+
+    network: str
+    candidates: int
+    discovered: int
+    jobs: list[RangeJob]
 
 
 class HostCreate(BaseModel):
@@ -886,14 +942,17 @@ session storage only &mdash; never persisted.</div>
 <div><label>SSH password</label><input id="pass" type="password" placeholder="required"></div>
 <div><label>SSH port</label><input id="port" value="22"></div>
 </div>
+<div style="margin-bottom:8px"><label>Network range (optional &mdash; scans every host with the port above open)</label>
+<input id="net" placeholder="192.168.1.0/24 or 192.168.1.10-20" style="max-width:420px"></div>
 <div class="opts">
 <label><input type="checkbox" id="strict"> strict host-key checking</label>
 <label><input type="checkbox" id="rootkit"> rkhunter scan</label>
 <label><input type="checkbox" id="hygiene"> package hygiene</label>
 </div>
 <button id="go" onclick="startScan()">Run scan</button>
-<div class="note">Password stays in server memory for the run only &mdash; never stored or logged.
-Binds to localhost; do not expose without auth + TLS.</div>
+<div class="note">A range probes each address for open SSH first, then scans only responsive hosts
+(up to 256 addresses; CIDR, hyphen range or single IP). Password stays in server memory for the
+run only &mdash; never stored or logged. Binds to localhost; do not expose without auth + TLS.</div>
 <div id="status" style="margin-top:10px"></div>
 </div>
 <div class="card"><h3 style="margin-top:0">Recent scans (this session)</h3><div id="hist" class="hist">loading&hellip;</div></div>
@@ -959,7 +1018,7 @@ Binds to localhost; do not expose without auth + TLS.</div>
 <div id="result"></div>
 </div>
 <script>
-let cur=null,timer=null;
+let cur=null,timer=null,rangeTimer=null,rangeJobs=[],rangeReports={},rangeSummary="";
 let TOK=sessionStorage.getItem("auditless_tok")||"";
 async function api(p,o){o=o||{};o.headers=Object.assign({},o.headers||{});
  if(TOK)o.headers["Authorization"]="Bearer "+TOK;
@@ -972,6 +1031,9 @@ function saveTok(){TOK=tokinput.value;sessionStorage.setItem("auditless_tok",TOK
  tokbar(false);loadHosts();loadReports();loadHist()}
 function clearTok(){TOK="";sessionStorage.removeItem("auditless_tok");tokinput.value=""}
 async function startScan(){
+ clearInterval(rangeTimer);
+ const net=document.getElementById("net").value.trim();
+ if(net){await startRangeScan(net);return}
  const hs=hostsel.value;
  const b=hs?{host_id:hs}:{hostname:host.value,username:user.value,
   port:parseInt(port.value||"22",10)};
@@ -984,6 +1046,58 @@ async function startScan(){
   headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
   cur=j.id;go.disabled=true;poll();}
  catch(e){status('<span class="err">'+esc(e.message)+"</span>")}}
+async function startRangeScan(net){
+ clearInterval(timer);
+ const b={network:net,username:user.value,
+  port:parseInt(port.value||"22",10),
+  strict_host_key_checking:strict.checked,
+  enable_rootkit_scan:rootkit.checked,check_package_hygiene:hygiene.checked};
+ if(pass.value)b.password=pass.value;
+ pass.value="";go.disabled=true;
+ status("probing "+esc(net)+"&hellip;");
+ try{
+  const j=await api("/api/scans/range",{method:"POST",
+   headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
+  rangeJobs=j.jobs||[];rangeReports={};
+  if(!rangeJobs.length){
+   status("no hosts with SSH open in "+esc(net));
+   go.disabled=false;loadHist();return}
+  rangeSummary="probed "+j.candidates+" addresses &mdash; "+j.discovered+
+   " with SSH open, "+rangeJobs.length+" scans launched";
+  status(rangeSummary);
+  renderRangeTable();pollRange();
+ }catch(e){go.disabled=false;status('<span class="err">'+esc(e.message)+"</span>")}}
+function renderRangeTable(){
+ document.getElementById("status").innerHTML=
+  "<div style='margin-bottom:8px'>"+rangeSummary+"</div>"+
+  "<table><tr><th>Host</th><th>Status</th><th>Index</th><th></th></tr>"+
+  rangeJobs.map((x,i)=>`<tr id="rj${i}"><td>${esc(x.host)}</td>`+
+   `<td>queued</td><td>&ndash;</td><td></td></tr>`).join("")+"</table>"}
+async function pollRange(){
+ clearInterval(rangeTimer);
+ rangeTimer=setInterval(async()=>{
+  const pending=rangeJobs.map((x,i)=>({x,i})).filter(({x})=>!x._done);
+  if(!pending.length){
+   clearInterval(rangeTimer);go.disabled=false;loadHist();return}
+  await Promise.all(pending.map(async({x,i})=>{
+   try{
+    const j=await api("/api/scans/"+x.job_id);
+    const row=document.getElementById("rj"+i);if(!row)return;
+    const cells=row.children;
+    cells[1].textContent=j.progress||j.status;
+    if(j.status==="done"){
+     x._done=true;rangeReports[x.job_id]=j.report;
+     cells[1].textContent="done";
+     const s=(j.report&&j.report.summary)||{};
+     cells[2].textContent=s.hardening_index??"\u2013";
+     cells[3].innerHTML='<a onclick="showRangeReport(\\''+esc(x.job_id)+'\\')">view</a>';
+    }else if(j.status==="error"){
+     x._done=true;cells[1].innerHTML='<span class="err">'+esc(j.error||"failed")+"</span>";
+    }
+   }catch(e){/* transient poll error: retry next tick */}
+  }));
+ },1500)}
+function showRangeReport(id){const r=rangeReports[id];if(r)render(r)}
 function hostPick(){const d=!!hostsel.value;
  [host,user,port].forEach(i=>i.disabled=d)}
 async function poll(){
@@ -1427,6 +1541,86 @@ def api_start_scan(
     )
     worker.start()
     return _public_job(job)
+
+
+@app.post(
+    "/api/scans/range",
+    dependencies=_guarded,
+    response_model=RangeScanResponse,
+    status_code=201,
+    summary="Probe a network range and scan every host with SSH open",
+)
+def api_range_scan(
+    data: RangeScanRequest, actor: str = Depends(require_token)
+) -> RangeScanResponse:
+    """Discover reachable SSH hosts in a range, then scan each in parallel.
+
+    The port probe only checks TCP reachability — no credentials are used
+    until a host is confirmed open. Each launched job is independent and is
+    polled through ``GET /api/scans/{id}`` like any other scan. Discovered
+    hosts are not registered as saved hosts.
+    """
+    secret = data.password.get_secret_value() if data.password else ""
+    if not data.username.strip() or not secret:
+        raise HTTPException(
+            status_code=400, detail="username and password are required"
+        )
+    try:
+        candidates = parse_network(data.network, data.max_hosts)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    reachable = probe_hosts(
+        candidates,
+        port=data.port,
+        timeout=data.probe_timeout,
+        max_concurrent=data.probe_concurrency,
+    )
+    slots = threading.Semaphore(min(max(1, data.max_concurrent), 8))
+    overrides = {
+        "port": data.port,
+        "timeout": data.timeout,
+        "command_timeout": data.command_timeout,
+        "scan_ports": data.scan_ports,
+        "profile": data.profile,
+        "enable_rootkit_scan": data.enable_rootkit_scan,
+        "check_package_hygiene": data.check_package_hygiene,
+        "strict_host_key_checking": data.strict_host_key_checking,
+    }
+
+    def _range_worker(job: ScanJob, params: dict) -> None:
+        with slots:
+            _run_job(job, params, None, actor)
+
+    jobs: list[RangeJob] = []
+    for host in reachable:
+        params = {
+            "hostname": host,
+            "username": data.username,
+            "password": secret,
+            "key_path": "",
+            **overrides,
+        }
+        try:
+            job = start_scan(params)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        threading.Thread(target=_range_worker, args=(job, params), daemon=True).start()
+        jobs.append(RangeJob(host=host, job_id=job.id))
+
+    _audit(
+        actor,
+        "scan.range",
+        "range",
+        data.network,
+        f"candidates={len(candidates)} hosts={len(jobs)}",
+    )
+    return RangeScanResponse(
+        network=data.network,
+        candidates=len(candidates),
+        discovered=len(reachable),
+        jobs=jobs,
+    )
 
 
 @app.get(

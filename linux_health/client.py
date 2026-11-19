@@ -127,6 +127,23 @@ class ApiClient:
         result: dict[str, Any] = self._request("POST", "/api/scans", payload)
         return result
 
+    def range_scan(
+        self, network: str, username: str, password: str = "", **options: Any
+    ) -> dict[str, Any]:
+        """Probe a network range and start one scan per reachable SSH host.
+
+        Returns a discovery summary plus ``jobs`` (host + job_id pairs).
+        Poll each job with :meth:`get_scan` / :meth:`wait_for`.
+        """
+        payload: dict[str, Any] = {
+            "network": network,
+            "username": username,
+            "password": password,
+            **options,
+        }
+        result: dict[str, Any] = self._request("POST", "/api/scans/range", payload)
+        return result
+
     def get_scan(self, job_id: str) -> dict[str, Any]:
         """Job status; includes the full report once done."""
         result: dict[str, Any] = self._request("GET", f"/api/scans/{job_id}")

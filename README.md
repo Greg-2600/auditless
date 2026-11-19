@@ -463,6 +463,13 @@ api.create_schedule(host_id, "watch", "*/30 * * * *",
   returned or logged.
 - **Trends** (`GET /api/hosts/{id}/trend`) return chronological hardening
   scores for charting; the UI draws per-host SVG sparklines.
+- **Range scan** (`POST /api/scans/range`) probes a network for hosts with
+  the SSH port open, then runs one scan per reachable host with bounded
+  concurrency. The New scan card has a *Network range* field for this.
+  Accepts CIDR (`192.168.1.0/24`), hyphen (`192.168.1.10-20`) or a single
+  IP; ranges are capped at 256 addresses by default. The response lists
+  the launched `jobs` — poll each via `GET /api/scans/{id}`. Discovered
+  hosts are not registered as saved hosts.
 - **Fleet** (`GET /api/fleet`) returns one row per host with its latest
   index, report id, and report count — the UI fleet table.
 - **Heatmap** (`GET /api/fleet/heatmap?mode=host|issue`) returns grouped
