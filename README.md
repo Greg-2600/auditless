@@ -471,6 +471,10 @@ api.create_schedule(host_id, "watch", "*/30 * * * *",
   worst status. The dashboard renders both modes with a toggle. Only
   labels and counts are returned — raw check details never leave the API.
 
+For onboarding a set of hosts and sequencing fleet work, see
+`ops/README.md` and the generic `docs/FLEET_PLAYBOOK.md`. Both use only the
+documented API; keep real inventories and credentials local.
+
 Development gates run on every commit via pre-commit (black, ruff,
 pylint 10.00/10, mypy, bandit HIGH-only, full pytest suite) and mirror
 in CI:

@@ -74,6 +74,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   category, sizes them by finding weight or affected-host count, and
   colours them by hardening index or worst status. Raw check details and
   credentials are never included in the response.
+- Fleet operations helpers: `ops/onboard_fleet.py` registers hosts from a
+  TSV/CSV inventory and/or runs one baseline scan each through the public
+  API; `ops/serve.sh` / `ops/stop.sh` manage a loopback dashboard with a
+  pidfile. Documented in `ops/README.md` with a generic sequencing guide in
+  `docs/FLEET_PLAYBOOK.md`. Inventories, credentials and baseline summaries
+  are intentionally local-only and are never written to git.
 
 ## [2.5.3] - 2026-11-05
 
