@@ -465,6 +465,11 @@ api.create_schedule(host_id, "watch", "*/30 * * * *",
   scores for charting; the UI draws per-host SVG sparklines.
 - **Fleet** (`GET /api/fleet`) returns one row per host with its latest
   index, report id, and report count — the UI fleet table.
+- **Heatmap** (`GET /api/fleet/heatmap?mode=host|issue`) returns grouped
+  treemap data: host tiles sized by finding weight and coloured by
+  hardening index, or issue tiles sized by affected hosts and coloured by
+  worst status. The dashboard renders both modes with a toggle. Only
+  labels and counts are returned — raw check details never leave the API.
 
 Development gates run on every commit via pre-commit (black, ruff,
 pylint 10.00/10, mypy, bandit HIGH-only, full pytest suite) and mirror

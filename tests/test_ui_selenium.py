@@ -30,7 +30,7 @@ from selenium.webdriver import Chrome  # noqa: E402
 from selenium.webdriver.chrome.options import Options  # noqa: E402
 from selenium.webdriver.common.by import By  # noqa: E402
 from selenium.webdriver.support import expected_conditions as EC  # noqa: E402
-from selenium.webdriver.support.ui import WebDriverWait  # noqa: E402
+from selenium.webdriver.support.ui import Select, WebDriverWait  # noqa: E402
 
 WAIT_SECONDS = 15.0
 
@@ -221,3 +221,40 @@ def test_fleet_table_shows_saved_host(
     wait.until(EC.text_to_be_present_in_element((By.ID, "fleet"), "selenium-host"))
     fleet_text = driver.find_element(By.ID, "fleet").text
     assert "10.9.9.9" in fleet_text
+
+
+def test_heatmap_toggle_renders_hosts_and_issues(
+    driver: Chrome, server: tuple[str, ApiClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Treemap tiles render for hosts and issues via the mode toggle."""
+    base_url, api = server
+
+    def fake_run_scan(params: dict[str, Any]) -> dict[str, Any]:
+        params["password"] = None
+        return _canned_report()
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    host = api.create_host("heat-host", "10.4.4.4", "root", auth="password")
+    api.wait_for(api.start_scan(host_id=host["id"], password="pw")["id"])
+    driver.get(base_url + "/")
+    wait = WebDriverWait(driver, WAIT_SECONDS)
+    tiles = wait.until(
+        EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#heatmap .hmtile"))
+    )
+    assert any("heat-host" in tile.text for tile in tiles)
+    assert "hardening index" in driver.find_element(By.ID, "hmlegend").text
+    # Regression: a dominant tile must not recurse forever on a zero split.
+    assert (
+        driver.execute_script(
+            "return hmTreemap([{value:100},{value:1},{value:1}],0,0,400,200,[]).length"
+        )
+        == 3
+    )
+
+    Select(driver.find_element(By.ID, "hmmode")).select_by_value("issue")
+    wait.until(EC.text_to_be_present_in_element((By.ID, "hmlegend"), "worst status"))
+    issue_tiles = wait.until(
+        EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#heatmap .hmtile"))
+    )
+    assert any("Firewall" in tile.text for tile in issue_tiles)
+    _assert_no_severe_console_errors(driver)

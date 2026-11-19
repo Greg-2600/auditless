@@ -39,6 +39,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, SecretStr
 
+from .heatmap import build_heatmap
 from .store import Store
 
 MAX_JOBS = 50
@@ -298,6 +299,36 @@ class ScanJobPublic(BaseModel):
     hardening_index: int | None = None
     error: str | None = None
     report: dict | None = None
+
+
+class HeatmapTile(BaseModel):
+    """A single treemap tile (labels + counts only, no raw check details)."""
+
+    id: str
+    label: str
+    sublabel: str = ""
+    value: int
+    color: str
+    hosts: list[dict] = Field(default_factory=list)
+    meta: dict = Field(default_factory=dict)
+
+
+class HeatmapGroup(BaseModel):
+    """A labelled group of tiles (TradingView-sector equivalent)."""
+
+    name: str
+    value: int
+    tiles: list[HeatmapTile]
+
+
+class HeatmapResponse(BaseModel):
+    """Grouped treemap data plus small summary counters."""
+
+    mode: str
+    groups: list[HeatmapGroup]
+    total_hosts: int
+    total_tiles: int
+    generated_at: float
 
 
 def _register_job(job: ScanJob) -> None:
@@ -817,6 +848,21 @@ th{color:var(--dim);font-weight:600}.pass{color:var(--grn)}.warn{color:var(--yel
 .toolbar input,.toolbar select{width:auto;flex:1}
 .hist{font-size:13px;color:var(--dim)}.hist a{color:var(--acc);cursor:pointer}
 .err{color:var(--red)}.note{font-size:12px;color:var(--dim);margin-top:8px}
+.heatmap{position:relative;height:420px;background:#0d1117;border:1px solid var(--line);
+border-radius:6px;overflow:hidden}
+.hmgroup{position:absolute;border:1px solid var(--line);border-radius:4px;
+background:#11161d;overflow:hidden}
+.hmname{position:absolute;top:0;left:0;right:0;height:18px;font-size:11px;
+color:var(--dim);padding:2px 6px;background:#161b22;white-space:nowrap;
+overflow:hidden;text-overflow:ellipsis}
+.hmtile{position:absolute;border:1px solid #0d1117;border-radius:3px;cursor:pointer;
+overflow:hidden;padding:3px;color:#fff;font-size:11px;line-height:1.15}
+.hmtile:hover{filter:brightness(1.3);z-index:2}
+.hmlabel{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hmsub{color:rgba(255,255,255,.78);font-size:10px;white-space:nowrap;
+overflow:hidden;text-overflow:ellipsis}
+.hmempty{position:absolute;inset:0;display:flex;align-items:center;
+justify-content:center;color:var(--dim)}
 </style>
 </head>
 <body>
@@ -866,6 +912,15 @@ Binds to localhost; do not expose without auth + TLS.</div>
 <div id="fleet" class="hist">loading&hellip;</div>
 <div id="trend"></div>
 <div class="toolbar"><select id="compfw"><option value="auto">framework: auto</option><option value="cis-ubuntu22">CIS Ubuntu 22.04</option><option value="cis-debian12">CIS Debian 12</option><option value="cis-rhel9">CIS RHEL 9</option><option value="pci-dss4">PCI-DSS 4.0</option></select></div>
+</div>
+<div class="card"><h3 style="margin-top:0">Heatmap <span style="color:var(--dim);font-size:12px;font-weight:400">&mdash; hosts / issues at a glance</span></h3>
+<div class="toolbar">
+<select id="hmmode" onchange="loadHeatmap()" style="max-width:180px"><option value="host">by host</option><option value="issue">by issue</option></select>
+<button style="margin:0" onclick="loadHeatmap()">Refresh</button>
+</div>
+<div id="hmlegend" class="note"></div>
+<div id="heatmap" class="heatmap"><div class="hmempty">loading&hellip;</div></div>
+<div id="heatdetail" class="hist" style="margin-top:8px"></div>
 </div>
 <div class="card"><h3 style="margin-top:0">Scan schedules</h3>
 <div class="row" style="grid-template-columns:1fr 1fr 140px 120px">
@@ -1034,6 +1089,80 @@ async function showTrend(id,name){
   `<polyline fill="none" stroke="#58a6ff" stroke-width="2" points="${pts.map(p=>p.join(",")).join(" ")}"/>`+
   pts.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${vals[i]>=75?"#3fb950":vals[i]>=60?"#d29922":"#f85149"}"><title>${vals[i]} @ ${esc(t[i].report_id||"")}</title></circle>`).join("")+
   `</svg>`}
+let hmData=null,hmMode="host";
+function hmTreemap(items,x,y,w,h,out){
+ items=(items||[]).filter(i=>i&&i.value>0).slice().sort((a,b)=>b.value-a.value);
+ const total=items.reduce((s,i)=>s+i.value,0);
+ if(!total||w<=0||h<=0)return out;
+ if(items.length===1){out.push({item:items[0],x:x,y:y,w:w,h:h});return out}
+ let acc=0,i=0;
+ while(i<items.length-1&&acc+items[i].value<total/2){acc+=items[i].value;i++}
+ if(i===0){i=1;acc=items[0].value}
+ const a=items.slice(0,i),b=items.slice(i);
+ if(w>=h){const wa=w*acc/total;hmTreemap(a,x,y,wa,h,out);hmTreemap(b,x+wa,y,w-wa,h,out)}
+ else{const ha=h*acc/total;hmTreemap(a,x,y,w,ha,out);hmTreemap(b,x,y+ha,w,h-ha,out)}
+ return out}
+async function loadHeatmap(){
+ const el=document.getElementById("heatmap");
+ const mode=document.getElementById("hmmode").value;
+ try{
+  const data=await api("/api/fleet/heatmap?mode="+encodeURIComponent(mode));
+  hmData=data;hmMode=mode;hmRender(el);
+ }catch(e){el.innerHTML='<div class="hmempty">unavailable</div>'}}
+function hmRender(el){
+ el=el||document.getElementById("heatmap");
+ el.innerHTML="";
+ if(!hmData)return;
+ const groups=(hmData.groups||[]).filter(g=>g.tiles&&g.tiles.length);
+ if(!groups.length){
+  el.innerHTML='<div class="hmempty">no reports yet &mdash; scan a host to populate the heatmap</div>';
+  document.getElementById("hmlegend").textContent="";return}
+ document.getElementById("hmlegend").textContent=hmMode==="host"
+  ?"size = findings + 1 · colour = hardening index · click a tile for trend"
+  :"size = weighted findings · colour = worst status · click a tile for impact";
+ const W=Math.max(320,el.clientWidth||900),H=Math.max(200,el.clientHeight||420);
+ const nodes=groups.map(g=>({g:g,value:g.tiles.reduce((s,t)=>s+Math.max(1,t.value||0),0)}));
+ const laid=hmTreemap(nodes,0,0,W,H,[]);
+ for(const n of laid){
+  const g=n.item.g;
+  const gd=document.createElement("div");gd.className="hmgroup";
+  gd.style.left=n.x+"px";gd.style.top=n.y+"px";
+  gd.style.width=n.w+"px";gd.style.height=n.h+"px";gd.title=g.name;
+  const name=document.createElement("div");name.className="hmname";
+  name.textContent=g.name;gd.appendChild(name);
+  const inner=document.createElement("div");
+  inner.style.cssText="position:absolute;left:0;right:0;top:18px;bottom:0";
+  gd.appendChild(inner);
+  const tiles=hmTreemap(g.tiles,0,0,n.w,Math.max(1,n.h-18),[]);
+  for(const tn of tiles){
+   const t=tn.item;
+   const d=document.createElement("div");d.className="hmtile";
+   d.style.left=tn.x+"px";d.style.top=tn.y+"px";
+   d.style.width=tn.w+"px";d.style.height=tn.h+"px";
+   d.style.background=t.color||"#30363d";
+   d.title=(t.label||"")+" — "+(t.sublabel||"")+"\\n"+
+    (t.hosts||[]).map(x=>x.name+" ("+x.status+")").join("\\n");
+   d.onclick=(function(tile){return function(){hmSelect(tile)}})(t);
+   const lab=document.createElement("div");lab.className="hmlabel";
+   lab.textContent=t.label||"";d.appendChild(lab);
+   const sub=document.createElement("div");sub.className="hmsub";
+   sub.textContent=t.sublabel||"";d.appendChild(sub);
+   inner.appendChild(d)}
+  el.appendChild(gd)}}
+function hmSelect(t){
+ const m=t.meta||{},detail=document.getElementById("heatdetail");
+ if(hmMode==="host"){
+  detail.textContent="";
+  if(m.host_id){
+   showTrend(m.host_id,t.label||m.hostname||"host");
+   document.getElementById("trend").scrollIntoView({behavior:"smooth",block:"nearest"})}
+  return}
+ const hosts=(t.hosts||[]).map(x=>esc(x.name)+" ("+esc(x.status)+")").join(", ");
+ detail.innerHTML="<b>"+esc(t.label||"")+"</b> &mdash; "+esc(t.sublabel||"")+
+  (m.test_id?" <code>"+esc(m.test_id)+"</code>":"")+
+  (m.category?" ["+esc(m.category)+"]":"")+"<br>"+hosts+
+  (m.recommendation?"<br>"+esc(m.recommendation):"")}
+window.addEventListener("resize",()=>{if(hmData)hmRender()});
 async function loadScheds(){
  try{const s=await api("/api/schedules");
   const hosts=await api("/api/hosts");
@@ -1166,6 +1295,7 @@ loadHist();
 loadHosts();
 loadReports();
 loadFleet();
+loadHeatmap();
 loadScheds();
 loadTokens();
 loadAudit();
@@ -2079,6 +2209,39 @@ def api_fleet() -> list[dict]:
             }
         )
     return fleet
+
+
+@app.get(
+    "/api/fleet/heatmap",
+    dependencies=_guarded,
+    response_model=HeatmapResponse,
+    summary="Treemap data for saved hosts or fleet-wide issues",
+)
+def api_fleet_heatmap(mode: str = "host") -> HeatmapResponse:
+    """Aggregate the latest report per host into grouped heatmap tiles.
+
+    ``mode=host`` sizes tiles by finding weight and colours by hardening
+    index; ``mode=issue`` aggregates checks across hosts by category. Raw
+    check details never leave this endpoint (only labels and counts).
+    """
+    if mode not in ("host", "issue"):
+        raise HTTPException(status_code=400, detail="mode must be 'host' or 'issue'")
+    store = get_store()
+    hosts = store.list_hosts()
+    latest: dict[str, dict] = {}
+    for host in hosts:
+        rows = store.list_reports(host["id"], limit=1)
+        if not rows:
+            continue
+        row = store.get_report(rows[0]["id"])
+        raw = (row or {}).get("report_json")
+        if not raw:
+            continue
+        with contextlib.suppress(TypeError, ValueError):
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                latest[host["id"]] = payload
+    return HeatmapResponse(**build_heatmap(hosts, latest, mode))
 
 
 class TokenCreate(BaseModel):
