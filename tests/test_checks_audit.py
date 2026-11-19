@@ -1,6 +1,6 @@
 """Unit tests for Audit & Accounting Module (checks_audit.py).
 
-Tests all 7 audit/accounting security checks (ACCT-5000 through ACCT-5006) with
+Tests all 8 audit/accounting security checks (ACCT-5000 through ACCT-5007) with
 pass/warn/fail scenarios and error handling.
 """
 
@@ -15,6 +15,7 @@ from linux_health.checks_audit import (
     check_audit_rules_configured,
     check_auditd_service,
     check_authentication_logging,
+    check_journald_persistence,
     check_kernel_audit_enabled,
     check_log_retention_policy,
     check_process_accounting,
@@ -566,17 +567,148 @@ class TestCheckLogRetentionPolicy:
         assert "no audit/syslog configs" in result.details.lower()
 
 
+class TestCheckJournaldPersistence:
+    """Test check_journald_persistence function (ACCT-5007)."""
+
+    @staticmethod
+    def _probe(
+        *,
+        state: str = "active",
+        config: str = "Storage=persistent\nSystemMaxUse=1G\nSystemKeepFree=15%",
+        disk: bool = True,
+        usage: str = "Archived and active journals take up 24.0M in the file system.",
+        upload: str = "active",
+        forward: str = "URL=https://logs.example.com:19532",
+    ) -> str:
+        disk_line = (
+            "drwxr-xr-x 3 root root 4096 Jan 1 12:00 /var/log/journal\n" if disk else ""
+        )
+        return (
+            f"===ACTIVE\n{state}\n"
+            f"===CONFIG\n{config}\n"
+            f"===DISK\n{disk_line}"
+            f"===USAGE\n{usage}\n"
+            f"===UPLOAD\n{upload}\n"
+            f"===FORWARD\n{forward}\n"
+        )
+
+    def _with_probe(self, probe: str):
+        return mock_ssh_exec(
+            [
+                (0, "/usr/bin/journalctl", ""),  # command -v journalctl
+                (0, probe, ""),  # stage 2
+            ]
+        )
+
+    def test_journalctl_missing(self):
+        """Non-journald hosts warn instead of claiming a pass."""
+        ssh = mock_ssh_exec([(1, "", "")])
+        result = check_journald_persistence(ssh)
+        assert result.status == "warn"
+        assert "journalctl not found" in result.details
+        assert result.test_id == "ACCT-5007"
+
+    def test_failed_probe_is_unknown(self):
+        """A probe that cannot run never produces a false pass."""
+        ssh = self._with_probe("")
+        result = check_journald_persistence(ssh)
+        assert result.status == "unknown"
+        assert "probe could not run" in result.details
+
+    def test_unknown_service_state(self):
+        """Empty systemctl output is reported as unknown."""
+        ssh = self._with_probe(self._probe(state=""))
+        result = check_journald_persistence(ssh)
+        assert result.status == "unknown"
+        assert "service state" in result.details
+
+    def test_inactive_journald_warns(self):
+        ssh = self._with_probe(self._probe(state="inactive"))
+        result = check_journald_persistence(ssh)
+        assert result.status == "warn"
+        assert "not active" in result.details
+
+    def test_persistent_bounded_forwarded_passes(self):
+        ssh = self._with_probe(self._probe())
+        result = check_journald_persistence(ssh)
+        assert result.status == "pass"
+        assert "Storage=persistent" in result.details
+        assert "SystemMaxUse=1G" in result.details
+        assert "SystemKeepFree=15%" in result.details
+        assert "journal upload active" in result.details
+        assert "24.0M" in result.details
+
+    def test_volatile_storage_warns(self):
+        ssh = self._with_probe(self._probe(config="Storage=volatile\nSystemMaxUse=1G"))
+        result = check_journald_persistence(ssh)
+        assert result.status == "warn"
+        assert "not persistent" in result.details
+
+    def test_auto_storage_without_directory_warns(self):
+        ssh = self._with_probe(
+            self._probe(config="Storage=auto\nSystemMaxUse=1G", disk=False)
+        )
+        result = check_journald_persistence(ssh)
+        assert result.status == "warn"
+        assert "volatile" in result.details
+
+    def test_auto_storage_with_directory_passes(self):
+        """Storage=auto is durable when the on-disk journal exists."""
+        ssh = self._with_probe(
+            self._probe(
+                config="Storage=auto\nSystemMaxUse=1G",
+                upload="inactive",
+                forward='action(type="omfwd" Target="loghost")',
+            )
+        )
+        result = check_journald_persistence(ssh)
+        assert result.status == "pass"
+        assert "Storage=auto with /var/log/journal" in result.details
+        assert "forwarding configured" in result.details
+
+    def test_missing_size_limit_warns(self):
+        ssh = self._with_probe(self._probe(config="Storage=persistent"))
+        result = check_journald_persistence(ssh)
+        assert result.status == "warn"
+        assert "no journal size limit" in result.details
+
+    def test_missing_forwarding_warns(self):
+        ssh = self._with_probe(self._probe(upload="inactive", forward=""))
+        result = check_journald_persistence(ssh)
+        assert result.status == "warn"
+        assert "no journal forwarding" in result.details
+
+    def test_commented_directives_and_dropin_override(self):
+        """Comments are ignored and later drop-ins win; URL alone is not enough."""
+        config = (
+            "#Storage=persistent\n"
+            "#SystemMaxUse=1G\n"
+            "[Journal]\n"
+            "Storage=persistent\n"
+            "FILE:/etc/systemd/journald.conf.d/override.conf\n"
+            "Storage=volatile\n"
+        )
+        ssh = self._with_probe(
+            self._probe(config=config, disk=False, upload="inactive")
+        )
+        result = check_journald_persistence(ssh)
+        assert result.status == "warn"
+        assert "not persistent" in result.details
+        assert "no journal size limit" in result.details
+        assert "not active" in result.details
+
+
 class TestRunAllAuditChecks:
     """Test run_all_audit_checks function."""
 
     def test_all_checks_executed(self):
-        """Test that all 7 audit checks are executed."""
+        """Test that all 8 audit checks are executed."""
         ssh = MagicMock()
         ssh.exec.return_value = (1, "", "")  # Default: not installed
 
         results = run_all_audit_checks(ssh, password="test")
 
-        assert len(results) == 7
+        assert len(results) == 8
         assert all(isinstance(r.test_id, str) for r in results)
         assert all(r.category == "Accounting" for r in results)
 
@@ -584,6 +716,7 @@ class TestRunAllAuditChecks:
         test_ids = [r.test_id for r in results]
         assert "ACCT-5000" in test_ids
         assert "ACCT-5006" in test_ids
+        assert "ACCT-5007" in test_ids
 
     def test_error_handling_in_checks(self):
         """Test that exceptions in individual checks are caught."""
@@ -592,8 +725,8 @@ class TestRunAllAuditChecks:
 
         results = run_all_audit_checks(ssh, password="test")
 
-        # Should still return 7 results, all marked unknown (not fail)
-        assert len(results) == 7
+        # Should still return 8 results, all marked unknown (not fail)
+        assert len(results) == 8
         assert all(r.status == "unknown" for r in results)
         assert all("error" in r.details.lower() for r in results)
 
@@ -624,12 +757,14 @@ class TestRunAllAuditChecks:
                 (0, "5", ""),  # logrotate configs
                 (0, "/etc/logrotate.d/rsyslog", ""),  # relevant configs
                 (0, TestCheckLogRetentionPolicy._CLEAN_PROBE, ""),  # stage 2
+                (0, "/usr/bin/journalctl", ""),  # journalctl available
+                (0, TestCheckJournaldPersistence._probe(), ""),  # journald probe
             ]
         )
 
         results = run_all_audit_checks(ssh, password="test")
 
-        assert len(results) == 7
+        assert len(results) == 8
         # Should have mix of pass/warn/fail
         statuses = [r.status for r in results]
         assert "pass" in statuses
