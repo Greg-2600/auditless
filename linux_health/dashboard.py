@@ -22,6 +22,8 @@ Usage:
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import contextlib
 import dataclasses
 import io
@@ -111,6 +113,9 @@ def reset_store() -> None:
     _STORE = None
 
 
+MAX_JOB_LOG_CHARS = 65536
+
+
 @dataclass
 class ScanJob:
     """In-memory record of a single scan run (never holds credentials)."""
@@ -124,6 +129,7 @@ class ScanJob:
     finished_at: float | None = None
     report: dict | None = None
     error: str | None = None
+    log: str = ""
 
     def summary(self) -> dict:
         """Public summary safe for API responses."""
@@ -138,7 +144,22 @@ class ScanJob:
             "finished_at": self.finished_at,
             "hardening_index": hardening,
             "error": self.error,
+            "log": self.log,
         }
+
+
+def _append_job_log(job: ScanJob, text: str) -> None:
+    """Append timestamped text to a job log, capped to a fixed tail size."""
+    if not text:
+        return
+    stamp = time.strftime("%H:%M:%S")
+    chunk = "".join(
+        f"[{stamp}] {line}\n" if line.strip() else "\n" for line in text.splitlines()
+    )
+    if not chunk:
+        return
+    with _jobs_lock:
+        job.log = (job.log + chunk)[-MAX_JOB_LOG_CHARS:]
 
 
 class ScanRequest(BaseModel):
@@ -355,6 +376,7 @@ class ScanJobPublic(BaseModel):
     hardening_index: int | None = None
     error: str | None = None
     report: dict | None = None
+    log: str = ""
 
 
 class HeatmapTile(BaseModel):
@@ -409,7 +431,30 @@ def _save_report_copy(hostname: str, payload: dict) -> None:
         pass  # Report persistence must never fail a scan
 
 
-def run_scan(params: dict) -> dict:
+class _TeeWriter(io.TextIOBase):
+    """File-like wrapper that buffers CLI output and forwards it to a callback."""
+
+    def __init__(self, callback: Callable[[str], None] | None) -> None:
+        self._buffer = io.StringIO()
+        self._callback = callback
+
+    def write(self, text: str) -> int:
+        self._buffer.write(text)
+        if self._callback and text:
+            try:
+                self._callback(text)
+            except Exception:
+                pass
+        return len(text)
+
+    def flush(self) -> None:
+        return None
+
+    def getvalue(self) -> str:
+        return self._buffer.getvalue()
+
+
+def run_scan(params: dict, log_cb: Callable[[str], None] | None = None) -> dict:
     """Execute one scan via the shared CLI pipeline and return the report.
 
     Args:
@@ -417,6 +462,7 @@ def run_scan(params: dict) -> dict:
             timeout, command_timeout, scan_ports, profile, key_path,
             enable_rootkit_scan, check_package_hygiene,
             strict_host_key_checking).
+        log_cb: Optional callable receiving text chunks of CLI stdout/stderr.
 
     Returns:
         Parsed JSON report dict.
@@ -491,7 +537,7 @@ def run_scan(params: dict) -> dict:
 
     out_path = Path(tempfile.mkdtemp(prefix="auditless-")) / "report.json"
     argv += ["--output", str(out_path)]
-    buf = io.StringIO()
+    buf = _TeeWriter(log_cb)
     try:
         if not password and not key_path:
             raise RuntimeError("password is required to start a scan")
@@ -536,20 +582,72 @@ def _run_job(
     # in-memory flag flips, so pollers that observe done/error are
     # guaranteed a matching stored row (no save race).
     job.status = "running"
-    job.progress = "connecting over SSH and gathering checks"
+    target = job.hostname
+    if params.get("port") not in (None, "", 22, "22"):
+        target = f"{job.hostname}:{params['port']}"
+    job.progress = f"connecting to {target} over SSH"
+    _append_job_log(job, f"starting scan of {target} as {job.username}")
+    if params.get("profile"):
+        _append_job_log(job, f"profile: {params['profile']}")
+    if params.get("scan_ports"):
+        _append_job_log(job, f"port scan targets: {params['scan_ports']}")
+    if params.get("enable_rootkit_scan"):
+        _append_job_log(job, "rootkit scan enabled (rkhunter)")
+    if params.get("check_package_hygiene"):
+        _append_job_log(job, "package hygiene checks enabled")
+    if params.get("strict_host_key_checking", True):
+        _append_job_log(job, "strict host-key checking: on")
+    else:
+        _append_job_log(job, "strict host-key checking: off (lab mode)")
+    _append_job_log(job, "connecting over SSH and gathering system/check data")
+
+    def _on_output(text: str) -> None:
+        clean = text.rstrip()
+        if clean:
+            _append_job_log(job, clean)
+
     try:
-        job.report = run_scan(params)
+        try:
+            job.report = run_scan(params, log_cb=_on_output)
+        except TypeError:
+            job.report = run_scan(params)
+        summary = (job.report or {}).get("summary", {})
+        hardening_index = summary.get("hardening_index")
+        passed = summary.get("passed")
+        warned = summary.get("warned")
+        failed = summary.get("failed")
+        total = summary.get("total_checks")
         job.progress = "complete"
+        _append_job_log(
+            job,
+            "scan complete"
+            + (
+                f" — hardening index {hardening_index}/100"
+                if hardening_index is not None
+                else ""
+            )
+            + (
+                f" ({total} checks: {passed} passed, {warned} warned, {failed} failed)"
+                if total is not None
+                else ""
+            ),
+        )
         _save_report_copy(job.hostname, job.report)
         job.finished_at = time.time()
         _scrub_temp_key(params)
         _persist_job(job, host_id, status="done")
         job.status = "done"
-        score = (job.report.get("summary") or {}).get("hardening_index")
-        _audit(actor, "scan.completed", "scan", job.id, f"index={score}")
+        _audit(
+            actor,
+            "scan.completed",
+            "scan",
+            job.id,
+            f"index={hardening_index}",
+        )
     except Exception as exc:  # keep the job record, report the failure
         job.progress = "failed"
         job.error = str(exc)[:1000]
+        _append_job_log(job, f"scan failed: {job.error}")
         job.finished_at = time.time()
         _persist_job(job, host_id, status="error")
         job.status = "error"
@@ -904,6 +1002,9 @@ th{color:var(--dim);font-weight:600}.pass{color:var(--grn)}.warn{color:var(--yel
 .toolbar input,.toolbar select{width:auto;flex:1}
 .hist{font-size:13px;color:var(--dim)}.hist a{color:var(--acc);cursor:pointer}
 .err{color:var(--red)}.note{font-size:12px;color:var(--dim);margin-top:8px}
+.logbox{margin-top:8px}
+.logbox summary{cursor:pointer;color:var(--dim);font-size:12px}
+.logbox pre{margin:6px 0 0;background:#0d1117;border:1px solid var(--line);border-radius:6px;padding:8px;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:12px;color:var(--txt)}
 .heatmap{position:relative;height:420px;background:#0d1117;border:1px solid var(--line);
 border-radius:6px;overflow:hidden}
 .hmgroup{position:absolute;border:1px solid var(--line);border-radius:4px;
@@ -1044,7 +1145,7 @@ async function startScan(){
  pass.value="";status("starting&hellip;");
  try{const j=await api("/api/scans",{method:"POST",
   headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
-  cur=j.id;go.disabled=true;poll();}
+  cur=j.id;go.disabled=true;status(esc(j.progress||"queued")+"&hellip;", j.log||"", true);poll();}
  catch(e){status('<span class="err">'+esc(e.message)+"</span>")}}
 async function startRangeScan(net){
  clearInterval(timer);
@@ -1072,7 +1173,8 @@ function renderRangeTable(){
   "<div style='margin-bottom:8px'>"+rangeSummary+"</div>"+
   "<table><tr><th>Host</th><th>Status</th><th>Index</th><th></th></tr>"+
   rangeJobs.map((x,i)=>`<tr id="rj${i}"><td>${esc(x.host)}</td>`+
-   `<td>queued</td><td>&ndash;</td><td></td></tr>`).join("")+"</table>"}
+   `<td>queued</td><td>&ndash;</td><td><a onclick="showRangeLog(${i})">log</a></td></tr>`).join("")+"</table>"+
+  "<div id='rangelog'></div>"}
 async function pollRange(){
  clearInterval(rangeTimer);
  rangeTimer=setInterval(async()=>{
@@ -1085,32 +1187,52 @@ async function pollRange(){
     const row=document.getElementById("rj"+i);if(!row)return;
     const cells=row.children;
     cells[1].textContent=j.progress||j.status;
+    x._last=j;
     if(j.status==="done"){
      x._done=true;rangeReports[x.job_id]=j.report;
      cells[1].textContent="done";
      const s=(j.report&&j.report.summary)||{};
      cells[2].textContent=s.hardening_index??"\u2013";
-     cells[3].innerHTML='<a onclick="showRangeReport(\\''+esc(x.job_id)+'\\')">view</a>';
+     cells[3].innerHTML='<a onclick="showRangeReport(\\''+esc(x.job_id)+'\\')">view</a> <a onclick="showRangeLog('+i+')">log</a>';
     }else if(j.status==="error"){
      x._done=true;cells[1].innerHTML='<span class="err">'+esc(j.error||"failed")+"</span>";
+     cells[3].innerHTML='<a onclick="showRangeLog('+i+')">log</a>';
+    }else{
+     cells[3].innerHTML='<a onclick="showRangeLog('+i+')">log</a>';
     }
    }catch(e){/* transient poll error: retry next tick */}
   }));
  },1500)}
 function showRangeReport(id){const r=rangeReports[id];if(r)render(r)}
+async function showRangeLog(i){
+ const x=rangeJobs[i];if(!x)return;
+ try{
+  const j=x._last||await api("/api/scans/"+x.job_id);
+  x._last=j;
+  const box=document.getElementById("rangelog");
+  box.innerHTML="<h4 style='margin:8px 0 4px'>"+esc(x.host)+" session output</h4>"+renderLog(j.log||"(no output yet)", true);
+ }catch(e){document.getElementById("rangelog").innerHTML='<span class="err">'+esc(e.message)+"</span>"}
+}
 function hostPick(){const d=!!hostsel.value;
  [host,user,port].forEach(i=>i.disabled=d)}
 async function poll(){
  clearInterval(timer);
  timer=setInterval(async()=>{
   try{const j=await api("/api/scans/"+cur);
-   if(j.status==="running"||j.status==="queued"){status(esc(j.progress||j.status)+"&hellip;");return}
+   if(j.status==="running"||j.status==="queued"){status(esc(j.progress||j.status)+"&hellip;", j.log||"", true);return}
    clearInterval(timer);go.disabled=false;
-   if(j.status==="done"){status("done");render(j.report)}else{status('<span class="err">'+esc(j.error||"failed")+"</span>")}
+   if(j.status==="done"){status("done", j.log||"", false);render(j.report)}else{status('<span class="err">'+esc(j.error||"failed")+"</span>", j.log||"", true)}
    loadHist();
   }catch(e){clearInterval(timer);go.disabled=false;status('<span class="err">'+esc(e.message)+"</span>")}
  },1200)}
-function status(h){document.getElementById("status").innerHTML=h}
+function renderLog(log, open){
+ if(!log)return"";
+ const attr=open?" open":"";
+ return `<details class="logbox"${attr}><summary>Session output</summary><pre>${esc(log)}</pre></details>`;
+}
+function status(h, log, open){
+ document.getElementById("status").innerHTML=h+(log?renderLog(log, open):"");
+}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 function lvl(i){return i>=90?"pass":i>=75?"pass":i>=60?"warn":"fail"}
 async function loadHist(){
@@ -1122,7 +1244,9 @@ async function loadHist(){
   :"no scans yet";}
  catch(e){document.getElementById("hist").textContent="unavailable"}}
 async function show(id){cur=id;const j=await api("/api/scans/"+id);
- if(j.status==="done")render(j.report);else status(esc(j.status))}
+ if(j.status==="done"){status("done", j.log||"", false);render(j.report);}
+ else if(j.status==="error"){status('<span class="err">'+esc(j.error||"failed")+"</span>", j.log||"", true)}
+ else status(esc(j.progress||j.status)+"&hellip;", j.log||"", true)}
 let diffA=null,diffB=null;
 async function loadHosts(){
  try{const h=await api("/api/hosts");
