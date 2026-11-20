@@ -146,6 +146,8 @@ def test_full_scan_flow_hides_password(client, monkeypatch):
     done = client.wait_for(job["id"])
     assert done["status"] == "done"
     assert done["report"]["summary"]["hardening_index"] == 50
+    assert "connecting over SSH" in done.get("log", "")
+    assert "scan complete" in done.get("log", "")
 
     listing = json.dumps(client.list_scans())
     detail = json.dumps(client.get_scan(job["id"]))
@@ -170,6 +172,7 @@ def test_scan_error_path(client, monkeypatch):
     done = client.wait_for(job["id"])
     assert done["status"] == "error"
     assert "unreachable" in (done["error"] or "")
+    assert "scan failed" in done.get("log", "")
     assert SENTINEL_PASSWORD not in json.dumps(done)
 
 
