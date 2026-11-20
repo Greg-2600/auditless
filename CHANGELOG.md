@@ -48,6 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`SystemMaxUse`/`SystemKeepFree` and friends) and off-host forwarding
   via journal-upload, rsyslog or syslog-ng. Commented-out directives are
   ignored, drop-in overrides win, and failed probes return `unknown`.
+- PHP-2320 PHP hardening stage 2: effective `php -i` and PHP-FPM pool
+  configs are audited for an exact dangerous `disable_functions` allowlist,
+  URL inclusion, session-cookie and opcache API settings, and FPM pools
+  running as root, listening on all interfaces or with world-writable
+  sockets. A failed probe returns `unknown`.
 - New checks: AUTH-9341 sudoers drop-in auditing, AUTH-9350 PAM
   faillock/pwquality completeness, SSH-7408 sshd hardening directives
   (AllowUsers/AllowGroups, MaxAuthTries, LoginGraceTime, ClientAlive),

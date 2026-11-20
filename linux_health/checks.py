@@ -10,6 +10,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, List, Tuple, cast
 
+from .php_hardening import PHP_HARDENING_PROBE, hardening_gaps, probe_sections
 from .ssh_client import SSHSession
 from .test_ids import CHECK_TEST_IDS
 
@@ -4268,8 +4269,18 @@ def check_mail_server_security(ssh: SSHSession, password: str = "") -> CheckResu
 
 
 def check_php_security(ssh: SSHSession, password: str = "") -> CheckResult:
-    """Check PHP security configuration."""
+    """Check PHP security configuration (stage 2: FPM, opcache, ini policy).
+
+    Test ID: PHP-2320
+    Category: Application Security
+
+    Stage 2 reads effective ``php -i`` values plus PHP-FPM pool directives:
+    an exact ``disable_functions`` allowlist, expose/URL/session settings,
+    opcache API restrictions, and FPM users, socket modes and bind addresses.
+    A failed probe returns unknown, never a false pass.
+    """
     category = "Application Security"
+    test_id = "PHP-2320"
 
     # Check if PHP is installed
     cmd = "bash -lc 'command -v php >/dev/null 2>&1 && php -v | head -1'"
@@ -4281,48 +4292,42 @@ def check_php_security(ssh: SSHSession, password: str = "") -> CheckResult:
             "PHP not detected",
             "No action",
             category,
+            test_id,
         )
 
-    issues = []
+    version = out.split()[1] if len(out.split()) > 1 else "installed"
+    _, probe_out, _ = _run(ssh, PHP_HARDENING_PROBE)
+    sections = probe_sections(probe_out)
+    if "INI" not in sections:
+        return _unknown(
+            "PHP security",
+            f"PHP {version} detected but the stage-2 probe could not read php -i",
+            "Verify php -i is available to the scan user; re-run with a "
+            "privileged account if the ini files are unreadable",
+            category,
+            test_id,
+        )
 
-    # Check critical PHP settings
-    dangerous_functions = (
-        'bash -lc \'php -r "echo ini_get(\\"disable_functions\\");" 2>/dev/null\''
-    )
-    code2, out2, _ = _run(ssh, dangerous_functions)
-
-    dangerous = ["exec", "shell_exec", "system", "passthru", "proc_open", "popen"]
-    if code2 == 0:
-        disabled = out2.strip()
-        missing = [f for f in dangerous if f not in disabled]
-        if len(missing) > 3:
-            issues.append(f"Dangerous functions not disabled: {', '.join(missing[:3])}")
-
-    # Check expose_php
-    cmd3 = 'bash -lc \'php -r "echo ini_get(\\"expose_php\\");" 2>/dev/null\''
-    code3, out3, _ = _run(ssh, cmd3)
-    if code3 == 0 and out3.strip() == "1":
-        issues.append("expose_php enabled (version disclosure)")
-
-    # Check allow_url_fopen
-    cmd4 = 'bash -lc \'php -r "echo ini_get(\\"allow_url_fopen\\");" 2>/dev/null\''
-    code4, out4, _ = _run(ssh, cmd4)
-    if code4 == 0 and out4.strip() == "1":
-        issues.append("allow_url_fopen enabled (security risk)")
-
-    if issues:
+    gaps = hardening_gaps(sections)
+    if gaps:
         return _warn(
             "PHP security",
-            f"PHP {out.split()[1] if len(out.split()) > 1 else 'installed'} - Issues: {', '.join(issues)}",
-            "Harden PHP: disable dangerous functions, set expose_php=Off, disable allow_url_fopen in php.ini",
+            f"PHP {version} - Issues: {'; '.join(gaps)}",
+            "In php.ini: disable dangerous functions exactly, set "
+            "expose_php=Off, allow_url_fopen=Off, allow_url_include=Off, "
+            "session.cookie_httponly=1, session.cookie_secure=1 and "
+            "opcache.restrict_api; run FPM pools as an unprivileged user "
+            "with a non-world-writable, loopback-only listen socket",
             category,
+            test_id,
         )
 
     return _pass(
         "PHP security",
-        f"PHP {out.split()[1] if len(out.split()) > 1 else ''} with reasonable security settings",
-        "Review all php.ini settings and apply security hardening guide",
+        f"PHP {version} with hardened ini, opcache and FPM pool settings",
+        "Review php.ini and FPM pool configs after every PHP upgrade",
         category,
+        test_id,
     )
 
 

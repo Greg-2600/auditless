@@ -107,7 +107,7 @@ Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+
 | **Web Server** | 1 | Apache/Nginx configuration, version disclosure, SSL/TLS setup |
 | **Database** | 1 | MySQL/PostgreSQL security, authentication, remote access controls |
 | **Mail Server** | 1 | Postfix/Exim/Sendmail relay protection, TLS configuration |
-| **Application Security** | 1 | PHP configuration hardening, dangerous functions, version disclosure |
+| **Application Security** | 1 | PHP configuration hardening, exact dangerous-function allowlist, version disclosure, FPM pool user/socket/bind and opcache API restrictions |
 | **Name Service** | 1 | DNS resolver configuration, DNSSEC validation, redundancy checks |
 
 **Total: 100+ Security Checks** across **24 domains**
