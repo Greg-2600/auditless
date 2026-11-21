@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from linux_health import checks as checks_mod
-from linux_health.checks import (
+from auditless import checks as checks_mod
+from auditless.checks import (
     NEEDS_ELEVATION,
     CheckResult,
     _check_thunks,
@@ -17,13 +17,13 @@ from linux_health.checks import (
     run_all_checks,
     run_all_checks_parallel,
 )
-from linux_health.test_ids import CHECK_TEST_IDS
+from auditless.test_ids import CHECK_TEST_IDS
 
 
 @pytest.fixture(autouse=True)
 def _fresh_cache() -> Iterator[None]:
     """Reset entries so hostname-keyed tests never see another test's data."""
-    from linux_health.checks import reset_command_cache
+    from auditless.checks import reset_command_cache
 
     reset_command_cache()
     yield

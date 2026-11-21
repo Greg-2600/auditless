@@ -16,8 +16,8 @@ Security model:
       credentials.
 
 Usage:
-    python -m linux_health HOST USER PASS --serve
-    python -m linux_health --serve --serve-port 8080
+    python -m auditless HOST USER PASS --serve
+    python -m auditless --serve --serve-port 8080
 """
 
 from __future__ import annotations

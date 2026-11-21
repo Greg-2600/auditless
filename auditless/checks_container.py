@@ -4,15 +4,15 @@ This module implements container security checks following Lynis test patterns
 (CONT-8100 to CONT-8106 range). Checks include Docker installation, daemon
 configuration, image security, runtime hardening, and network isolation.
 
-Author: Linux Health Security Scanner
+Author: Auditless Security Scanner
 """
 
 from typing import TYPE_CHECKING
 
-from linux_health.checks import CheckResult, _fail, _pass, _warn
+from auditless.checks import CheckResult, _fail, _pass, _warn
 
 if TYPE_CHECKING:
-    from linux_health.ssh_client import SSHSession
+    from auditless.ssh_client import SSHSession
 
 
 def check_docker_installed(client: "SSHSession", timeout: int = 60) -> CheckResult:

@@ -1,5 +1,5 @@
 """
-Unit tests for linux_health.checks_packages module
+Unit tests for auditless.checks_packages module
 
 Tests all package management security checks including:
 - PKGS-7300: YUM Security Plugin
@@ -16,8 +16,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from linux_health.checks import disable_command_cache, reset_command_cache
-from linux_health.checks_packages import (
+from auditless.checks import disable_command_cache, reset_command_cache
+from auditless.checks_packages import (
     check_apt_security_updates,
     check_package_audit_log,
     check_package_signing_enabled,

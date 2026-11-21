@@ -2,7 +2,7 @@
 
 import pytest
 
-from linux_health.secrets import SecretBox, load_master_key, require_master_key
+from auditless.secrets import SecretBox, load_master_key, require_master_key
 
 try:
     from cryptography.fernet import Fernet
@@ -46,7 +46,7 @@ def test_master_key_validation(monkeypatch):
 
 @needs_crypto
 def test_migrate_and_rotate(tmp_path):
-    from linux_health.store import Store
+    from auditless.store import Store
 
     plain = Store(tmp_path / "a")  # no key: plaintext mode
     host = plain.upsert_host("h", "10.0.0.1", "u", auth="key")
@@ -76,7 +76,7 @@ def test_migrate_and_rotate(tmp_path):
 
 @needs_crypto
 def test_tokens_and_audit(tmp_path):
-    from linux_health.store import Store
+    from auditless.store import Store
 
     store = Store(tmp_path / "data")
     created = store.create_token("ci")
@@ -111,7 +111,7 @@ def test_tokens_and_audit(tmp_path):
 
 def test_token_auth_flow_named(client, monkeypatch):
     """Named tokens authenticate with actor attribution; env fallback kept."""
-    from linux_health.client import ApiClient, ApiError
+    from auditless.client import ApiClient, ApiError
 
     monkeypatch.delenv("AUDITLESS_TOKEN", raising=False)
     assert client.list_hosts() == []  # open mode preserved
@@ -141,7 +141,7 @@ def test_migrate_rotate_endpoints(client, monkeypatch):
 
     key1 = _key()
     monkeypatch.setenv("AUDITLESS_MASTER_KEY", key1)
-    from linux_health import dashboard
+    from auditless import dashboard
 
     dashboard.reset_store()
     assert client.migrate_secrets()["keys"] == 1
@@ -157,7 +157,7 @@ def test_migrate_rotate_endpoints(client, monkeypatch):
 
 def test_boot_refuses_bad_master_key(monkeypatch):
     monkeypatch.setenv("AUDITLESS_MASTER_KEY", "garbage")
-    from linux_health import dashboard
+    from auditless import dashboard
 
     with pytest.raises(RuntimeError, match="invalid"):
         dashboard.serve_forever("127.0.0.1", 18099)

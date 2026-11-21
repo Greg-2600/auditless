@@ -37,8 +37,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: Linux Health Version
-      description: What version are you using? (`linux_health --version` or check `__init__.py`)
+      label: Auditless Version
+      description: What version are you using? (`auditless --version` or check `__init__.py`)
       placeholder: "2.0.0"
     validations:
       required: true
@@ -58,7 +58,7 @@ body:
       label: Steps to Reproduce
       description: Exact steps to reproduce the bug
       placeholder: |
-        1. Run `python -m linux_health 192.168.1.100 user pass`
+        1. Run `python -m auditless 192.168.1.100 user pass`
         2. ...
         3. Bug occurs
     validations:

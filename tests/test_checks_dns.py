@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from linux_health.checks import disable_command_cache, reset_command_cache
-from linux_health.checks_dns import (
+from auditless.checks import disable_command_cache, reset_command_cache
+from auditless.checks_dns import (
     check_dns_server_installed,
     check_dns_service_configuration,
     check_dnssec_configured,

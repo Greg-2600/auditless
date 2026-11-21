@@ -1,27 +1,28 @@
 # Architecture & Design Patterns
 
-**Linux Health Security Scanner - Technical Deep Dive**
+**Auditless Security Scanner - Technical Deep Dive**
 
-This document describes the architectural design, patterns used, and technical decisions behind Linux Health Security Scanner v2.0.0.
+This document describes the architectural design, patterns used, and technical decisions behind Auditless Security Scanner v2.0.0.
 
 ## Product Naming (Canonical)
 
-The product is **Auditless** (agentless Linux security scanner).
-Historical name **Linux Health** survives only as the Python import package
-and in legacy paths. The full decision table lives in `ROADMAP.md`
-("Naming decision"); the short version:
+The product is **Auditless** (agentless Linux security scanner). The 4.0
+release completed the rename: distribution, import package, module path,
+console script and config namespace all use one name.
 
-| Layer | Canonical | Legacy / alias |
-|---|---|---|
-| Product, UI, docs title | **Auditless** | Linux Health Security Scanner |
-| Distribution (`pip`, Docker, CLI) | **auditless** | `linux-health` CLI kept as deprecated alias through v3.x |
-| Import package (`import x`) | **linux_health** (kept through v3.x) | `auditless` import shim planned |
-| Env / config namespace | **AUDITLESS_\*** | config paths gain `auditless` variants; `linux_health` paths keep working with a warning |
-| Repository | **Greg-2600/auditless** | stale `yourusername/linux_health` links are tech debt (ROADMAP P0) |
+| Layer | Value |
+|---|---|
+| Product, UI, docs title | **Auditless** |
+| Distribution (`pip`, Docker, CLI) | `auditless` |
+| Console script | `auditless` |
+| Import package (`import x`) | `auditless` |
+| `python -m` | `python -m auditless` |
+| Env / config namespace | **AUDITLESS_\***, `~/.config/auditless/` |
+| Repository | **Greg-2600/auditless** |
 
-Rule for renames: add the new name, shim/migrate the old, warn once,
-remove after the deprecation window (full package rename slated for v4.0).
-Never break existing installs silently.
+Rule for future renames: add the new name, migrate users, warn once, then
+remove the old one after the deprecation window. Never break installs
+silently. The 3.x → 4.0 path is documented in `docs/MIGRATION_v4.md`.
 
 ## Design Principles
 
@@ -551,5 +552,5 @@ Scan Phases:
 ---
 
 **Version**: 2.0.0 (January 10, 2026)  
-**Author**: Linux Health Development Team  
+**Author**: Auditless Development Team  
 **License**: MIT

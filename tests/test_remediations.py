@@ -2,8 +2,8 @@
 
 import pytest
 
-from linux_health.client import ApiError
-from linux_health.remediations import REMEDIATIONS, Remediation, propose_for_report
+from auditless.client import ApiError
+from auditless.remediations import REMEDIATIONS, Remediation, propose_for_report
 
 SENTINEL = "apply-pw-SENTINEL"
 
@@ -64,7 +64,7 @@ def test_propose_skips_passing_checks():
 
 
 def test_propose_unknown_report_states(client):
-    from linux_health.client import ApiError
+    from auditless.client import ApiError
 
     with pytest.raises(ApiError) as exc_info:
         client.propose_remediations("missing")
@@ -80,7 +80,7 @@ def test_catalog_endpoint_lists_scripts(client):
 
 def test_propose_and_apply_flow(client, monkeypatch):
     """End-to-end approve flow with a stubbed SSH session."""
-    import linux_health.dashboard as dash
+    import auditless.dashboard as dash
 
     report = _report(
         ("USB-1000", "USB storage", "warn"),
@@ -121,9 +121,9 @@ def test_propose_and_apply_flow(client, monkeypatch):
         params["password"] = None
         return None
 
-    monkeypatch.setattr("linux_health.ssh_client.SSHSession", FakeSession)
-    # api_apply_remediation imports _run lazily from linux_health.checks.
-    monkeypatch.setattr("linux_health.checks._run", fake_run)
+    monkeypatch.setattr("auditless.ssh_client.SSHSession", FakeSession)
+    # api_apply_remediation imports _run lazily from auditless.checks.
+    monkeypatch.setattr("auditless.checks._run", fake_run)
     monkeypatch.setattr(dash, "run_scan", fake_scan)
     result = client.apply_remediation(usb["proposal_id"], host["id"], password=SENTINEL)
     assert commands == usb["script"]
@@ -139,13 +139,13 @@ def test_apply_needs_credential_for_password_host(client):
     host = client.create_host("needpw", "10.9.9.8", "u", auth="password")
     report = _report(("USB-1000", "USB storage", "warn"))
     dash_store_id = "remediation-cred-r1"
-    from linux_health import dashboard as dash
+    from auditless import dashboard as dash
 
     dash.get_store().save_report(
         dash_store_id, "h", "u", "done", report, None, None, 1.0, 2.0
     )
     proposal = client.propose_remediations(dash_store_id)[0]
-    from linux_health.client import ApiError
+    from auditless.client import ApiError
 
     with pytest.raises(ApiError) as exc_info:
         client.apply_remediation(proposal["proposal_id"], host["id"])

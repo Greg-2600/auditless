@@ -2,14 +2,14 @@
 
 import pytest
 
-from linux_health.client import ApiError
-from linux_health.compliance import (
+from auditless.client import ApiError
+from auditless.compliance import (
     BENCHMARK,
     TEST_CIS,
     UNMAPPED_REASONS,
     compliance_summary,
 )
-from linux_health.test_ids import CHECK_TEST_IDS
+from auditless.test_ids import CHECK_TEST_IDS
 
 
 def test_every_registry_id_has_compliance_stance():
@@ -24,7 +24,7 @@ def test_every_registry_id_has_compliance_stance():
 
 def test_mapping_references_known_controls():
     """Every mapped control has a title (no dangling references)."""
-    from linux_health.compliance import CONTROL_TITLES
+    from auditless.compliance import CONTROL_TITLES
 
     dangling = {
         control
@@ -82,7 +82,7 @@ def test_compliance_empty_report():
 
 
 def test_detect_framework():
-    from linux_health.compliance import detect_framework
+    from auditless.compliance import detect_framework
 
     assert detect_framework("Ubuntu 22.04.5 LTS") == "cis-ubuntu22"
     assert detect_framework("Debian GNU/Linux 12 (bookworm)") == "cis-debian12"
@@ -93,7 +93,7 @@ def test_detect_framework():
 
 
 def test_frameworks_all_registered():
-    from linux_health.compliance import FRAMEWORKS
+    from auditless.compliance import FRAMEWORKS
 
     assert set(FRAMEWORKS) == {"cis-ubuntu22", "cis-debian12", "cis-rhel9", "pci-dss4"}
     for fw in FRAMEWORKS.values():
@@ -168,7 +168,7 @@ def _canned_compliance_report():
 
 
 def test_host_compliance_endpoint(client, monkeypatch):
-    from linux_health import dashboard
+    from auditless import dashboard
 
     def fake_run_scan(params):
         params["password"] = None

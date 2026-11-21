@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from linux_health.checks import disable_command_cache, reset_command_cache
-from linux_health.checks_webserver import (
+from auditless.checks import disable_command_cache, reset_command_cache
+from auditless.checks_webserver import (
     check_access_controls,
     check_directory_listing_disabled,
     check_http_to_https_redirect,

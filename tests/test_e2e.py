@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from linux_health.client import ApiClient, ApiError
+from auditless.client import ApiClient, ApiError
 
 E2E_PASSWORD = "e2e-pw-SENTINEL-7k7k"
 E2E_KEY_COMMENT = "e2e-key-SENTINEL-9q9q"
@@ -293,7 +293,7 @@ def run_cli(*argv: str, timeout: int = 420) -> subprocess.CompletedProcess:
 
     venv_python = str(Path(sys.executable))
     return subprocess.run(
-        [venv_python, "-m", "linux_health", *argv],
+        [venv_python, "-m", "auditless", *argv],
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -413,7 +413,7 @@ def test_cli_strict_host_key_rejects_unknown(stack):
 def test_api_version_and_profiles(stack):
     """Version + profile discovery through the public client."""
     info = stack["api"].version()
-    from linux_health import __version__
+    from auditless import __version__
 
     assert info["version"] == __version__
     assert "ssh-scan" in info["features"]

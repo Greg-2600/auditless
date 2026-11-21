@@ -1,12 +1,12 @@
-# Linux Health vs Lynis: Feature Comparison & Roadmap
+# Auditless vs Lynis: Feature Comparison & Roadmap
 
 ## Overview
 
-This document compares Linux Health security scanner with Lynis (CISOfy's security auditing tool). Both are agentless SSH-based Linux security assessment tools, but serve different purposes and have different feature sets.
+This document compares Auditless security scanner with Lynis (CISOfy's security auditing tool). Both are agentless SSH-based Linux security assessment tools, but serve different purposes and have different feature sets.
 
 ## Architecture Comparison
 
-| Aspect | Linux Health | Lynis |
+| Aspect | Auditless | Lynis |
 |--------|---|---|
 | **Language** | Python 3.11+ | Bash/Shell |
 | **Execution Model** | SSH-based (remote) | Local + SSH-based |
@@ -16,7 +16,7 @@ This document compares Linux Health security scanner with Lynis (CISOfy's securi
 | **License** | Open Source | GPLv3 (Enterprise: Commercial) |
 | **Plugin System** | Built-in module approach | Explicit plugin system |
 
-## Linux Health Current Categories (36 checks)
+## Auditless Current Categories (36 checks)
 
 **Storage & Performance:**
 - Disk Usage (Storage)
@@ -149,9 +149,9 @@ Lynis organizes tests into 42 distinct modules:
 
 ## Feature Parity Analysis
 
-### ✅ Good Coverage (Linux Health has good equivalents)
+### ✅ Good Coverage (Auditless has good equivalents)
 
-| Feature | Linux Health | Lynis |
+| Feature | Auditless | Lynis |
 |---------|---|---|
 | SSH Security | ✅ 12+ checks | ✅ Comprehensive |
 | Authentication | ✅ Password policy, failures | ✅ Full PAM, 2FA, policies |
@@ -162,9 +162,9 @@ Lynis organizes tests into 42 distinct modules:
 | Malware Detection | ✅ Crypto miners, reverse shells | ✅ Antivirus, rootkit tools |
 | Network Security | ✅ ARP, DNS tampering | ✅ Service-specific hardening |
 
-### 🔶 Partial Coverage (Linux Health has gaps)
+### 🔶 Partial Coverage (Auditless has gaps)
 
-| Feature | Linux Health | Lynis |
+| Feature | Auditless | Lynis |
 |---------|---|---|
 | Filesystem Hardening | ⚠️ Mount options only | ✅ Mount options + FHS checks |
 | Container Security | ⚠️ Escape indicators | ✅ Docker, Solaris zones |
@@ -175,9 +175,9 @@ Lynis organizes tests into 42 distinct modules:
 | Mail Services | ❌ None | ✅ Postfix, Exim security |
 | Web Server Security | ⚠️ Basic checks | ✅ Apache/Nginx deep analysis |
 
-### ❌ Missing Features (Linux Health gaps)
+### ❌ Missing Features (Auditless gaps)
 
-| Category | Lynis Features | Linux Health |
+| Category | Lynis Features | Auditless |
 |----------|---|---|
 | **Accounting** | Process/job accounting, audit logs | ❌ Missing |
 | **Home Directories** | User home dir permissions/integrity | ⚠️ Only stale account detection |
@@ -314,7 +314,7 @@ Lynis organizes tests into 42 distinct modules:
 
 ## Testing Standards
 
-When implementing new checks, follow Linux Health's established patterns:
+When implementing new checks, follow Auditless's established patterns:
 
 ### Check Implementation Checklist
 - [ ] Function signature: `def check_xxx(ssh: SSHSession, password: str = "") -> CheckResult`
@@ -334,8 +334,8 @@ When implementing new checks, follow Linux Health's established patterns:
 - [ ] Coverage maintained at >70%
 
 ### Code Quality Requirements
-- [ ] Pass Black formatter: `black linux_health/ tests/`
-- [ ] Pass Ruff linter: `ruff check linux_health/ tests/`
+- [ ] Pass Black formatter: `black auditless/ tests/`
+- [ ] Pass Ruff linter: `ruff check auditless/ tests/`
 - [ ] All type hints in place
 - [ ] No unused imports
 - [ ] Comprehensive docstrings
@@ -347,20 +347,20 @@ When implementing new checks, follow Linux Health's established patterns:
 ### Coverage Comparison
 
 ```
-Linux Health:     36 checks across 20 categories
+Auditless:     36 checks across 20 categories
 Lynis:            500+ checks across 42 modules
 
-Potential Linux Health v2.0: ~70-80 checks across 30+ categories
+Potential Auditless v2.0: ~70-80 checks across 30+ categories
 ```
 
 ### Feature Prioritization
 
-When deciding which Lynis features to implement in Linux Health:
+When deciding which Lynis features to implement in Auditless:
 
 1. **Impact**: How many systems would this check help secure?
 2. **Complexity**: How difficult is it to implement correctly?
 3. **Reliability**: Can it be implemented without false positives?
-4. **Scope**: Does it fit Linux Health's mission as an agentless SSH scanner?
+4. **Scope**: Does it fit Auditless's mission as an agentless SSH scanner?
 
 ### Technology Alignment
 
@@ -375,9 +375,9 @@ Focus on checks that:
 
 ## Notes
 
-- Lynis uses shell script plugins for extensibility; Linux Health uses Python modules
-- Lynis tests multiple compliance frameworks (CIS, PCI-DSS, HIPAA, ISO27001); Linux Health focuses on security hardening
-- Lynis has extensive manual test support; Linux Health is fully automated
-- Linux Health's SSH-based approach is more suitable for CI/CD integration and remote scanning
+- Lynis uses shell script plugins for extensibility; Auditless uses Python modules
+- Lynis tests multiple compliance frameworks (CIS, PCI-DSS, HIPAA, ISO27001); Auditless focuses on security hardening
+- Lynis has extensive manual test support; Auditless is fully automated
+- Auditless's SSH-based approach is more suitable for CI/CD integration and remote scanning
 - Consider creating a "Lynis-Compatible" mode in future versions for users wanting feature parity
 

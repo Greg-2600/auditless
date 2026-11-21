@@ -2,7 +2,7 @@
 
 ## Overview
 
-Successfully upgraded Linux Health Security Scanner to achieve **95% feature parity** with Lynis security auditing tool while maintaining our unique **agentless SSH-based scanning** advantage.
+Successfully upgraded Auditless Security Scanner to achieve **95% feature parity** with Lynis security auditing tool while maintaining our unique **agentless SSH-based scanning** advantage.
 
 ## What Was Updated
 
@@ -104,7 +104,7 @@ Successfully upgraded Linux Health Security Scanner to achieve **95% feature par
 ### 3. Code Implementation ✅
 
 **New Files:**
-- `linux_health/config.py` (188 lines)
+- `auditless/config.py` (188 lines)
   - ScanProfile dataclass
   - YAML profile loading
   - Test filtering logic
@@ -112,17 +112,17 @@ Successfully upgraded Linux Health Security Scanner to achieve **95% feature par
 
 **Modified Files:**
 
-1. **linux_health/checks.py**
+1. **auditless/checks.py**
    - Added `test_id` field to CheckResult dataclass
    - Updated helper functions (_pass, _warn, _fail)
 
-2. **linux_health/report.py**
+2. **auditless/report.py**
    - Added `render_report_json()` function (100+ lines)
    - JSON structure with all scan data
    - Hardening calculations
    - Detailed findings support
 
-3. **linux_health/cli.py**
+3. **auditless/cli.py**
    - Added `--format json` option
    - Added `--profile` argument
    - Profile loading integration
@@ -132,14 +132,14 @@ Successfully upgraded Linux Health Security Scanner to achieve **95% feature par
 4. **requirements.txt**
    - Added `pyyaml>=6.0`
 
-5. **tests/test_linux_health.py**
+5. **tests/test_auditless.py**
    - Added 20+ new test functions
    - JSON, config, CLI test classes
    - Comprehensive coverage
 
 ### 4. Version Updates ✅
 
-- `linux_health/__init__.py`: Version 2.0.0
+- `auditless/__init__.py`: Version 2.0.0
 - `CHANGELOG.md`: v2.0.0 release notes
 - `README.md`: Updated badges and feature counts
 
@@ -148,13 +148,13 @@ Successfully upgraded Linux Health Security Scanner to achieve **95% feature par
 ```
 Module                    Coverage
 -------------------------  --------
-linux_health/__init__.py   100%
-linux_health/cli.py        85%
-linux_health/checks.py     70%
-linux_health/report.py     88%
-linux_health/config.py     90% (new)
-linux_health/scanner.py    72%
-linux_health/ssh_client.py 65%
+auditless/__init__.py   100%
+auditless/cli.py        85%
+auditless/checks.py     70%
+auditless/report.py     88%
+auditless/config.py     90% (new)
+auditless/scanner.py    72%
+auditless/ssh_client.py 65%
 -------------------------  --------
 Overall                    ~74%
 ```
@@ -180,7 +180,7 @@ Overall                    ~74%
 
 ### CI/CD Pipeline
 ```bash
-python -m linux_health $TARGET $USER $PASS \
+python -m auditless $TARGET $USER $PASS \
   --profile ci-profile.yaml \
   --format json > scan.json
 
@@ -191,7 +191,7 @@ SCORE=$(jq -r '.summary.hardening_index' scan.json)
 ### Python Script
 ```python
 import json, subprocess
-result = subprocess.run(['python', '-m', 'linux_health', ...], 
+result = subprocess.run(['python', '-m', 'auditless', ...], 
                        capture_output=True)
 report = json.loads(result.stdout)
 print(f"Score: {report['summary']['hardening_index']}/100")
@@ -229,19 +229,19 @@ No migration needed. New features are opt-in:
 
 **To use JSON output:**
 ```bash
-# Old: python -m linux_health HOST USER PASS
-# New: python -m linux_health HOST USER PASS --format json
+# Old: python -m auditless HOST USER PASS
+# New: python -m auditless HOST USER PASS --format json
 ```
 
 **To use profiles:**
 ```bash
-# Old: python -m linux_health HOST USER PASS
-# New: python -m linux_health HOST USER PASS --profile scan.yaml
+# Old: python -m auditless HOST USER PASS
+# New: python -m auditless HOST USER PASS --profile scan.yaml
 ```
 
 ## Next Steps (Future Enhancements)
 
-1. **Detailed Log File** - Write verbose logs to /var/log/linux-health.log
+1. **Detailed Log File** - Write verbose logs to /var/log/auditless.log
 2. **Plugin Architecture** - Drop-in custom check support
 3. **ANSI Colors** - Color-coded console output
 4. **Compliance Templates** - Pre-built PCI-DSS, HIPAA profiles

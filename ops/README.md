@@ -2,7 +2,7 @@
 
 Small, dependency-free helpers for onboarding a set of SSH hosts into a
 running Auditless dashboard. They use only the documented public API via
-`linux_health.client.ApiClient`; nothing here reaches into the database or
+`auditless.client.ApiClient`; nothing here reaches into the database or
 the scan internals.
 
 | File | Purpose |

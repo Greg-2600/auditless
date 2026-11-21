@@ -1,6 +1,6 @@
 # Remediation Authoring Guide
 
-Fixes live in `linux_health/remediations.py` as `Remediation` entries.
+Fixes live in `auditless/remediations.py` as `Remediation` entries.
 A fix runs **only** after a user approves the exact rendered script, and
 every apply is followed by an automatic verification rescan.
 

@@ -6,8 +6,8 @@ from typing import Any
 import paramiko
 import pytest
 
-from linux_health import ssh_client
-from linux_health.ssh_client import SSHSession
+from auditless import ssh_client
+from auditless.ssh_client import SSHSession
 
 
 class FakeSSHClient:
@@ -140,7 +140,7 @@ def test_unreadable_gateway_key_raises_value_error() -> None:
 
 def test_retries_flag_defaults_and_parses() -> None:
     """--retries defaults to 0 and accepts explicit values."""
-    from linux_health.cli import build_parser
+    from auditless.cli import build_parser
 
     assert build_parser().parse_args(["h", "u", "p"]).retries == 0
     assert build_parser().parse_args(["h", "u", "p", "--retries", "3"]).retries == 3
@@ -150,7 +150,7 @@ def test_open_session_passes_retries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The scan session inherits the CLI retry budget."""
-    import linux_health.cli as cli_mod
+    import auditless.cli as cli_mod
 
     seen: dict[str, Any] = {}
 

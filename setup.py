@@ -1,4 +1,4 @@
-"""Setup configuration for Auditless (Linux Health Security Scanner).
+"""Setup configuration for Auditless (Auditless Security Scanner).
 
 Thin setuptools shim: authoritative metadata lives in pyproject.toml.
 Paths resolve relative to this file so isolated builds (python -m build,
@@ -20,13 +20,13 @@ requirements = [
     if line.strip() and not line.startswith(("#", "-"))
 ]
 
-init_text = (ROOT / "linux_health" / "__init__.py").read_text(encoding="utf-8")
+init_text = (ROOT / "auditless" / "__init__.py").read_text(encoding="utf-8")
 version = re.search(r'__version__\s*=\s*"([^"]+)"', init_text).group(1)  # type: ignore[union-attr]
 
 setup(
     name="auditless",
     version=version,
-    author="Linux Health Contributors",
+    author="Auditless Contributors",
     description="Enterprise-grade security assessment platform for Linux infrastructure",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -36,7 +36,7 @@ setup(
         "Documentation": "https://github.com/Greg-2600/auditless#readme",
         "Source Code": "https://github.com/Greg-2600/auditless",
     },
-    packages=find_packages(include=["linux_health", "linux_health.*"]),
+    packages=find_packages(include=["auditless", "auditless.*"]),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Environment :: Console",
@@ -51,11 +51,9 @@ setup(
     ],
     python_requires=">=3.11",
     install_requires=requirements,
-    py_modules=["auditless"],
     entry_points={
         "console_scripts": [
-            "auditless=linux_health.cli:main",
-            "linux-health=linux_health.cli:main",
+            "auditless=auditless.cli:main",
         ],
     },
     include_package_data=True,

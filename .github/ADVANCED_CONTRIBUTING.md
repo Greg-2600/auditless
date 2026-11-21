@@ -1,6 +1,6 @@
 # Advanced Contributing Guide
 
-**Linux Health Security Scanner - Developer Excellence Guide**
+**Auditless Security Scanner - Developer Excellence Guide**
 
 This guide provides in-depth instructions for contributing advanced features, adding security checks, and extending the scanner's capabilities.
 
@@ -21,7 +21,7 @@ This guide provides in-depth instructions for contributing advanced features, ad
 ### Core Components
 
 ```
-linux_health/
+auditless/
 ├── __init__.py          # Package version and metadata
 ├── __main__.py          # CLI entry point
 ├── cli.py               # Command-line interface (argparse)
@@ -37,7 +37,7 @@ linux_health/
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  python -m linux_health [args]                          │
+│  python -m auditless [args]                          │
 │  Entry: __main__.py → cli.py                            │
 └─────────────────────────────────────────────────────────┘
                       ↓
@@ -225,16 +225,16 @@ class TestExampleSecurityCheck:
 
 ```bash
 # Format all code
-black linux_health/ tests/ scripts/
+black auditless/ tests/ scripts/
 
 # Check for linting issues
-pylint linux_health/ --disable=all --enable=E,W,R,C
+pylint auditless/ --disable=all --enable=E,W,R,C
 
 # Auto-fix common issues
-pylint linux_health/ --disable=all --enable=E,W --fix-rc
+pylint auditless/ --disable=all --enable=E,W --fix-rc
 
 # Full type checking
-mypy linux_health/ --strict
+mypy auditless/ --strict
 ```
 
 ### Docstring Template
@@ -325,7 +325,7 @@ def check_multiple_security_issues(ssh: SSHSession) -> list[CheckResult]:
 
 ```bash
 # Configure timeouts for large networks
-python -m linux_health 192.168.1.100 user pass \
+python -m auditless 192.168.1.100 user pass \
     --timeout 3 \           # SSH connection timeout
     --command-timeout 30    # Per-command timeout
 ```
@@ -376,7 +376,7 @@ pytest tests/ -v
 pytest tests/test_auditless.py::TestNewFeature -v
 
 # Run with coverage
-pytest tests/ --cov=linux_health --cov-report=term-missing
+pytest tests/ --cov=auditless --cov-report=term-missing
 
 # Run slow tests only
 pytest tests/ -m slow -v
@@ -516,8 +516,8 @@ pytest tests/ -v
 1. Update version in `__init__.py`
 2. Update CHANGELOG.md with features/fixes
 3. Run full test suite: `pytest tests/ -v`
-4. Format all code: `black linux_health/ tests/`
-5. Run pylint: `pylint linux_health/`
+4. Format all code: `black auditless/ tests/`
+5. Run pylint: `pylint auditless/`
 6. Build Docker image: `docker build -t auditless:vX.X.X .`
 7. Tag release: `git tag -a vX.X.X -m "Release vX.X.X"`
 8. Push: `git push origin main --tags`
@@ -535,4 +535,4 @@ pytest tests/ -v
 
 **Happy Contributing!** 🚀
 
-We appreciate your efforts to improve Linux Health Security Scanner!
+We appreciate your efforts to improve Auditless Security Scanner!

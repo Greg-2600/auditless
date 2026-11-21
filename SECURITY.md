@@ -30,7 +30,7 @@ If you discover a security vulnerability in Auditless, please report it
 
 ## Security Considerations
 
-Linux Health performs **read-only operations** on target systems:
+Auditless performs **read-only operations** on target systems:
 
 - ✅ No system modifications
 - ✅ No privileged operations

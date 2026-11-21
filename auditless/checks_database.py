@@ -1,4 +1,4 @@
-"""Database Security Module for Linux Health Security Scanner.
+"""Database Security Module for Auditless Security Scanner.
 
 This module implements database security checks for MySQL/MariaDB, PostgreSQL,
 MongoDB, and Oracle databases following Lynis-compatible test patterns.

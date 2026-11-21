@@ -1,8 +1,8 @@
-# ✅ Linux Health vs Lynis Analysis - Complete
+# ✅ Auditless vs Lynis Analysis - Complete
 
 ## Summary
 
-I have completed a comprehensive analysis comparing Linux Health with Lynis and created a detailed roadmap for expanding Linux Health to achieve feature parity. Here's what was delivered:
+I have completed a comprehensive analysis comparing Auditless with Lynis and created a detailed roadmap for expanding Auditless to achieve feature parity. Here's what was delivered:
 
 ---
 
@@ -18,7 +18,7 @@ I have completed a comprehensive analysis comparing Linux Health with Lynis and 
 
 ### 2. **ANALYSIS_SUMMARY.md** (12 KB)
 **Executive Summary (2-3 pages)**
-- Current state: Linux Health (36 checks) vs Lynis (500+ checks)
+- Current state: Auditless (36 checks) vs Lynis (500+ checks)
 - Gap analysis by priority: Critical, Moderate, Minor
 - Proposed expansion: 35-45 new checks → 71+ total
 - Timeline: 4-6 months (170 hours)
@@ -29,7 +29,7 @@ I have completed a comprehensive analysis comparing Linux Health with Lynis and 
 **Detailed Feature Comparison (15+ pages)**
 - Complete feature parity analysis
 - All 42 Lynis test modules catalogued and described
-- All 36 current Linux Health checks mapped to Lynis equivalents
+- All 36 current Auditless checks mapped to Lynis equivalents
 - Feature coverage matrix (Good/Partial/Missing)
 - Priority-based recommendations with check counts
 - Implementation strategy organized by business impact
@@ -66,9 +66,9 @@ I have completed a comprehensive analysis comparing Linux Health with Lynis and 
 ## 🎯 Key Findings
 
 ### Current State
-- **Linux Health v2.0**: 36 checks, 20 categories
+- **Auditless v2.0**: 36 checks, 20 categories
 - **Lynis**: 500+ checks, 42 test modules
-- Linux Health has excellent coverage of critical areas (SSH, auth, malware)
+- Auditless has excellent coverage of critical areas (SSH, auth, malware)
 - Major gaps: Database, Audit, NFS, Specialized services
 
 ### Feature Gaps (Prioritized)
@@ -138,7 +138,7 @@ I have completed a comprehensive analysis comparing Linux Health with Lynis and 
 
 ## 🆔 Lynis-Compatible Test ID System
 
-Linux Health will adopt standardized test IDs matching Lynis format:
+Auditless will adopt standardized test IDs matching Lynis format:
 
 ```
 Format: [CATEGORY]-[NUMBER]
@@ -240,7 +240,7 @@ All new checks will maintain v2.0 standards:
 ### Long-Term (Months 4-6)
 1. Complete Phase 4 (14 checks)
 2. Complete Phase 5 (integration)
-3. Release Linux Health v3.0
+3. Release Auditless v3.0
 4. Achieve published Lynis feature parity
 
 ---
@@ -306,7 +306,7 @@ All new checks will maintain v2.0 standards:
 
 ## 🎓 Competitive Positioning
 
-After implementing this roadmap, Linux Health will be:
+After implementing this roadmap, Auditless will be:
 - **Modern alternative** to Lynis for automated SSH scanning
 - **Best-in-class** for CI/CD pipelines and infrastructure automation
 - **Competitive** in check coverage (71 vs 500+ but focused)
@@ -317,7 +317,7 @@ After implementing this roadmap, Linux Health will be:
 
 ## 📍 File Locations
 
-All analysis documents are in `/home/greg/projects/linux_health/docs/`:
+All analysis documents are in `/home/greg/projects/auditless/docs/`:
 - `LYNIS_ANALYSIS_INDEX.md` - Quick reference guide
 - `ANALYSIS_SUMMARY.md` - Executive summary
 - `LYNIS_COMPARISON.md` - Detailed feature comparison
@@ -329,7 +329,7 @@ All analysis documents are in `/home/greg/projects/linux_health/docs/`:
 
 ## 🎉 Conclusion
 
-This comprehensive analysis provides everything needed to expand Linux Health from 36 to 71+ security checks with Lynis-compatible features.
+This comprehensive analysis provides everything needed to expand Auditless from 36 to 71+ security checks with Lynis-compatible features.
 
 **Status: ✅ Design Phase Complete - Ready for Implementation**
 

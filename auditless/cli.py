@@ -1,4 +1,4 @@
-"""Command-line interface for Linux Health Security Scanner.
+"""Command-line interface for Auditless Security Scanner.
 
 Provides argument parsing, SSH session management, and report orchestration
 for security scanning of Linux systems over SSH.
@@ -11,7 +11,6 @@ import getpass
 import os
 import sys
 import time
-import warnings
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from pathlib import Path
@@ -99,8 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="auditless",
         description="Auditless — agentless Linux security assessment over SSH",
-        epilog="Entry points: auditless (primary), linux-health (deprecated "
-        "alias through v3.x), python -m linux_health. "
+        epilog="Entry point: auditless. "
         "Docs: https://github.com/Greg-2600/auditless",
     )
     parser.add_argument("hostname", nargs="?", default=None, help="Target host")
@@ -274,20 +272,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _warn_if_deprecated_alias() -> None:
-    """Note the linux-health entry-point deprecation (kept through v3.x)."""
-    invoked = os.path.splitext(
-        os.path.basename((sys.argv[0] or "").replace("\\", "/"))
-    )[0]
-    if invoked == "linux-health":
-        message = (
-            "The 'linux-health' command is deprecated, use 'auditless' "
-            "instead (removal slated for v4.0)."
-        )
-        warnings.warn(message, DeprecationWarning, stacklevel=3)
-        print(f"warning: {message}", file=sys.stderr)
-
-
 def _preflight_sudo(ssh: SSHSession, password: str) -> bool:
     """Verify sudo works before the scan (no password prompts mid-scan).
 
@@ -348,7 +332,6 @@ def main(argv: list[str] | None = None) -> int:
     raw = argv if argv is not None else sys.argv[1:]
     if len(raw) >= 2 and raw[0] == "profile" and raw[1] in ("lint", "-h", "--help"):
         return _profile_cli(list(raw[1:]))
-    _warn_if_deprecated_alias()
     parser = build_parser()
     args = parser.parse_args(argv)
 

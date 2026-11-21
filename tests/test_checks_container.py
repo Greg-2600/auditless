@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import MagicMock
 
-from linux_health.checks_container import (
+from auditless.checks_container import (
     check_docker_container_runtime,
     check_docker_daemon_config,
     check_docker_image_security,
@@ -570,8 +570,8 @@ class TestRealSessionInterface(unittest.TestCase):
 
     def test_run_all_checks_with_specd_session(self):
         """Full container suite runs against the true session API."""
-        from linux_health.checks import CheckResult
-        from linux_health.ssh_client import SSHSession
+        from auditless.checks import CheckResult
+        from auditless.ssh_client import SSHSession
 
         client = MagicMock(spec=SSHSession)
         client.run.return_value = (0, "", "")
@@ -581,7 +581,7 @@ class TestRealSessionInterface(unittest.TestCase):
 
     def test_docker_installed_uses_run_not_exec_command(self):
         """Spot-check one probe goes through .run."""
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
 
         client = MagicMock(spec=SSHSession)
         client.run.return_value = (0, "/usr/bin/docker", "")

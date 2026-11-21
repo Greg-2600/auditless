@@ -2,7 +2,7 @@
 
 ## Our Commitment
 
-We are committed to providing a welcoming and inspiring community for all. We pledge that everyone participating in the Linux Health Security Scanner project and its community will be treated with respect and dignity, regardless of age, body size, caste, disability, ethnicity, level of experience, family status, gender, gender identity and expression, immigration status, marital status, national origin, personal appearance, pregnancy, race, religion, sex, sexual orientation, socioeconomic status, tribe, or any other dimension of diversity.
+We are committed to providing a welcoming and inspiring community for all. We pledge that everyone participating in the Auditless Security Scanner project and its community will be treated with respect and dignity, regardless of age, body size, caste, disability, ethnicity, level of experience, family status, gender, gender identity and expression, immigration status, marital status, national origin, personal appearance, pregnancy, race, religion, sex, sexual orientation, socioeconomic status, tribe, or any other dimension of diversity.
 
 ## Our Standards
 

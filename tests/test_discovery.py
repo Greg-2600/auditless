@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from linux_health.discovery import MAX_PROBE_TIMEOUT, parse_network, probe_hosts
+from auditless.discovery import MAX_PROBE_TIMEOUT, parse_network, probe_hosts
 
 
 class _FakeConnection:
@@ -79,7 +79,7 @@ def test_probe_hosts_keeps_only_reachable_in_input_order(
             return _FakeConnection()
         raise OSError("connection refused")
 
-    monkeypatch.setattr("linux_health.discovery.socket.create_connection", _connect)
+    monkeypatch.setattr("auditless.discovery.socket.create_connection", _connect)
     hosts = ["192.0.2.1", "192.0.2.2", "192.0.2.3", "192.0.2.4"]
     assert probe_hosts(hosts, port=2222, timeout=0.25) == ["192.0.2.2", "192.0.2.4"]
     assert {port for _, port, _ in seen} == {2222}
@@ -94,7 +94,7 @@ def test_probe_hosts_clamps_port_and_timeout(monkeypatch: pytest.MonkeyPatch) ->
         seen.append((address[0], address[1], timeout))
         return _FakeConnection()
 
-    monkeypatch.setattr("linux_health.discovery.socket.create_connection", _connect)
+    monkeypatch.setattr("auditless.discovery.socket.create_connection", _connect)
     assert probe_hosts(["192.0.2.1"], port=0, timeout=999, max_concurrent=999) == [
         "192.0.2.1"
     ]

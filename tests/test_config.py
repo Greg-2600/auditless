@@ -5,11 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from linux_health.config import (
+from auditless.config import (
     ScanProfile,
     get_config_dirs,
     get_default_profile_paths,
-    is_legacy_profile_path,
     load_profile_auto,
     merge_cli_test_filters,
     parse_test_id_list,
@@ -29,67 +28,23 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
 
-def test_canonical_paths_precede_legacy() -> None:
-    """Every auditless location sorts before its linux_health twin."""
+def test_default_profile_paths_shape() -> None:
+    """Profile search covers cwd spellings, then every config dir."""
     paths = get_default_profile_paths()
-    home = Path.home()
     cwd = Path.cwd()
-    pairs = [
-        (cwd / "auditless.yaml", cwd / "linux_health.yaml"),
-        (cwd / ".auditless.yaml", cwd / ".linux_health.yaml"),
-        (
-            home / ".config" / "auditless" / "profile.yaml",
-            home / ".config" / "linux_health" / "profile.yaml",
-        ),
-        (
-            home / ".auditless" / "profile.yaml",
-            home / ".linux_health" / "profile.yaml",
-        ),
-        (
-            Path("/etc/auditless/profile.yaml"),
-            Path("/etc/linux_health/profile.yaml"),
-        ),
-    ]
-    for canonical, legacy in pairs:
-        assert paths.index(canonical) < paths.index(
-            legacy
-        ), f"{canonical} should precede {legacy}"
+    assert paths[:2] == [cwd / "auditless.yaml", cwd / ".auditless.yaml"]
+    assert [p.parent for p in paths if p.name == "profile.yaml"] == get_config_dirs()
 
 
-def test_is_legacy_profile_path() -> None:
-    """Legacy detector flags old locations only."""
-    assert is_legacy_profile_path("linux_health.yaml")
-    assert is_legacy_profile_path(".linux_health.yaml")
-    assert is_legacy_profile_path("/etc/linux_health/profile.yaml")
-    assert is_legacy_profile_path(Path.home() / ".config/linux_health/profile.yaml")
-    assert not is_legacy_profile_path("auditless.yaml")
-    assert not is_legacy_profile_path("/etc/auditless/profile.yaml")
-
-
-def test_legacy_path_loads_with_deprecation_warning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Old paths keep working but warn exactly once per call site."""
+def test_cwd_profile_loads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A profile in the working directory is discovered silently."""
     _isolate(tmp_path, monkeypatch)
-    _write(tmp_path / "linux_health.yaml", "legacy-profile")
-    with pytest.warns(DeprecationWarning, match="legacy path"):
-        profile = load_profile_auto()
-    assert profile is not None
-    assert profile.name == "legacy-profile"
-
-
-def test_canonical_path_wins_without_warning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """When both spellings exist, the auditless one wins silently."""
-    _isolate(tmp_path, monkeypatch)
-    _write(tmp_path / "linux_health.yaml", "legacy-profile")
-    _write(tmp_path / "auditless.yaml", "canonical-profile")
+    _write(tmp_path / "auditless.yaml", "cwd-profile")
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         profile = load_profile_auto()
     assert profile is not None
-    assert profile.name == "canonical-profile"
+    assert profile.name == "cwd-profile"
 
 
 def test_no_profile_returns_none(
@@ -102,20 +57,14 @@ def test_no_profile_returns_none(
         assert load_profile_auto() is None
 
 
-def test_get_config_dirs_canonical_first() -> None:
-    """Shared base dirs: every auditless dir precedes its legacy twin."""
-    dirs = get_config_dirs()
+def test_get_config_dirs_exact() -> None:
+    """Config dirs are the three canonical auditless locations."""
     home = Path.home()
-    pairs = [
-        (
-            home / ".config" / "auditless",
-            home / ".config" / "linux_health",
-        ),
-        (home / ".auditless", home / ".linux_health"),
-        (Path("/etc/auditless"), Path("/etc/linux_health")),
+    assert get_config_dirs() == [
+        home / ".config" / "auditless",
+        home / ".auditless",
+        Path("/etc/auditless"),
     ]
-    for canonical, legacy in pairs:
-        assert dirs.index(canonical) < dirs.index(legacy)
 
 
 def test_default_paths_built_from_config_dirs() -> None:
@@ -128,15 +77,15 @@ def test_default_paths_built_from_config_dirs() -> None:
 def test_list_profiles_uses_shared_dirs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Dashboard discovers profiles in canonical and legacy profile dirs."""
-    from linux_health.dashboard import list_profiles
+    """Dashboard discovers profiles in the cwd and user profile dirs."""
+    from auditless.dashboard import list_profiles
 
     _isolate(tmp_path, monkeypatch)
     (tmp_path / "profiles").mkdir()
     (tmp_path / "profiles" / "quick.yaml").write_text("name: quick\n", encoding="utf-8")
-    legacy_dir = tmp_path / ".config" / "linux_health" / "profiles"
-    legacy_dir.mkdir(parents=True)
-    (legacy_dir / "old.yaml").write_text("name: old\n", encoding="utf-8")
+    user_dir = tmp_path / ".config" / "auditless" / "profiles"
+    user_dir.mkdir(parents=True)
+    (user_dir / "old.yaml").write_text("name: old\n", encoding="utf-8")
     found = {entry["name"]: entry for entry in list_profiles()}
     assert found["quick"]["source"] == "profiles-dir"
     assert found["old"]["source"] == "profiles-dir"
@@ -177,7 +126,7 @@ def test_merge_intersects_only_unions_skip() -> None:
 
 def test_lint_valid_profile(tmp_path: Path) -> None:
     """A well-formed profile lints clean."""
-    from linux_health.config import lint_profile_file
+    from auditless.config import lint_profile_file
 
     profile = tmp_path / "good.yaml"
     profile.write_text(
@@ -189,7 +138,7 @@ def test_lint_valid_profile(tmp_path: Path) -> None:
 
 def test_lint_catches_schema_problems() -> None:
     """Unknown keys and wrong types are errors naming the culprit."""
-    from linux_health.config import lint_profile
+    from auditless.config import lint_profile
 
     errors, warnings = lint_profile(
         {"name": "t", "skip_test": ["STOR-6310"], "timeout": "soon"}
@@ -201,7 +150,7 @@ def test_lint_catches_schema_problems() -> None:
 
 def test_lint_unknown_ids_suggest(tmp_path: Path) -> None:
     """Unknown test IDs error, with did-you-mean for close matches."""
-    from linux_health.config import lint_profile
+    from auditless.config import lint_profile
 
     errors, _ = lint_profile(
         {
@@ -220,7 +169,7 @@ def test_lint_unknown_ids_suggest(tmp_path: Path) -> None:
 
 def _warnings_for_overlap() -> list:
     """Overlap warning helper sharing the overlap fixture profile."""
-    from linux_health.config import lint_profile
+    from auditless.config import lint_profile
 
     _, warnings = lint_profile(
         {"skip_tests": ["STOR-6310"], "only_tests": ["STOR-6310"]}
@@ -230,7 +179,7 @@ def _warnings_for_overlap() -> list:
 
 def test_lint_file_problems(tmp_path: Path) -> None:
     """Missing files and broken YAML are errors, never tracebacks."""
-    from linux_health.config import lint_profile_file
+    from auditless.config import lint_profile_file
 
     errors, _ = lint_profile_file(tmp_path / "missing.yaml")
     assert any("not found" in e for e in errors)
@@ -242,7 +191,7 @@ def test_lint_file_problems(tmp_path: Path) -> None:
 
 def test_profile_lint_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """auditless profile lint exits 0/1/2 for clean/bad/misuse."""
-    from linux_health import cli
+    from auditless import cli
 
     good = tmp_path / "good.yaml"
     good.write_text("name: t\nskip_tests: [STOR-6310]\n", encoding="utf-8")

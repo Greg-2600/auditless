@@ -34,8 +34,8 @@ Or: Relates to #456
 
 ## Code Quality
 
-- [ ] Code formatted: `black linux_health/ tests/`
-- [ ] Linted cleanly: `ruff check linux_health/ tests/`
+- [ ] Code formatted: `black auditless/ tests/`
+- [ ] Linted cleanly: `ruff check auditless/ tests/`
 - [ ] Type hints added to new functions
 - [ ] Docstrings added (Google style)
 - [ ] No regressions in existing functionality
@@ -73,4 +73,4 @@ Any additional context or notes for reviewers?
 
 ---
 
-**Thank you for contributing to Linux Health! 🚀**
+**Thank you for contributing to Auditless! 🚀**

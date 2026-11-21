@@ -8,7 +8,7 @@ Use when asked to continue the roadmap loop, work the next backlog
 item, or run a milestone review. One invocation = exactly ONE
 iteration (one item or one review), then end the turn.
 
-Repo: `/Users/greg/Documents/Default Project/linux_health`
+Repo: `/Users/greg/Documents/Default Project/auditless`
 (source of truth for paths below; commands live in
 `../commands/roadmap.md` and `../commands/roadmap-review.md`
 relative to this skill's directory).
@@ -56,7 +56,7 @@ relative to this skill's directory).
 - Keep diffs scoped (item + tests/docs + checkbox).
 - `ROADMAP.md` numbering stays sequential 1–N (locked by test);
   future ideas live as `C-NN` candidates inside reviews.
-- Typing everywhere (repo gate: mypy strict-ish on `linux_health/`;
+- Typing everywhere (repo gate: mypy strict-ish on `auditless/`;
   new test/script code fully annotated too).
 - Final report: item number + title (or review filename), files
   changed, gate results, PR number + merge commit.

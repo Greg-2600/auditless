@@ -1,4 +1,4 @@
-# Linux Health Security Scanner - Development Guidelines
+# Auditless Security Scanner - Development Guidelines
 
 ## Project Overview
 
@@ -26,7 +26,7 @@ This is an enterprise-grade security assessment platform for Linux infrastructur
 - All tests must pass before commit
 - Use pytest fixtures for SSH mocking
 - Run full test suite: `pytest tests/ -v`
-- Check coverage: `pytest tests/ --cov=linux_health`
+- Check coverage: `pytest tests/ --cov=auditless`
 
 ## Development Workflow
 
@@ -41,21 +41,21 @@ pip install -r requirements-dev.txt
 ### Quality Checks
 ```bash
 # Format code
-black linux_health/ tests/
+black auditless/ tests/
 
 # Lint code
-ruff check linux_health/ tests/
+ruff check auditless/ tests/
 
 # Run tests
 pytest tests/ -v
 
 # Coverage report
-pytest tests/ --cov=linux_health --cov-report=term-missing
+pytest tests/ --cov=auditless --cov-report=term-missing
 ```
 
 ### Adding Security Checks
 
-1. **Implement check function** in `linux_health/checks.py`
+1. **Implement check function** in `auditless/checks.py`
    - Follow existing function signature patterns
    - Use `_run()`, `_pass()`, `_warn()`, `_fail()` helpers
    - Include comprehensive error handling
@@ -70,8 +70,8 @@ pytest tests/ --cov=linux_health --cov-report=term-missing
 4. **Validate**
    ```bash
    pytest tests/ -v
-   ruff check --fix linux_health/ tests/
-   black linux_health/ tests/
+   ruff check --fix auditless/ tests/
+   black auditless/ tests/
    ```
 
 ## Docker Development
@@ -122,8 +122,8 @@ Types: feat, fix, docs, test, refactor, perf, chore
 
 ### Pre-Commit Checklist
 - [ ] All tests passing: `pytest tests/ -v`
-- [ ] Code formatted: `black linux_health/ tests/`
-- [ ] Linting clean: `ruff check linux_health/ tests/`
+- [ ] Code formatted: `black auditless/ tests/`
+- [ ] Linting clean: `ruff check auditless/ tests/`
 - [ ] Coverage maintained/improved
 - [ ] Documentation updated
 - [ ] Docker build successful
@@ -203,7 +203,7 @@ pip install -r requirements.txt --force-reinstall
 
 ## Release Process
 
-1. Update version in `linux_health/__init__.py`
+1. Update version in `auditless/__init__.py`
 2. Update CHANGELOG in README.md
 3. Run full test suite
 4. Build Docker image with version tag

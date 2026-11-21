@@ -18,9 +18,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 _RENDER_SNIPPET = """
 import json
-from linux_health.checks import SystemInfo, CheckResult
-from linux_health.report import render_report_json
-from linux_health.scanner import PortStatus
+from auditless.checks import SystemInfo, CheckResult
+from auditless.report import render_report_json
+from auditless.scanner import PortStatus
 system = SystemInfo("h", "TestOS 1.0", "1.0", "1 day", "u")
 checks = [
     CheckResult("Network", "b trans", "fail", "d", "r", test_id="NETW-9"),
@@ -83,8 +83,8 @@ def test_json_top_level_key_order_locked() -> None:
 
 def test_text_groups_fail_first_deterministically() -> None:
     """Text rendering groups fail/warn/pass with stable in-group order."""
-    from linux_health.checks import CheckResult, SystemInfo
-    from linux_health.report import render_report_text
+    from auditless.checks import CheckResult, SystemInfo
+    from auditless.report import render_report_text
 
     system = SystemInfo("h", "TestOS 1.0", "1.0", "1 day", "u")
     checks = [
@@ -101,7 +101,7 @@ def test_text_groups_fail_first_deterministically() -> None:
 
 def test_diff_order_follows_check_order() -> None:
     """Diff fixed/regressed lists track report order, not hash order."""
-    from linux_health.dashboard import diff_reports
+    from auditless.dashboard import diff_reports
 
     def payload(statuses: list[tuple[str, str, str]]) -> dict:
         return {

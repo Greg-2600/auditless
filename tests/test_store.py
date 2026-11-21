@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from linux_health.store import Store, data_dir
+from auditless.store import Store, data_dir
 
 
 @pytest.fixture()
@@ -88,7 +88,7 @@ def test_report_roundtrip(store):
 
 def test_host_id_traversal_rejected(store, tmp_path):
     """Hostile ids must never reach the filesystem (CodeQL py/path-injection)."""
-    from linux_health.store import _safe_id
+    from auditless.store import _safe_id
 
     for hostile in ("../escape", "..\\escape", "a/b", "", "x" * 65, ".", "a b"):
         with pytest.raises(ValueError):
@@ -129,7 +129,7 @@ def test_legacy_db_gains_jump_columns(tmp_path):
     """Stores created before jump support migrate on open."""
     import sqlite3
 
-    from linux_health.store import Store
+    from auditless.store import Store
 
     directory = tmp_path / "legacy"
     directory.mkdir()

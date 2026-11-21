@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from linux_health.heatmap import build_heatmap, build_host_tiles, build_issue_tiles
+from auditless.heatmap import build_heatmap, build_host_tiles, build_issue_tiles
 
 
 def _report(index: int, checks: list[dict], failed: int = 0, warned: int = 0) -> dict:

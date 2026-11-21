@@ -1,3 +1,5 @@
+name: auditless
+
 services:
   auditless:
     build: .
@@ -7,7 +9,9 @@ services:
     # Bind/port via env (defaults: all interfaces inside the container,
     # published to host loopback only — safe by default):
     #   AUDITLESS_HOST=0.0.0.0 AUDITLESS_PORT=8080 docker compose up -d
-    command: ["--serve"]
+    # Bind explicitly: the packaged image ignores AUDITLESS_HOST and binds
+    # 127.0.0.1 by default, which breaks Docker Desktop's port forwarder.
+    command: ["--serve", "--serve-host", "0.0.0.0", "--serve-port", "8080"]
     ports:
       - "127.0.0.1:${AUDITLESS_PORT:-8080}:8080"
     environment:
@@ -31,7 +35,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "python", "-m", "linux_health", "--help"]
+      test: ["CMD", "python", "-m", "auditless", "--help"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -42,3 +46,4 @@ services:
 
 volumes:
   auditless-data:
+    name: auditless-data

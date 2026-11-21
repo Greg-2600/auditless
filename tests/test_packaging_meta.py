@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, cast
 
-import linux_health
+import auditless
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -63,7 +63,6 @@ def test_setup_mirrors_pyproject() -> None:
         assert href in project["urls"].values(), label
     assert setup["keywords"] == project["keywords"]
     assert setup["classifiers"] == project["classifiers"]
-    assert setup["py_modules"] == ["auditless"]
     assert setup["python_requires"] == project["requires-python"]
 
 
@@ -76,7 +75,7 @@ def test_no_stale_placeholders_in_packaging() -> None:
 
 def test_version_single_sourced() -> None:
     """__init__ version and pyproject version move together."""
-    assert linux_health.__version__ == _pyproject()["version"]
+    assert auditless.__version__ == _pyproject()["version"]
 
 
 def test_requirements_match_pyproject_deps() -> None:

@@ -23,9 +23,9 @@ import uvicorn
 
 selenium = pytest.importorskip("selenium")
 
-from linux_health import dashboard  # noqa: E402
-from linux_health.client import ApiClient  # noqa: E402
-from linux_health.dashboard import app  # noqa: E402
+from auditless import dashboard  # noqa: E402
+from auditless.client import ApiClient  # noqa: E402
+from auditless.dashboard import app  # noqa: E402
 from selenium.webdriver import Chrome  # noqa: E402
 from selenium.webdriver.chrome.options import Options  # noqa: E402
 from selenium.webdriver.common.by import By  # noqa: E402

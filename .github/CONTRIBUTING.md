@@ -1,4 +1,4 @@
-# Contributing to Linux Health Security Scanner
+# Contributing to Auditless Security Scanner
 
 Thank you for your interest in contributing! We welcome contributions of all kinds: bug reports, feature requests, documentation improvements, and code contributions.
 
@@ -19,7 +19,7 @@ Please read and follow our [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) to ensure
 ```bash
 # Clone the repository
 git clone https://github.com/Greg-2600/auditless.git
-cd linux_health
+cd auditless
 
 # Create virtual environment
 python3.11 -m venv venv
@@ -90,16 +90,16 @@ We enforce:
 
 ```bash
 # Format code
-black linux_health/ tests/
+black auditless/ tests/
 
 # Lint code
-ruff check --fix linux_health/ tests/
+ruff check --fix auditless/ tests/
 
 # Run tests
 pytest tests/ -v
 
 # Check coverage
-pytest tests/ --cov=linux_health --cov-report=term-missing
+pytest tests/ --cov=auditless --cov-report=term-missing
 ```
 
 Or use the convenient Makefile (if available):
@@ -149,7 +149,7 @@ class TestMyFeature:
 See [Adding Security Checks](#adding-security-checks) in README.md for detailed steps.
 
 **Checklist:**
-- [ ] Check function in `linux_health/checks.py`
+- [ ] Check function in `auditless/checks.py`
 - [ ] Check registered in `run_all_checks()`
 - [ ] Unit tests covering pass/warn/fail
 - [ ] Error handling tested
@@ -168,9 +168,9 @@ See [Adding Security Checks](#adding-security-checks) in README.md for detailed 
 ### Release Hygiene
 
 - `*.egg-info/` is gitignored build output — never commit it. If yours
-  looks stale (`Name: linux-health`, old version), delete it and rebuild:
-  `rm -rf linux_health.egg-info && python -m build`.
-- Version bumps touch `linux_health/__init__.py` (`__version__`) and
+  looks stale (`Name: auditless`, old version), delete it and rebuild:
+  `rm -rf auditless.egg-info && python -m build`.
+- Version bumps touch `auditless/__init__.py` (`__version__`) and
   `pyproject.toml` together, plus a CHANGELOG entry.
 - After bumping, verify wheel metadata before tagging:
   `python -m build`, then confirm the `.whl` METADATA shows
@@ -280,7 +280,7 @@ docker run --rm auditless:dev --help
 
 ### Local Testing Against Real Host
 ```bash
-python -m linux_health 192.168.1.100 user password \
+python -m auditless 192.168.1.100 user password \
   --timeout 30 --command-timeout 120
 ```
 
@@ -299,4 +299,4 @@ All contributors will be:
 
 ---
 
-**Thank you for making Linux Health better!** 🚀
+**Thank you for making Auditless better!** 🚀

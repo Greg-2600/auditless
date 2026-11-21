@@ -1,7 +1,7 @@
-"""CLI entry point for Linux Health Security Scanner.
+"""CLI entry point for Auditless Security Scanner.
 
 Provides the main execution interface when the package is run as a module:
-    python -m linux_health <hostname> <username> <password> [options]
+    python -m auditless <hostname> <username> <password> [options]
 
 See cli.py for argument parsing and orchestration logic.
 """

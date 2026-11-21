@@ -1,4 +1,4 @@
-"""Linux Health Security Scanner - Enterprise-Grade Security Assessment Platform.
+"""Auditless Security Scanner - Enterprise-Grade Security Assessment Platform.
 
 A comprehensive SSH-based security scanning tool that performs 50+ automated checks
 for malware detection, vulnerability assessment, compliance monitoring, and system
@@ -16,7 +16,7 @@ Features:
     - Full Docker and Kubernetes support
 
 Version: 2.0.0 (95% Lynis parity)
-Author: Linux Health Team
+Author: Auditless Team
 License: MIT
 """
 

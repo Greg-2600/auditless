@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from linux_health.distro import (
+from auditless.distro import (
     DistroInfo,
     family_for,
     get_distro,
@@ -116,7 +116,7 @@ def _mock_ssh(hostname: str, *os_release_hits: tuple[int, str]) -> MagicMock:
 @pytest.fixture(autouse=True)
 def _fresh_cache() -> Any:
     """Reset entries so host-keyed tests never see another test's data."""
-    from linux_health.checks import reset_command_cache
+    from auditless.checks import reset_command_cache
 
     reset_command_cache()
     yield

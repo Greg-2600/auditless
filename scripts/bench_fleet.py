@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from linux_health.client import ApiClient  # noqa: E402
+from auditless.client import ApiClient  # noqa: E402
 
 SSH_IMAGE = "lscr.io/linuxserver/openssh-server:latest"
 NETWORK = "auditless-bench-net"

@@ -5,8 +5,8 @@ import socket
 import threading
 from typing import Any
 
-from linux_health.report import render_report_json, render_report_text
-from linux_health.scanner import (
+from auditless.report import render_report_json, render_report_text
+from auditless.scanner import (
     PortStatus,
     _grab_banner,
     _identify_service,
@@ -111,7 +111,7 @@ def test_scan_ports_opt_out_skips_banners() -> None:
 
 
 def _base_system() -> Any:
-    from linux_health.checks import SystemInfo
+    from auditless.checks import SystemInfo
 
     return SystemInfo("h", "TestOS 1.0", "1.0", "1 day", "u")
 

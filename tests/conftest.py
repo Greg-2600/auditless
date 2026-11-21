@@ -7,9 +7,9 @@ import time
 import pytest
 import uvicorn
 
-from linux_health import dashboard
-from linux_health.client import ApiClient
-from linux_health.dashboard import app
+from auditless import dashboard
+from auditless.client import ApiClient
+from auditless.dashboard import app
 
 
 def _free_port() -> int:

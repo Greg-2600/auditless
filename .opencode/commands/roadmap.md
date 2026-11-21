@@ -38,11 +38,11 @@ Next item (from the helper — do not skip ahead):
 2. **Sync and branch.** `git fetch origin`, update local `main`, then create `roadmap/<NNN>-<short-slug>` from `main`. Worktree must be clean before branching (stash nothing — stop and report if dirty).
 3. **Implement item N** plus proper tests (unit tests for new behavior; extend fixtures, not just happy paths). Follow `docs/REMEDIATION_AUTHORING.md` / existing module conventions for the area.
 4. **Quality gates — all must pass, no exceptions:**
-   - `.venv/bin/ruff check linux_health/ tests/ auditless.py`
-   - `.venv/bin/black --check linux_health/ tests/ auditless.py` (run `black` to fix, then re-check)
-   - `.venv/bin/pylint linux_health/ auditless.py --fail-under=10.0`
-   - `.venv/bin/mypy linux_health/ auditless.py`
-   - `.venv/bin/bandit -r linux_health/ auditless.py -q -lll`
+   - `.venv/bin/ruff check auditless/ tests/ auditless.py`
+   - `.venv/bin/black --check auditless/ tests/ auditless.py` (run `black` to fix, then re-check)
+   - `.venv/bin/pylint auditless/ auditless.py --fail-under=10.0`
+   - `.venv/bin/mypy auditless/ auditless.py`
+   - `.venv/bin/bandit -r auditless/ auditless.py -q -lll`
    - `.venv/bin/python -m pytest tests/ -q` (full suite = regression gate)
    - `.venv/bin/python -m pytest tests/test_ui_selenium.py -q` (Selenium UI e2e:
      headless Chrome against live uvicorn; skips cleanly with no browser;

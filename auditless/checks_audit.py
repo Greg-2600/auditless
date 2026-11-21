@@ -1,4 +1,4 @@
-"""Audit & Accounting Module for Linux Health Security Scanner.
+"""Audit & Accounting Module for Auditless Security Scanner.
 
 This module implements audit and accounting security checks for process accounting,
 auditd, syslog, and authentication logging following Lynis-compatible test patterns.

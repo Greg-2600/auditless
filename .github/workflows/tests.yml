@@ -34,19 +34,19 @@ jobs:
 
       - name: Lint with Ruff
         run: |
-          ruff check linux_health/ tests/ auditless.py
+          ruff check auditless/ tests/
 
       - name: Format check with Black
         run: |
-          black --check linux_health/ tests/ auditless.py
+          black --check auditless/ tests/
 
       - name: Lint with Pylint (10.00/10 gate)
         run: |
-          pylint linux_health/ auditless.py --fail-under=10.0
+          pylint auditless/ --fail-under=10.0
 
       - name: Type check with Mypy
         run: |
-          mypy linux_health/ auditless.py
+          mypy auditless/
 
       - name: Build distribution (validates release packaging)
         run: |
@@ -55,7 +55,7 @@ jobs:
 
       - name: Security gate with Bandit (HIGH only)
         run: |
-          bandit -r linux_health/ auditless.py -q -lll
+          bandit -r auditless/ -q -lll
 
       - name: Run tests with pytest
         run: |
@@ -63,7 +63,7 @@ jobs:
 
       - name: Generate coverage report
         run: |
-          pytest tests/ --cov=linux_health --cov-report=xml --cov-report=term-missing
+          pytest tests/ --cov=auditless --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
@@ -81,7 +81,7 @@ jobs:
       - name: Run Bandit security checks
         run: |
           pip install bandit
-          bandit -r linux_health/ -f json -o bandit-report.json || true
+          bandit -r auditless/ -f json -o bandit-report.json || true
 
       - name: Check dependencies with Safety
         run: |

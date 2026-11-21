@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "Linux Health Contributors"},
+    {name = "Auditless Contributors"},
 ]
 keywords = ["security", "scanning", "linux", "malware", "vulnerability", "compliance"]
 classifiers = [
@@ -40,12 +40,10 @@ Repository = "https://github.com/Greg-2600/auditless"
 Issues = "https://github.com/Greg-2600/auditless/issues"
 
 [project.scripts]
-auditless = "linux_health.cli:main"
-linux-health = "linux_health.cli:main"
+auditless = "auditless.cli:main"
 
 [tool.setuptools]
-packages = ["linux_health"]
-py-modules = ["auditless"]
+packages = ["auditless"]
 
 [tool.black]
 line-length = 88
@@ -92,7 +90,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["linux_health"]
+source = ["auditless"]
 omit = [
     "*/__init__.py",
     "*/tests/*",

@@ -4,8 +4,8 @@ from collections.abc import Iterator
 
 import pytest
 
-from linux_health import checks as checks_mod
-from linux_health.checks import (
+from auditless import checks as checks_mod
+from auditless.checks import (
     _run,
     disable_command_cache,
     enable_command_cache,
@@ -17,7 +17,7 @@ from linux_health.checks import (
     set_max_output_bytes,
     truncate_output,
 )
-from linux_health.ssh_client import SSHSession
+from auditless.ssh_client import SSHSession
 
 
 class CountingSSH(SSHSession):
@@ -115,7 +115,7 @@ def test_enable_disable_getter_roundtrip(cache_env: None) -> None:
 
 def test_no_cache_flag_parser_default() -> None:
     """--no-cache exists and defaults off."""
-    from linux_health.cli import build_parser
+    from auditless.cli import build_parser
 
     assert build_parser().parse_args(["h", "u", "p"]).no_cache is False
     assert build_parser().parse_args(["h", "u", "p", "--no-cache"]).no_cache is True
@@ -181,7 +181,7 @@ def test_run_uncapped_when_disabled(cache_env: None) -> None:
 
 def test_max_output_bytes_flag() -> None:
     """--max-output-bytes defaults to 1MB and parses explicit values."""
-    from linux_health.cli import build_parser
+    from auditless.cli import build_parser
 
     assert build_parser().parse_args(["h", "u", "p"]).max_output_bytes == 1048576
     args = build_parser().parse_args(["h", "u", "p", "--max-output-bytes", "0"])

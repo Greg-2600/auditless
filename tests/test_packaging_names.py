@@ -1,9 +1,9 @@
 """Console-script and distribution-name locks (ROADMAP item 15).
 
 Complements test_packaging_meta.py (setup/pyproject field parity) and
-test_import_alias.py (alias mechanics): this file pins the installable
-entry-point surface — both console scripts declared in both files and
-resolving to a callable — plus the distribution name and alias smoke.
+test_import_alias.py (single-package surface): this file pins the
+installable entry-point surface — one console script declared in both
+files and resolving to a callable — plus the distribution name.
 """
 
 import importlib
@@ -12,14 +12,15 @@ from pathlib import Path
 from typing import Any, cast
 
 import auditless
-import linux_health
 
 ROOT = Path(__file__).resolve().parent.parent
 
 EXPECTED_SCRIPTS = {
-    "auditless": "linux_health.cli:main",
-    "linux-health": "linux_health.cli:main",
+    "auditless": "auditless.cli:main",
 }
+
+LEGACY_SCRIPT = "linux" + "-health"
+LEGACY_PACKAGE = "linux" + "_health"
 
 
 def _pyproject_scripts() -> dict[str, str]:
@@ -36,14 +37,14 @@ def _resolve(target: str) -> Any:
 
 
 def test_dist_name_is_auditless() -> None:
-    """Distribution name is auditless (not linux-health)."""
+    """Distribution name is auditless."""
     with open(ROOT / "pyproject.toml", "rb") as handle:
         project = cast("dict[str, Any]", tomllib.load(handle)["project"])
     assert project["name"] == "auditless"
 
 
 def test_pyproject_console_scripts() -> None:
-    """Both console scripts are declared with the right targets."""
+    """The single console script is declared with the right target."""
     assert _pyproject_scripts() == EXPECTED_SCRIPTS
 
 
@@ -61,12 +62,20 @@ def test_console_script_targets_resolve() -> None:
         assert callable(resolved), script
 
 
-def test_import_alias_smoke() -> None:
-    """The auditless alias exposes the package version and CLI module."""
-    assert auditless.__version__ == linux_health.__version__
+def test_canonical_package_smoke() -> None:
+    """The package exposes a version and a CLI module."""
+    assert isinstance(auditless.__version__, str)
     from auditless import cli
 
     assert callable(cli.main)
+
+
+def test_no_legacy_names_in_packaging() -> None:
+    """Neither the old package nor the old script survives in packaging."""
+    for filename in ("setup.py", "pyproject.toml"):
+        text = (ROOT / filename).read_text(encoding="utf-8")
+        assert LEGACY_PACKAGE not in text, filename
+        assert LEGACY_SCRIPT not in text, filename
 
 
 def test_no_yourusername_in_entry_points() -> None:

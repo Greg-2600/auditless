@@ -1,8 +1,8 @@
 # Project Structure
 
 ```
-linux_health/
-├── linux_health/           # Main package
+auditless/
+├── auditless/           # Main package
 │   ├── __init__.py        # Version + package docstring
 │   ├── __main__.py        # Entry point
 │   ├── checks.py          # Security check functions (50+ checks)
@@ -69,13 +69,13 @@ linux_health/
 
 ## Key Files
 
-- **Main Entry Point**: `linux_health/__main__.py`
-- **CLI Interface**: `linux_health/cli.py`
-- **Security Checks**: `linux_health/checks.py` (3000+ lines)
-- **Configuration**: `linux_health/config.py` (YAML profile system)
-- **Report Engine**: `linux_health/report.py` (text/markdown/JSON)
-- **Web API + UI**: `linux_health/dashboard.py` (FastAPI, 29 routes)
-- **Persistence**: `linux_health/store.py` (SQLite + 0600 key files)
+- **Main Entry Point**: `auditless/__main__.py`
+- **CLI Interface**: `auditless/cli.py`
+- **Security Checks**: `auditless/checks.py` (3000+ lines)
+- **Configuration**: `auditless/config.py` (YAML profile system)
+- **Report Engine**: `auditless/report.py` (text/markdown/JSON)
+- **Web API + UI**: `auditless/dashboard.py` (FastAPI, 29 routes)
+- **Persistence**: `auditless/store.py` (SQLite + 0600 key files)
 - **Test Suite**: `tests/` (469 unit + 14 e2e tests)
 
 ## Development Directories

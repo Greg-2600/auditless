@@ -52,7 +52,7 @@ return _fail(
 **Usage:**
 
 ```bash
-python3 -m linux_health HOST USER PASS --format json > report.json
+python3 -m auditless HOST USER PASS --format json > report.json
 ```
 
 **JSON Structure:**
@@ -61,7 +61,7 @@ python3 -m linux_health HOST USER PASS --format json > report.json
 {
   "scan_info": {
     "generated_at": "2024-01-15T10:30:00Z",
-    "scanner": "Linux Health Security Scanner",
+    "scanner": "Auditless Security Scanner",
     "version": "1.0.0"
   },
   "system": { "hostname": "...", "os": "...", ... },
@@ -103,7 +103,7 @@ python3 -m linux_health HOST USER PASS --format json > report.json
 
 **Implementation:**
 
-- Created `linux_health/config.py` module
+- Created `auditless/config.py` module
 - `ScanProfile` dataclass with:
   - `skip_tests`: Set of test IDs to skip
   - `only_tests`: Set of test IDs to run (exclusive mode)
@@ -113,8 +113,8 @@ python3 -m linux_health HOST USER PASS --format json > report.json
   - Custom settings dictionary
 - YAML profile loading with `load_profile()`
 - Auto-discovery from multiple default paths:
-  - `~/.config/linux_health/profiles/`
-  - `/etc/linux_health/profiles/`
+  - `~/.config/auditless/profiles/`
+  - `/etc/auditless/profiles/`
   - `./profiles/` (current directory)
 - Template profile generator: `create_default_profile()`
 
@@ -123,7 +123,7 @@ python3 -m linux_health HOST USER PASS --format json > report.json
 Create profile:
 
 ```yaml
-# ~/.config/linux_health/profiles/quick-scan.yaml
+# ~/.config/auditless/profiles/quick-scan.yaml
 name: "Quick Security Scan"
 description: "Fast scan skipping time-intensive checks"
 
@@ -143,7 +143,7 @@ verbose: false
 Run with profile:
 
 ```bash
-python3 -m linux_health HOST USER PASS --profile quick-scan.yaml
+python3 -m auditless HOST USER PASS --profile quick-scan.yaml
 ```
 
 **Benefits:**
@@ -209,7 +209,7 @@ skip_tests:
 **Updated Help:**
 
 ```bash
-$ python3 -m linux_health --help
+$ python3 -m auditless --help
 ...
   --format {text,md,json}
                         Report format (md, text, or json)
@@ -220,13 +220,13 @@ $ python3 -m linux_health --help
 
 ```bash
 # Generate JSON for automation
-python3 -m linux_health 192.168.1.100 admin password --format json > scan.json
+python3 -m auditless 192.168.1.100 admin password --format json > scan.json
 
 # Use custom profile
-python3 -m linux_health server.local admin password --profile prod-scan.yaml
+python3 -m auditless server.local admin password --profile prod-scan.yaml
 
 # Combine profile + JSON output for CI/CD
-python3 -m linux_health $TARGET $USER $PASS \
+python3 -m auditless $TARGET $USER $PASS \
   --profile ci-profile.yaml \
   --format json \
   > /artifacts/security-scan-$(date +%Y%m%d).json
@@ -257,7 +257,7 @@ except ImportError:
 
 ## Feature Parity Status
 
-| Feature | Lynis | Linux Health | Status |
+| Feature | Lynis | Auditless | Status |
 | ------- | ----- | ------------ | ------ |
 | Test IDs | ✅ | ✅ | **IMPLEMENTED** |
 | JSON Output | ✅ | ✅ | **IMPLEMENTED** |
@@ -300,7 +300,7 @@ except ImportError:
 ### Test JSON Output
 
 ```bash
-python3 -m linux_health localhost user password --format json | jq '.summary'
+python3 -m auditless localhost user password --format json | jq '.summary'
 ```
 
 Expected output:
@@ -321,8 +321,8 @@ Expected output:
 Create test profile:
 
 ```bash
-mkdir -p ~/.config/linux_health/profiles
-cat > ~/.config/linux_health/profiles/test.yaml << 'EOF'
+mkdir -p ~/.config/auditless/profiles
+cat > ~/.config/auditless/profiles/test.yaml << 'EOF'
 name: "Test Profile"
 skip_categories:
   - "Malware Detection"
@@ -333,7 +333,7 @@ EOF
 Run with profile:
 
 ```bash
-python3 -m linux_health localhost user password --profile test.yaml --format text
+python3 -m auditless localhost user password --profile test.yaml --format text
 ```
 
 ### Test in Docker
@@ -349,9 +349,9 @@ docker run --rm --network host auditless:latest \
 
 # With profile (mount from host)
 docker run --rm --network host \
-  -v ~/.config/linux_health:/root/.config/linux_health \
+  -v ~/.config/auditless:/root/.config/auditless \
   auditless:latest \
-  localhost user password --profile /root/.config/linux_health/profiles/test.yaml
+  localhost user password --profile /root/.config/auditless/profiles/test.yaml
 ```
 
 ## Integration Examples
@@ -364,7 +364,7 @@ security_scan:
   image: auditless:latest
   script:
     - >
-      python3 -m linux_health $TARGET_HOST $SSH_USER $SSH_PASS
+      python3 -m auditless $TARGET_HOST $SSH_USER $SSH_PASS
       --profile ci-profile.yaml
       --format json > security-report.json
     - |
@@ -389,7 +389,7 @@ import subprocess
 
 # Run scan
 result = subprocess.run([
-    'python3', '-m', 'linux_health',
+    'python3', '-m', 'auditless',
     'server.local', 'admin', 'password',
     '--format', 'json'
 ], capture_output=True, text=True)
@@ -411,7 +411,7 @@ for check in failed_checks:
 
 ## Conclusion
 
-With these additions, **Linux Health Security Scanner** now provides **95%+ feature parity** with Lynis while maintaining its unique **agentless SSH-based scanning** advantage.
+With these additions, **Auditless Security Scanner** now provides **95%+ feature parity** with Lynis while maintaining its unique **agentless SSH-based scanning** advantage.
 
 **Key Improvements:**
 

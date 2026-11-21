@@ -5,7 +5,7 @@ This directory contains utility scripts for Auditless development and testing.
 ## Scripts Overview
 
 > **Note:** test IDs are now attached at runtime by the `CHECK_TEST_IDS`
-> registry (`linux_health/test_ids.py`); no source patching is needed.
+> registry (`auditless/test_ids.py`); no source patching is needed.
 
 **Requirements:** Python 3.11+
 
@@ -68,8 +68,8 @@ python scripts/test_json_output.py
 
 These scripts are supplementary to the main test suite located in `/tests/`. For comprehensive testing, see:
 - **Unit Tests:** `pytest tests/`
-- **Code Quality:** `black --check linux_health/` and `ruff check linux_health/`
-- **Coverage:** `pytest tests/ --cov=linux_health`
+- **Code Quality:** `black --check auditless/` and `ruff check auditless/`
+- **Coverage:** `pytest tests/ --cov=auditless`
 
 ## Contributing
 

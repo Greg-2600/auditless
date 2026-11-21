@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from linux_health import dashboard
-from linux_health.client import ApiError
-from linux_health.dashboard import get_job, list_jobs
+from auditless import dashboard
+from auditless.client import ApiError
+from auditless.dashboard import get_job, list_jobs
 
 SENTINEL_PASSWORD = "s3cr3t-pw-SENTINEL-9z9z"
 
@@ -128,7 +128,7 @@ def test_unknown_scan_id_404(client):
 
 def test_full_scan_flow_hides_password(client, monkeypatch):
     """Mocked run: report returned, sentinel password appears nowhere."""
-    from linux_health.dashboard import _run_job
+    from auditless.dashboard import _run_job
 
     def fake_run_scan(params):
         params["password"] = None  # mirror run_scan scrubbing
@@ -188,7 +188,7 @@ def test_run_scan_builds_cli_argv(monkeypatch):
         pathlib.Path(out).write_text(json.dumps(canned_report()))
         return 0
 
-    monkeypatch.setattr("linux_health.cli.main", fake_main)
+    monkeypatch.setattr("auditless.cli.main", fake_main)
     report = dashboard.run_scan(
         {
             "hostname": "h",
@@ -216,7 +216,7 @@ def test_run_scan_preserves_custom_port(monkeypatch):
         pathlib.Path(out).write_text(json.dumps(canned_report()))
         return 0
 
-    monkeypatch.setattr("linux_health.cli.main", fake_main)
+    monkeypatch.setattr("auditless.cli.main", fake_main)
     dashboard.run_scan(
         {"hostname": "h", "username": "u", "password": "pw", "port": 2222}
     )
@@ -230,7 +230,7 @@ def test_run_scan_requires_password():
 
 def test_version_endpoint(client):
     info = client.version()
-    from linux_health import __version__
+    from auditless import __version__
 
     assert info["version"] == __version__
     assert info["scanner"] == "Auditless"
@@ -379,7 +379,7 @@ def test_wait_for_times_out(client, monkeypatch):
 
 
 def test_client_refuses_non_http_scheme():
-    from linux_health.client import ApiClient, ApiError
+    from auditless.client import ApiClient, ApiError
 
     with pytest.raises(ApiError, match="non-HTTP"):
         ApiClient("ftp://example.com").health()
@@ -417,7 +417,7 @@ def test_jump_key_lifecycle(client):
 
 def test_resolve_assembles_gateway(client):
     """Saved jump config becomes session gateway params with temp keys."""
-    from linux_health import dashboard
+    from auditless import dashboard
 
     host = client.create_host(
         "via2",
@@ -443,7 +443,7 @@ def test_resolve_assembles_gateway(client):
 
 def test_resolve_jump_password_required(client):
     """Password jump hosts demand a jump password per scan."""
-    from linux_health import dashboard
+    from auditless import dashboard
 
     host = client.create_host(
         "via3",
@@ -466,7 +466,7 @@ def test_fleet_scan_runs_bounded_and_parallel(client, monkeypatch):
     """Fleet endpoint launches per-host scans with capped concurrency."""
     import threading as _threading
 
-    from linux_health import dashboard
+    from auditless import dashboard
 
     hosts = [
         client.create_host(f"f{i}", f"10.9.9.{i}", "u", auth="password")
@@ -504,7 +504,7 @@ def test_fleet_scan_runs_bounded_and_parallel(client, monkeypatch):
 
 
 def test_cli_jump_flags():
-    from linux_health.cli import build_parser
+    from auditless.cli import build_parser
 
     args = build_parser().parse_args(
         [
@@ -554,7 +554,7 @@ def test_schedules_crud_and_validation(client):
 
 
 def test_run_schedule_now_triggers_scan(client, monkeypatch):
-    from linux_health import dashboard
+    from auditless import dashboard
 
     seen = {}
 
@@ -576,7 +576,7 @@ def test_run_schedule_now_triggers_scan(client, monkeypatch):
 
 
 def test_trend_and_fleet(client, monkeypatch):
-    from linux_health import dashboard
+    from auditless import dashboard
 
     def fake_run_scan(params):
         params["password"] = None
@@ -605,7 +605,7 @@ def test_trend_and_fleet(client, monkeypatch):
 
 
 def test_range_scan_discovers_and_launches(client, monkeypatch):
-    from linux_health import dashboard
+    from auditless import dashboard
 
     def fake_run_scan(params):
         params["password"] = None
@@ -643,7 +643,7 @@ def test_range_scan_discovers_and_launches(client, monkeypatch):
 
 
 def test_range_scan_rejects_invalid_input(client, monkeypatch):
-    from linux_health import dashboard
+    from auditless import dashboard
 
     monkeypatch.setattr(dashboard, "probe_hosts", lambda hosts, **kw: hosts)
     cases = [
@@ -659,7 +659,7 @@ def test_range_scan_rejects_invalid_input(client, monkeypatch):
 
 
 def test_range_scan_with_no_reachable_hosts(client, monkeypatch):
-    from linux_health import dashboard
+    from auditless import dashboard
 
     monkeypatch.setattr(dashboard, "probe_hosts", lambda hosts, **kw: [])
     result = client.range_scan("192.168.1.0/30", "u", "p")
@@ -708,9 +708,9 @@ def test_fleet_heatmap_rejects_unknown_mode(client):
 
 
 def test_json_report_carries_package_version():
-    from linux_health import __version__
-    from linux_health.checks import SystemInfo
-    from linux_health.report import render_report_json
+    from auditless import __version__
+    from auditless.checks import SystemInfo
+    from auditless.report import render_report_json
 
     payload = json.loads(
         render_report_json(SystemInfo("h", "os", "k", "u", "u"), [], [])
@@ -722,7 +722,7 @@ def test_token_auth_flow(client, monkeypatch):
     """With AUDITLESS_TOKEN set: 401s, header/query acceptance, open pages."""
     import urllib.request
 
-    from linux_health.client import ApiClient, ApiError
+    from auditless.client import ApiClient, ApiError
 
     monkeypatch.setenv("AUDITLESS_TOKEN", "TEST-TOKEN-9z9z")
     base = client.base_url
@@ -755,7 +755,7 @@ def test_token_auth_flow(client, monkeypatch):
 
 
 def test_cli_serve_flags():
-    from linux_health.cli import build_parser
+    from auditless.cli import build_parser
 
     args = build_parser().parse_args(["--serve"])
     assert args.serve is True
@@ -765,7 +765,7 @@ def test_cli_serve_flags():
 
 def test_cli_serve_bind_env_config(monkeypatch):
     """Bind address/port come from env, CLI flags win."""
-    from linux_health.cli import build_parser
+    from auditless.cli import build_parser
 
     monkeypatch.setenv("AUDITLESS_HOST", "0.0.0.0")
     monkeypatch.setenv("AUDITLESS_PORT", "9000")
@@ -780,7 +780,7 @@ def test_cli_serve_bind_env_config(monkeypatch):
 
 def test_serve_warns_on_non_loopback(monkeypatch, capsys):
     """Binding off loopback prints a loud warning (then serves)."""
-    from linux_health import dashboard
+    from auditless import dashboard
 
     monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
     dashboard.serve_forever("0.0.0.0", 8080)
@@ -790,11 +790,11 @@ def test_serve_warns_on_non_loopback(monkeypatch, capsys):
 
 
 def test_cli_serve_dispatch(monkeypatch):
-    from linux_health import cli
+    from auditless import cli
 
     called = {}
     monkeypatch.setattr(
-        "linux_health.dashboard.serve_forever",
+        "auditless.dashboard.serve_forever",
         lambda host, port, scheduler=True: called.update(
             host=host, port=port, scheduler=scheduler
         ),
@@ -806,7 +806,7 @@ def test_cli_serve_dispatch(monkeypatch):
 
 
 def test_cli_missing_positionals_errors(capsys):
-    from linux_health.cli import main
+    from auditless.cli import main
 
     with pytest.raises(SystemExit):
         main([])
@@ -848,7 +848,7 @@ def test_key_file_permissions(client):
     import os
     import stat
 
-    from linux_health.dashboard import get_store
+    from auditless.dashboard import get_store
 
     host = client.create_host("k", "h", "u", auth="key")
     client.put_host_key(host["id"], "SENTINEL-PERM-KEY")
@@ -954,9 +954,9 @@ def test_ssh_key_auth_wiring(monkeypatch):
     """SSHSession passes key_filename through to paramiko."""
     from unittest.mock import MagicMock, patch
 
-    from linux_health.ssh_client import SSHSession
+    from auditless.ssh_client import SSHSession
 
-    with patch("linux_health.ssh_client.paramiko.SSHClient") as cls:
+    with patch("auditless.ssh_client.paramiko.SSHClient") as cls:
         mock_client = MagicMock()
         cls.return_value = mock_client
         session = SSHSession("h", "u", "", key_path="/keys/abc")
@@ -967,7 +967,7 @@ def test_ssh_key_auth_wiring(monkeypatch):
 
 
 def test_cli_key_file_flag():
-    from linux_health.cli import build_parser
+    from auditless.cli import build_parser
 
     args = build_parser().parse_args(["h", "u", "--key-file", "/keys/abc"])
     assert args.key_file == "/keys/abc"

@@ -1,4 +1,4 @@
-"""Filesystem & NFS Security Module for Linux Health Security Scanner.
+"""Filesystem & NFS Security Module for Auditless Security Scanner.
 
 This module implements filesystem security checks for NFS exports, mount options,
 partition security, and filesystem integrity monitoring following Lynis-compatible

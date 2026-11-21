@@ -1,8 +1,8 @@
 # Performance Optimization Guide
 
-**Linux Health Security Scanner - Performance Tuning & Benchmarking**
+**Auditless Security Scanner - Performance Tuning & Benchmarking**
 
-This guide provides tools, techniques, and benchmarks for optimizing Linux Health scanner performance.
+This guide provides tools, techniques, and benchmarks for optimizing Auditless scanner performance.
 
 ## Benchmarking Tools
 
@@ -12,7 +12,7 @@ Create `scripts/benchmark.py`:
 
 ```python
 #!/usr/bin/env python3
-"""Performance benchmarking tool for Linux Health Scanner."""
+"""Performance benchmarking tool for Auditless Scanner."""
 
 import json
 import subprocess
@@ -35,7 +35,7 @@ def benchmark_scan(
     cmd = [
         "python",
         "-m",
-        "linux_health",
+        "auditless",
         hostname,
         username,
         password,
@@ -133,12 +133,12 @@ python scripts/benchmark.py localhost greg 'allupinit!' --runs 3
 **Timeout Configuration:**
 ```bash
 # Fast networks, reliable targets
-python -m linux_health target user pass \
+python -m auditless target user pass \
     --timeout 2 \
     --command-timeout 30
 
 # Slow networks, unreliable targets
-python -m linux_health target user pass \
+python -m auditless target user pass \
     --timeout 10 \
     --command-timeout 120
 ```
@@ -148,7 +148,7 @@ python -m linux_health target user pass \
 # vs. password authentication
 # Use key-based auth: ~0.5-1s vs. 2-5s for password handshake
 ssh-keyscan target.host >> ~/.ssh/known_hosts
-python -m linux_health target user "" --use-key ~/.ssh/id_rsa
+python -m auditless target user "" --use-key ~/.ssh/id_rsa
 ```
 
 ### Check Optimization
@@ -175,7 +175,7 @@ Invalidation rules (single source of truth — see `checks.py` header):
 
 ```bash
 # Slower but always fresh (e.g. right after changing the target)
-python -m linux_health target user pass --no-cache
+python -m auditless target user pass --no-cache
 ```
 
 **Skip Expensive Checks:**
@@ -189,7 +189,7 @@ skip_categories:
 
 Run:
 ```bash
-python -m linux_health target user pass --profile skip_expensive.yaml
+python -m auditless target user pass --profile skip_expensive.yaml
 # ~30s vs. ~70s
 ```
 
@@ -206,7 +206,7 @@ only_tests:
 
 ```bash
 # Reduce port scan timeout and workers
-python -m linux_health target user pass \
+python -m auditless target user pass \
     --scan-ports "22,80,443,3306" \  # Fewer ports
     # Default: 50 workers, 0.7s timeout
 
@@ -324,7 +324,7 @@ Time:  52s    58s    67s    95s
 
 ```python
 import time
-from linux_health.checks import check_rootkit_detection
+from auditless.checks import check_rootkit_detection
 
 start = time.time()
 result = check_rootkit_detection(ssh, password)
@@ -359,7 +359,7 @@ def check_example(ssh):
 ### Method 3: Python Profiler
 
 ```bash
-python -m cProfile -s cumtime -m linux_health \
+python -m cProfile -s cumtime -m auditless \
     localhost user pass \
     --format text > profile.txt
 
@@ -377,7 +377,7 @@ head -50 profile.txt
 # Using memory_profiler
 pip install memory-profiler
 
-python -m memory_profiler linux_health/cli.py \
+python -m memory_profiler auditless/cli.py \
     localhost user pass \
     --format json > /tmp/report.json
 ```
@@ -453,7 +453,7 @@ def _run_cached(ssh, command, cache_key=None):
 THRESHOLD=90  # seconds
 
 ELAPSED=$( time \
-    python -m linux_health target user pass \
+    python -m auditless target user pass \
     --format json > /tmp/report.json \
     2>&1 | grep real | awk '{print $2}' \
 )
@@ -525,5 +525,5 @@ jobs:
 
 ---
 
-**Performance Optimization Guide** | Linux Health v2.0.0  
+**Performance Optimization Guide** | Auditless v2.0.0  
 Last Updated: January 10, 2026

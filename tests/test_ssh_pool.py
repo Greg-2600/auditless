@@ -7,8 +7,8 @@ from typing import Any, cast
 
 import pytest
 
-from linux_health import ssh_client
-from linux_health.ssh_client import (
+from auditless import ssh_client
+from auditless.ssh_client import (
     PoolKey,
     SessionPool,
     SSHSession,
@@ -219,7 +219,7 @@ def test_open_session_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     """--reuse-session selects pooled vs fresh session construction."""
     import argparse
 
-    import linux_health.cli as cli_mod
+    import auditless.cli as cli_mod
 
     seen: dict[str, Any] = {}
 
@@ -250,8 +250,8 @@ def test_run_scan_reuse_argv(monkeypatch: pytest.MonkeyPatch) -> None:
     import json as jsonlib
     from pathlib import Path
 
-    import linux_health.cli as cli_mod
-    from linux_health import dashboard
+    import auditless.cli as cli_mod
+    from auditless import dashboard
 
     seen: dict[str, Any] = {}
 

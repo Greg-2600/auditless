@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from linux_health.checks import (
+from auditless.checks import (
     CheckResult,
     enable_command_cache,
     reset_command_cache,
@@ -59,7 +59,7 @@ def test_check_exception_propagates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failing check raises from the parallel runner, as sequential does."""
-    import linux_health.checks as checks_mod
+    import auditless.checks as checks_mod
 
     def boom(ssh: Any, password: str = "") -> CheckResult:
         raise RuntimeError("check exploded (test)")
@@ -89,7 +89,7 @@ def test_parallel_safe_with_cache_enabled() -> None:
 
 def test_jobs_flag_defaults_and_parses() -> None:
     """--jobs defaults to 4 and accepts explicit values."""
-    from linux_health.cli import build_parser
+    from auditless.cli import build_parser
 
     assert build_parser().parse_args(["h", "u", "p"]).jobs == 4
     assert build_parser().parse_args(["h", "u", "p", "--jobs", "1"]).jobs == 1
@@ -98,7 +98,7 @@ def test_jobs_flag_defaults_and_parses() -> None:
 
 def test_timeout_flag_defaults_and_parses() -> None:
     """--check-timeout/--deadline defaults keep scans unbounded unless set."""
-    from linux_health.cli import build_parser
+    from auditless.cli import build_parser
 
     args = build_parser().parse_args(["h", "u", "p"])
     assert args.check_timeout == 120.0
@@ -116,8 +116,8 @@ def test_hung_check_becomes_warn_placeholder(
     """One hung check yields a WARN placeholder; the rest still report."""
     import time as time_mod
 
-    import linux_health.checks as checks_mod
-    from linux_health.test_ids import CHECK_TEST_IDS
+    import auditless.checks as checks_mod
+    from auditless.test_ids import CHECK_TEST_IDS
 
     baseline = run_all_checks_parallel(_mock_ssh(), password="", max_workers=8)
 
@@ -142,8 +142,8 @@ def test_check_timeout_disabled_waits(
     """Non-positive check_timeout disables the ceiling entirely."""
     import time as time_mod
 
-    import linux_health.checks as checks_mod
-    from linux_health.checks import CheckResult as _CheckResult
+    import auditless.checks as checks_mod
+    from auditless.checks import CheckResult as _CheckResult
 
     def slow(ssh: Any) -> Any:
         time_mod.sleep(1.0)
@@ -160,8 +160,8 @@ def test_run_scan_forwards_jobs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Dashboard passes params['jobs'] through to the CLI pipeline."""
-    import linux_health.cli as cli_mod
-    from linux_health import dashboard
+    import auditless.cli as cli_mod
+    from auditless import dashboard
 
     seen: dict[str, Any] = {}
 

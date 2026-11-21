@@ -17,7 +17,7 @@ if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
   exit 0
 fi
 
-setsid nohup .venv/bin/python -m linux_health --serve \
+setsid nohup .venv/bin/python -m auditless --serve \
   --serve-host "$HOST" --serve-port "$PORT" >>"$LOG" 2>&1 </dev/null &
 echo $! >"$PIDFILE"
 sleep 2

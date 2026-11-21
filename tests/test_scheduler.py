@@ -7,14 +7,14 @@ import time
 
 import pytest
 
-from linux_health.cron import CronExpr
-from linux_health.scheduler import (
+from auditless.cron import CronExpr
+from auditless.scheduler import (
     post_webhook,
     run_due_schedules,
     scheduler_loop,
     should_notify,
 )
-from linux_health.store import Store
+from auditless.store import Store
 
 
 def test_cron_every_minute():
@@ -143,7 +143,7 @@ def _canned(index, status_map=None):
 def test_run_due_schedules_notifies_regression(store):
     import uuid
 
-    from linux_health import dashboard
+    from auditless import dashboard
 
     host = _host(store)
     sched = store.create_schedule(
@@ -168,7 +168,7 @@ def test_run_due_schedules_notifies_regression(store):
         return job, _canned(70, {"A-1": "fail"})
 
     monkey.setattr(
-        "linux_health.scheduler.post_webhook",
+        "auditless.scheduler.post_webhook",
         lambda url, payload: posted.append((url, payload)) or True,
     )
     try:
@@ -295,7 +295,7 @@ def test_post_webhook_retries_then_gives_up():
 
 def test_run_due_skips_overlapping_run(store):
     """A schedule already running is skipped, never stacked."""
-    import linux_health.scheduler as sched_mod
+    import auditless.scheduler as sched_mod
 
     host = _host(store)
     sched = store.create_schedule(host["id"], "n", "* * * * *")
@@ -307,7 +307,7 @@ def test_run_due_skips_overlapping_run(store):
     release = threading.Event()
 
     def slow_scan_host(host_id, overrides):
-        from linux_health import dashboard
+        from auditless import dashboard
 
         started.set()
         assert release.wait(15)

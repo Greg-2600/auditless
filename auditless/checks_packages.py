@@ -1,4 +1,4 @@
-"""Extended Package Management Module for Linux Health Security Scanner.
+"""Extended Package Management Module for Auditless Security Scanner.
 
 This module implements advanced package management security checks for APT, YUM,
 repository security, package signing, and vulnerability detection following

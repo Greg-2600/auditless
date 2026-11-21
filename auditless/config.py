@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import difflib
-import warnings
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Set
@@ -133,19 +132,8 @@ custom_settings: {}
         f.write(profile_content)
 
 
-def is_legacy_profile_path(path: str | Path) -> bool:
-    """Whether a profile path uses a legacy ``linux_health`` location."""
-    name = Path(path).name
-    parts = Path(path).parts
-    return (
-        "linux_health" in name
-        or "linux_health" in parts
-        or name in (".linux_health.yaml",)
-    )
-
-
 def get_config_dirs() -> list[Path]:
-    """Base config directories, canonical ``auditless`` first, legacy last.
+    """Base config directories.
 
     Shared by :func:`get_default_profile_paths` (appends ``profile.yaml``)
     and the dashboard profile-directory scan (appends ``profiles``).
@@ -155,23 +143,18 @@ def get_config_dirs() -> list[Path]:
         home / ".config" / "auditless",
         home / ".auditless",
         Path("/etc/auditless"),
-        home / ".config" / "linux_health",
-        home / ".linux_health",
-        Path("/etc/linux_health"),
     ]
 
 
 def get_default_profile_paths() -> list[Path]:
-    """Get default profile search paths (canonical first, legacy last)."""
+    """Get default profile search paths."""
     paths = []
     stems = [
         "auditless.yaml",
         ".auditless.yaml",
-        "linux_health.yaml",
-        ".linux_health.yaml",
     ]
 
-    # Current directory (canonical before legacy)
+    # Current directory
     for stem in stems:
         paths.append(Path.cwd() / stem)
 
@@ -187,14 +170,6 @@ def load_profile_auto() -> ScanProfile | None:
 
     for path in get_default_profile_paths():
         if path.exists():
-            if is_legacy_profile_path(path):
-                warnings.warn(
-                    f"Profile at legacy path {path} is deprecated; "
-                    "move it to the auditless equivalent "
-                    "(~/.config/auditless/profile.yaml).",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
             try:
                 return load_profile(path)
             except (FileNotFoundError, yaml.YAMLError, ValueError):

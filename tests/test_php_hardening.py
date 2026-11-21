@@ -6,14 +6,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from linux_health.checks import (
+from auditless.checks import (
     check_php_security,
     disable_command_cache,
     enable_command_cache,
     is_command_cache_enabled,
     reset_command_cache,
 )
-from linux_health.php_hardening import (
+from auditless.php_hardening import (
     PHP_HARDENING_PROBE,
     fpm_pools,
     hardening_gaps,

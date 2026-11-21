@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Test JSON output format."""
 
-sys.path.insert(0, "/home/greg/projects/linux_health")
+sys.path.insert(0, "/home/greg/projects/auditless")
 import json
 
-from linux_health.checks import CheckResult, DetailedSecurityInfo, SystemInfo
-from linux_health.report import render_report_json
-from linux_health.scanner import PortStatus
+from auditless.checks import CheckResult, DetailedSecurityInfo, SystemInfo
+from auditless.report import render_report_json
+from auditless.scanner import PortStatus
 
 # Create test data
 system = SystemInfo(

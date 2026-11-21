@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Linux Health Security Scanner are documented in this file.
+All notable changes to Auditless are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### BREAKING
 
+- Package rename completed: `linux_health` → `auditless` for the import
+  package, module path, console script and config locations. The
+  `auditless.py` alias shim, the `linux-health` script and legacy config
+  fallbacks were removed. See `docs/MIGRATION_v4.md`.
 - SSH strict host-key checking is now default-on (`--strict-host-key-
   checking` default `True`; `--no-strict-host-key-checking` opts out;
   API `strict_host_key_checking` defaults `True`). Scans against

@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from linux_health.dashboard import _save_report_copy
-from linux_health.store import Store
+from auditless.dashboard import _save_report_copy
+from auditless.store import Store
 
 
 def test_backup_uses_auditless_prefix(tmp_path: Path) -> None:
@@ -40,14 +40,17 @@ def test_report_copy_uses_auditless_prefix(
 
 
 def test_no_legacy_artifact_prefixes_in_source() -> None:
-    """Tripwire: no linux_health-/linux-health- filename builders in code."""
-    roots = [Path("linux_health"), Path("scripts")]
-    roots.append(Path("auditless.py"))
+    """Tripwire: pre-4.0 filename builders are gone from code.
+
+    The legacy prefix is assembled from parts so this guard itself never
+    contains a live legacy token.
+    """
+    legacy_underscore = "linux" + "_health-"
+    legacy_dash = "linux" + "-health-"
     offenders: list[str] = []
-    for root in roots:
-        files = [root] if root.is_file() else sorted(root.glob("*.py"))
-        for path in files:
+    for root in (Path("auditless"), Path("scripts")):
+        for path in sorted(root.glob("*.py")):
             text = path.read_text(encoding="utf-8")
-            if "linux_health-" in text or "linux-health-" in text:
+            if legacy_underscore in text or legacy_dash in text:
                 offenders.append(str(path))
     assert offenders == []

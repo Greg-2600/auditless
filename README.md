@@ -1,6 +1,6 @@
 # Auditless
 
-## Agentless Linux security scanner (formerly Linux Health)
+## Agentless Linux security scanner (formerly Auditless)
 
 ## Enterprise-Grade Security Assessment Platform for Linux Infrastructure
 
@@ -175,7 +175,7 @@ This project was inspired by **Lynis** and implements many of its core security 
 
 ### Feature Parity
 
-| Feature | Linux Health Scanner | Lynis |
+| Feature | Auditless Scanner | Lynis |
 | ------- | ------------------- | ----- |
 | **Agentless SSH-based scanning** | ✅ | ❌ (requires local execution) |
 | **Hardening index (0-100)** | ✅ | ✅ |
@@ -199,7 +199,7 @@ This project was inspired by **Lynis** and implements many of its core security 
 
 ### Key Differences
 
-**Advantages of Linux Health Scanner:**
+**Advantages of Auditless Scanner:**
 
 - **Remote execution** — No agent installation; scan multiple systems from one location
 - **Modern Python stack** — Easy to extend and integrate
@@ -215,7 +215,7 @@ This project was inspired by **Lynis** and implements many of its core security 
 
 **Use Cases:**
 
-- **Linux Health Scanner**: Remote auditing, CI/CD security gates, container security, fleet scanning
+- **Auditless Scanner**: Remote auditing, CI/CD security gates, container security, fleet scanning
 - **Lynis**: Deep local auditing, compliance reporting, enterprise-wide security management
 
 ---
@@ -226,8 +226,8 @@ This project was inspired by **Lynis** and implements many of its core security 
 
 ```bash
 # Clone repository
-git clone https://github.com/Greg-2600/linux_health.git
-cd linux_health
+git clone https://github.com/Greg-2600/auditless.git
+cd auditless
 
 # Create virtual environment
 python3 -m venv .venv
@@ -237,24 +237,24 @@ source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
 # Verify installation
-python -m linux_health --help
+python -m auditless --help
 ```
 
 ### Basic Security Assessment
 
 ```bash
 # Execute comprehensive security scan
-python -m linux_health 192.168.1.100 admin password
+python -m auditless 192.168.1.100 admin password
 
 # Interactive password entry (recommended)
-python -m linux_health 192.168.1.100 admin - --ask-password
+python -m auditless 192.168.1.100 admin - --ask-password
 
 # Generate Markdown report
-python -m linux_health 192.168.1.100 admin password \
+python -m auditless 192.168.1.100 admin password \
   --format md --output security-report.md
 
 # Non-standard SSH port
-python -m linux_health 192.168.1.100 admin password --port 2222
+python -m auditless 192.168.1.100 admin password --port 2222
 ```
 
 ### Docker Quick Start
@@ -285,8 +285,8 @@ A local web UI + documented JSON API built on FastAPI:
 
 ```bash
 # Serve on http://127.0.0.1:8080
-python -m linux_health --serve
-python -m linux_health --serve --serve-port 9000
+python -m auditless --serve
+python -m auditless --serve --serve-port 9000
 
 # In Docker (publish loopback only)
 docker run --rm -p 127.0.0.1:8080:8080 auditless --serve
@@ -311,7 +311,7 @@ operator audit trail (`GET /api/audit`, `GET /api/audit/verify`):
 
 ```bash
 export AUDITLESS_TOKEN="$(openssl rand -hex 32)"
-python -m linux_health --serve   # or: AUDITLESS_TOKEN=... docker compose up -d
+python -m auditless --serve   # or: AUDITLESS_TOKEN=... docker compose up -d
 
 curl -H "Authorization: Bearer $AUDITLESS_TOKEN" http://127.0.0.1:8080/api/scans
 ```
@@ -333,12 +333,12 @@ curl -X POST http://127.0.0.1:8080/api/maintenance/migrate-secrets
 # Rotate later: POST current + new key, then restart with the new env value.
 ```
 
-First-party Python client (`linux_health.client.ApiClient`, stdlib only)
+First-party Python client (`auditless.client.ApiClient`, stdlib only)
 talks to the app exclusively through the public API — the test suite
 dogfoods it, so anything the client cannot do is not really supported:
 
 ```python
-from linux_health.client import ApiClient
+from auditless.client import ApiClient
 
 api = ApiClient("http://127.0.0.1:8080")
 job = api.start_scan(hostname="web-01", username="root", password="s3cr3t",
@@ -364,8 +364,8 @@ defaults). Bare `--serve` stays on loopback; compose binds all interfaces
 
 ```bash
 # Local: defaults 127.0.0.1:8080, or override per run
-AUDITLESS_HOST=0.0.0.0 AUDITLESS_PORT=9000 python -m linux_health --serve
-python -m linux_health --serve --serve-host 127.0.0.1 --serve-port 9000
+AUDITLESS_HOST=0.0.0.0 AUDITLESS_PORT=9000 python -m auditless --serve
+python -m auditless --serve --serve-host 127.0.0.1 --serve-port 9000
 
 # Compose: published to host loopback regardless of container bind
 AUDITLESS_PORT=9000 docker compose up -d   # -> http://127.0.0.1:9000/
@@ -396,9 +396,9 @@ exposing it.
 ### CIS compliance mapping
 
 Every check carries its Lynis-style test ID at runtime (`CHECK_TEST_IDS`
-registry in `linux_health/test_ids.py` — attached by decorator, no manual
+registry in `auditless/test_ids.py` — attached by decorator, no manual
 patching), and each ID maps to controls across four frameworks
-(`linux_health/compliance.py`, best effort with direct/partial levels;
+(`auditless/compliance.py`, best effort with direct/partial levels;
 out-of-scope checks are explicitly listed, never silent):
 
 - CIS Ubuntu Linux 22.04 LTS Benchmark v2.0.0
@@ -419,7 +419,7 @@ curl http://127.0.0.1:8080/api/compliance/controls | head -c 300
 
 ### Guided remediation (propose → approve → verify)
 
-Failed checks map to reviewable fix scripts (`linux_health/remediations.py`).
+Failed checks map to reviewable fix scripts (`auditless/remediations.py`).
 Nothing executes without explicit approval, and every apply triggers a
 verification rescan that proves the flip:
 
@@ -510,8 +510,8 @@ Without these configurations, the container cannot reach the host's SSH service 
 
 ```bash
 # Clone repository
-git clone https://github.com/Greg-2600/linux_health.git
-cd linux_health
+git clone https://github.com/Greg-2600/auditless.git
+cd auditless
 
 # Create isolated environment
 python3 -m venv .venv
@@ -524,7 +524,7 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
 # Validate installation
-python -m linux_health --help
+python -m auditless --help
 ```
 
 ### Docker Installation
@@ -570,13 +570,11 @@ docker-compose run --rm auditless host user password
 ### Command-Line Interface
 
 ```bash
-python -m linux_health <hostname> <username> <password> [options]
+python -m auditless <hostname> <username> <password> [options]
 ```
 
-> **Entry points:** `auditless` (primary), `python -m linux_health`, and
-> `python -m auditless`. The `linux-health` command still works but is
-> deprecated — it prints a notice on every run. Kept through v3.x,
-> removal slated for v4.0.
+> **Entry points:** the `auditless` console script and
+> `python -m auditless`. Both run the same CLI.
 
 #### Required Arguments
 
@@ -616,10 +614,10 @@ python -m linux_health <hostname> <username> <password> [options]
 
 ```bash
 # Basic host scan with text output
-python -m linux_health server.example.com admin password
+python -m auditless server.example.com admin password
 
 # Comprehensive scan with all optional checks
-python -m linux_health server.example.com admin password \
+python -m auditless server.example.com admin password \
   --enable-rootkit-scan \
   --check-package-hygiene \
   --format md \
@@ -630,14 +628,14 @@ python -m linux_health server.example.com admin password \
 
 ```bash
 # Interactive password prompt (recommended)
-python -m linux_health server.example.com admin - --ask-password
+python -m auditless server.example.com admin - --ask-password
 
 # Read password from file
-python -m linux_health server.example.com admin $(cat /secure/password)
+python -m auditless server.example.com admin $(cat /secure/password)
 
 # Environment variable
 export SSH_PASS=$(vault read -field=password secret/ssh/admin)
-python -m linux_health server.example.com admin "$SSH_PASS"
+python -m auditless server.example.com admin "$SSH_PASS"
 ```
 
 > **Sudo preflight:** when a password is given, the scanner verifies
@@ -676,16 +674,16 @@ Notes:
 
 ```bash
 # Generate JSON report for CI/CD integration
-python -m linux_health server.example.com admin password \
+python -m auditless server.example.com admin password \
   --format json \
   --output security-scan.json
 
 # Parse JSON results with jq
-python -m linux_health server.example.com admin password --format json | \
+python -m auditless server.example.com admin password --format json | \
   jq '.summary.hardening_index'
 
 # Fail CI/CD if hardening index below threshold
-SCORE=$(python -m linux_health $TARGET $USER $PASS --format json | \
+SCORE=$(python -m auditless $TARGET $USER $PASS --format json | \
   jq -r '.summary.hardening_index')
 if [ $SCORE -lt 70 ]; then
   echo "❌ Security score $SCORE below threshold 70"
@@ -697,8 +695,8 @@ fi
 
 ```bash
 # Create a scan profile
-mkdir -p ~/.config/linux_health/profiles
-cat > ~/.config/linux_health/profiles/production.yaml << 'EOF'
+mkdir -p ~/.config/auditless/profiles
+cat > ~/.config/auditless/profiles/production.yaml << 'EOF'
 name: "Production Server Scan"
 description: "Optimized for production servers"
 skip_categories:
@@ -711,13 +709,13 @@ command_timeout: 90
 EOF
 
 # Run with profile
-python -m linux_health server.example.com admin password \
+python -m auditless server.example.com admin password \
   --profile production.yaml \
   --format json
 
 # Combine profile with custom options
-python -m linux_health server.example.com admin password \
-  --profile ~/.config/linux_health/profiles/quick-scan.yaml \
+python -m auditless server.example.com admin password \
+  --profile ~/.config/auditless/profiles/quick-scan.yaml \
   --format md \
   --output /reports/scan-$(date +%Y%m%d).md
 ```
@@ -726,7 +724,7 @@ Validate a profile before scanning (unknown settings, value types,
 and unknown test IDs with did-you-mean suggestions):
 
 ```bash
-auditless profile lint ~/.config/linux_health/profiles/production.yaml
+auditless profile lint ~/.config/auditless/profiles/production.yaml
 # profile OK: .../production.yaml   (exit 0)
 # error: unknown test ID 'STOR-631' ... (did you mean: STOR-6310?)  (exit 1)
 ```
@@ -735,9 +733,9 @@ CLI flags layer over profiles without editing YAML (`--only-tests`
 intersects profile `only_tests`, `--skip-tests` adds to `skip_tests`):
 
 ```bash
-python -m linux_health server.example.com admin password \
+python -m auditless server.example.com admin password \
   --only-tests STOR-6310,AUTH-9328
-python -m linux_health server.example.com admin password \
+python -m auditless server.example.com admin password \
   --profile quick-scan.yaml --skip-tests USB-1000
 ```
 
@@ -745,11 +743,11 @@ python -m linux_health server.example.com admin password \
 
 ```bash
 # Scan specific service ports
-python -m linux_health server.example.com admin password \
+python -m auditless server.example.com admin password \
   --scan-ports 22,80,443,3306,5432,6379,8080,9000
 
 # Scan extended port range
-python -m linux_health server.example.com admin password \
+python -m auditless server.example.com admin password \
   --scan-ports 22,80,443,8000-8100,9000-9100
 ```
 
@@ -757,13 +755,13 @@ python -m linux_health server.example.com admin password \
 
 ```bash
 # Alternative SSH port with extended timeout
-python -m linux_health server.example.com admin password \
+python -m auditless server.example.com admin password \
   --port 2222 \
   --timeout 30 \
   --command-timeout 120
 
 # High-latency network optimization
-python -m linux_health remote.example.com admin password \
+python -m auditless remote.example.com admin password \
   --timeout 60 \
   --command-timeout 180
 ```
@@ -922,7 +920,7 @@ Machine-readable structured output for automation and tool integration:
 {
   "scan_info": {
     "generated_at": "2026-01-10T15:30:00Z",
-    "scanner": "Linux Health Security Scanner",
+    "scanner": "Auditless Security Scanner",
     "version": "1.0.0"
   },
   "system": {
@@ -1000,7 +998,7 @@ Machine-readable structured output for automation and tool integration:
 
 ## Advanced Features
 
-Linux Health Security Scanner delivers enterprise-grade capabilities that rival industry-standard tools like Lynis, achieving **95%+ feature parity** while maintaining the unique advantage of agentless SSH-based remote scanning.
+Auditless Security Scanner delivers enterprise-grade capabilities that rival industry-standard tools like Lynis, achieving **95%+ feature parity** while maintaining the unique advantage of agentless SSH-based remote scanning.
 
 ### Test ID System
 
@@ -1054,7 +1052,7 @@ Generate machine-readable JSON reports for seamless integration with security or
 {
   "scan_info": {
     "generated_at": "2024-01-15T10:30:00Z",
-    "scanner": "Linux Health Security Scanner",
+    "scanner": "Auditless Security Scanner",
     "version": "2.0.0",
     "target_host": "server.example.com"
   },
@@ -1118,20 +1116,20 @@ Generate machine-readable JSON reports for seamless integration with security or
 
 ```bash
 # Output to stdout
-python -m linux_health HOST USER PASS --format json
+python -m auditless HOST USER PASS --format json
 
 # Save to file
-python -m linux_health HOST USER PASS --format json > report.json
+python -m auditless HOST USER PASS --format json > report.json
 
 # Pretty-printed JSON with jq
-python -m linux_health HOST USER PASS --format json | jq '.'
+python -m auditless HOST USER PASS --format json | jq '.'
 ```
 
 **Parse Hardening Index:**
 
 ```bash
 # Extract hardening score
-SCORE=$(python -m linux_health HOST USER PASS --format json | \
+SCORE=$(python -m auditless HOST USER PASS --format json | \
   jq -r '.summary.hardening_index')
 
 # CI/CD quality gate
@@ -1149,7 +1147,7 @@ import subprocess
 
 # Run scan and capture JSON output
 result = subprocess.run(
-    ['python', '-m', 'linux_health', 'server.local', 'admin', 'password', '--format', 'json'],
+    ['python', '-m', 'auditless', 'server.local', 'admin', 'password', '--format', 'json'],
     capture_output=True,
     text=True
 )
@@ -1183,7 +1181,7 @@ Customize scan behavior, skip irrelevant checks, and optimize performance with f
 #### Profile Structure
 
 ```yaml
-# ~/.config/linux_health/profiles/production.yaml
+# ~/.config/auditless/profiles/production.yaml
 name: "Production Server Profile"
 description: "Optimized for production datacenter environment"
 
@@ -1224,8 +1222,8 @@ custom_settings:
 
 The scanner automatically searches for profiles in the following locations (in order):
 
-1. **User Config:** `~/.config/linux_health/profiles/`
-2. **System Config:** `/etc/linux_health/profiles/`
+1. **User Config:** `~/.config/auditless/profiles/`
+2. **System Config:** `/etc/auditless/profiles/`
 3. **Current Directory:** `./profiles/`
 4. **Custom Path:** Specified via `--profile /path/to/profile.yaml`
 
@@ -1276,19 +1274,19 @@ skip_tests:
 
 ```bash
 # Use named profile from config directory
-python -m linux_health HOST USER PASS --profile production.yaml
+python -m auditless HOST USER PASS --profile production.yaml
 
 # Use absolute path to profile
-python -m linux_health HOST USER PASS --profile /opt/security/profiles/cis-benchmark.yaml
+python -m auditless HOST USER PASS --profile /opt/security/profiles/cis-benchmark.yaml
 
 # Combine profile with JSON output for automation
-python -m linux_health HOST USER PASS \
+python -m auditless HOST USER PASS \
   --profile ci-pipeline.yaml \
   --format json \
   --output scan-results.json
 
 # Quick scan during incident response
-python -m linux_health $COMPROMISED_HOST $USER $PASS \
+python -m auditless $COMPROMISED_HOST $USER $PASS \
   --profile quick-scan.yaml \
   --format md \
   --output /incident-reports/$(date +%Y%m%d-%H%M%S)-scan.md
@@ -1517,8 +1515,8 @@ docker push ghcr.io/$GITHUB_USER/auditless:latest
 ### Project Architecture
 
 ```text
-linux_health/
-├── linux_health/                    # Core application package
+auditless/
+├── auditless/                    # Core application package
 │   ├── __init__.py                 # Package initialization, version metadata
 │   ├── __main__.py                 # CLI entry point
 │   ├── checks.py                   # Security check functions (2,400+ lines)
@@ -1527,7 +1525,7 @@ linux_health/
 │   ├── scanner.py                  # TCP port scanner (lightweight) (56 lines)
 │   └── ssh_client.py               # Paramiko SSH wrapper (60 lines)
 ├── tests/
-│   └── test_linux_health.py        # Comprehensive test suite (87 tests, 1,100+ lines)
+│   └── test_auditless.py        # Comprehensive test suite (87 tests, 1,100+ lines)
 ├── .github/
 │   └── copilot-instructions.md     # Development agent configuration
 ├── Dockerfile                       # Production container image definition
@@ -1584,8 +1582,8 @@ linux_health/
 
 ```bash
 # Clone repository
-git clone https://github.com/Greg-2600/linux_health.git
-cd linux_health
+git clone https://github.com/Greg-2600/auditless.git
+cd auditless
 
 # Create isolated environment
 python3 -m venv .venv
@@ -1596,10 +1594,10 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
 # Verify setup
-python -m linux_health --help
+python -m auditless --help
 pytest tests/ -v
-ruff check linux_health/ tests/
-black --check linux_health/ tests/
+ruff check auditless/ tests/
+black --check auditless/ tests/
 ```
 
 ### Adding Custom Security Checks
@@ -1607,7 +1605,7 @@ black --check linux_health/ tests/
 #### Step 1: Implement Check Function
 
 ```python
-# linux_health/checks.py
+# auditless/checks.py
 
 def check_custom_vulnerability(ssh: SSHSession, password: str = "") -> CheckResult:
     """
@@ -1668,7 +1666,7 @@ def check_custom_vulnerability(ssh: SSHSession, password: str = "") -> CheckResu
 #### Step 2: Register in Check Runner
 
 ```python
-# linux_health/checks.py, in run_all_checks() function
+# auditless/checks.py, in run_all_checks() function
 
 def run_all_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
     results: list[CheckResult] = []
@@ -1686,7 +1684,7 @@ def run_all_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
 # tests/test_auditless.py
 
 from unittest.mock import Mock, MagicMock
-from linux_health.checks import check_custom_vulnerability
+from auditless.checks import check_custom_vulnerability
 
 class TestCustomVulnerability:
     """Test suite for custom vulnerability detection."""
@@ -1743,7 +1741,7 @@ pytest tests/test_auditless.py::TestCustomVulnerability -v
 pytest tests/ -v
 
 # Check coverage for new code
-pytest tests/ --cov=linux_health --cov-report=html
+pytest tests/ --cov=auditless --cov-report=html
 
 # View coverage report
 # Open htmlcov/index.html in browser
@@ -1753,16 +1751,16 @@ pytest tests/ --cov=linux_health --cov-report=html
 
 ```bash
 # Format code (PEP 8 compliance)
-black linux_health/ tests/
+black auditless/ tests/
 
 # Lint code (error/warning detection)
-ruff check linux_health/ tests/
+ruff check auditless/ tests/
 
 # Auto-fix linting issues
-ruff check --fix linux_health/ tests/
+ruff check --fix auditless/ tests/
 
 # Combined quality check
-black linux_health/ tests/ && ruff check linux_health/ tests/
+black auditless/ tests/ && ruff check auditless/ tests/
 ```
 
 **Standards:**
@@ -1817,10 +1815,10 @@ pytest tests/ -q
 pytest tests/ -v
 
 # With coverage report (terminal)
-pytest tests/ --cov=linux_health --cov-report=term-missing
+pytest tests/ --cov=auditless --cov-report=term-missing
 
 # Generate HTML coverage report
-pytest tests/ --cov=linux_health --cov-report=html
+pytest tests/ --cov=auditless --cov-report=html
 # Open htmlcov/index.html
 
 # Run specific test class
@@ -1913,7 +1911,7 @@ security_scan:
   script:
     # Execute security scan with JSON output
     - >
-      python -m linux_health 
+      python -m auditless 
       $TARGET_HOST 
       $SSH_USER 
       $SSH_PASS
@@ -1989,7 +1987,7 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PASS: ${{ secrets.SSH_PASS }}
         run: |
-          python -m linux_health \
+          python -m auditless \
             ${{ vars.TARGET_HOST }} \
             $SSH_USER \
             $SSH_PASS \
@@ -2083,7 +2081,7 @@ pipeline {
                 script {
                     // Execute security scan
                     sh """
-                        python -m linux_health \
+                        python -m auditless \
                             ${TARGET_HOST} \
                             ${SSH_CREDENTIALS_USR} \
                             ${SSH_CREDENTIALS_PSW} \
@@ -2168,7 +2166,7 @@ stages:
             displayName: 'Install Dependencies'
           
           - script: |
-              python -m linux_health \
+              python -m auditless \
                 $(targetHost) \
                 $(sshUser) \
                 $(sshPassword) \
@@ -2213,10 +2211,10 @@ from datetime import datetime
 from pathlib import Path
 
 def run_security_scan(host: str, user: str, password: str, profile: str = None) -> dict:
-    """Execute Linux Health Security Scanner and return parsed results."""
+    """Execute Auditless Security Scanner and return parsed results."""
     
     cmd = [
-        'python', '-m', 'linux_health',
+        'python', '-m', 'auditless',
         host, user, password,
         '--format', 'json'
     ]
@@ -2377,7 +2375,7 @@ SSH_PASS=$(vault kv get -field=password secret/ssh/scanner)
 
 mkdir -p "$REPORT_DIR"
 
-python -m linux_health localhost scanuser "$SSH_PASS" \
+python -m auditless localhost scanuser "$SSH_PASS" \
   --format md \
   --output "$REPORT_DIR/scan-$TIMESTAMP.md" \
   --enable-rootkit-scan \
@@ -2401,7 +2399,7 @@ fi
 - name: Execute security assessment across fleet
   hosts: all
   tasks:
-    - name: Run Linux Health Security Scanner
+    - name: Run Auditless Security Scanner
       command: >
         docker run --rm
         -v /tmp:/reports
@@ -2426,14 +2424,14 @@ fi
 
 ```bash
 #!/bin/bash
-# /usr/lib/nagios/plugins/check_linux_health.sh
+# /usr/lib/nagios/plugins/check_auditless.sh
 
 TARGET_HOST=$1
 SSH_USER=$2
 SSH_PASS=$3
 
 # Execute scan
-RESULT=$(python -m linux_health "$TARGET_HOST" "$SSH_USER" "$SSH_PASS" 2>&1)
+RESULT=$(python -m auditless "$TARGET_HOST" "$SSH_USER" "$SSH_PASS" 2>&1)
 
 # Count failures
 FAIL_COUNT=$(echo "$RESULT" | grep -c "^\[FAIL\]")
@@ -2508,13 +2506,13 @@ spec:
 
 ```bash
 # Increase connection timeout
-python -m linux_health host user password --timeout 60
+python -m auditless host user password --timeout 60
 
 # Verify SSH connectivity
 ssh -vvv user@host
 
 # Test non-standard port
-python -m linux_health host user password --port 2222 --timeout 30
+python -m auditless host user password --port 2222 --timeout 30
 
 # Check firewall rules
 sudo iptables -L -n | grep 22
@@ -2528,7 +2526,7 @@ sudo ufw status verbose
 ssh user@host whoami
 
 # Use interactive password
-python -m linux_health host user - --ask-password
+python -m auditless host user - --ask-password
 
 # Check SSH key conflicts
 ssh -o PasswordAuthentication=yes -o PubkeyAuthentication=no user@host
@@ -2540,7 +2538,7 @@ ssh -o PasswordAuthentication=yes -o PubkeyAuthentication=no user@host
 
 ```powershell
 $env:PYTHONIOENCODING="utf-8"
-python -m linux_health host user password
+python -m auditless host user password
 ```
 
 **Linux/macOS:**
@@ -2548,7 +2546,7 @@ python -m linux_health host user password
 ```bash
 export PYTHONIOENCODING=utf-8
 export LC_ALL=en_US.UTF-8
-python -m linux_health host user password
+python -m auditless host user password
 ```
 
 ### Permission Denied for Specific Checks
@@ -2618,11 +2616,11 @@ ls -la $(dirname /path/to/output.md)
 touch /path/to/output.md  # Test writability
 
 # Use absolute paths
-python -m linux_health host user password \
+python -m auditless host user password \
   --output /home/user/reports/scan.md
 
 # Test stdout first
-python -m linux_health host user password --format text
+python -m auditless host user password --format text
 ```
 
 **Malformed Markdown:**
@@ -2642,15 +2640,15 @@ cat scan_report.md | pandoc -f markdown -t html > report.html
 
 ```bash
 # Increase per-command timeout
-python -m linux_health host user password \
+python -m auditless host user password \
   --command-timeout 180
 
 # Skip optional scans
-python -m linux_health host user password \
+python -m auditless host user password \
   # Omit --enable-rootkit-scan and --check-package-hygiene
 
 # Reduce port scan surface
-python -m linux_health host user password \
+python -m auditless host user password \
   --scan-ports 22,80,443
 ```
 
@@ -2658,7 +2656,7 @@ python -m linux_health host user password \
 
 ```bash
 # Optimize all timeouts
-python -m linux_health host user password \
+python -m auditless host user password \
   --timeout 120 \
   --command-timeout 240
 ```
@@ -2686,7 +2684,7 @@ python -m linux_health host user password \
 2. **Interactive Passwords**
 
    ```bash
-   python -m linux_health host user - --ask-password
+   python -m auditless host user - --ask-password
    # Password not logged or visible in process list
    ```
 
@@ -2694,7 +2692,7 @@ python -m linux_health host user password \
 
    ```bash
    read -s SSH_PASS
-   python -m linux_health host user "$SSH_PASS"
+   python -m auditless host user "$SSH_PASS"
    unset SSH_PASS
    ```
 
@@ -2703,7 +2701,7 @@ python -m linux_health host user password \
    ```bash
    # HashiCorp Vault
    export SSH_PASS=$(vault kv get -field=password secret/ssh/scanner)
-   python -m linux_health host user "$SSH_PASS"
+   python -m auditless host user "$SSH_PASS"
    
    # AWS Secrets Manager
    export SSH_PASS=$(aws secretsmanager get-secret-value \
@@ -2733,7 +2731,7 @@ python -m linux_health host user password \
 # - Network connections in connection tracking
 
 # View scanner activity
-sudo grep "linux_health" /var/log/auth.log
+sudo grep "auditless" /var/log/auth.log
 sudo ausearch -k scanner_activity  # If auditd configured
 ```
 
@@ -2825,7 +2823,7 @@ sudo ausearch -k scanner_activity  # If auditd configured
 - Target OS and kernel version
 - Complete error message and stack trace
 - Scan command used (redact credentials)
-- Output of `python -m linux_health --help`
+- Output of `python -m auditless --help`
 
 ### Contributing
 
@@ -2849,7 +2847,7 @@ See [Development Guide](#development-guide) for contribution guidelines.
 # 1. Create repository on GitHub (github.com/new)
 
 # 2. Add remote and push
-git remote add origin https://github.com/YOUR_USERNAME/linux_health.git
+git remote add origin https://github.com/YOUR_USERNAME/auditless.git
 git branch -M main
 git push -u origin main
 
@@ -2896,7 +2894,7 @@ Report vulnerabilities privately (do not use issues): See [SECURITY.md](./SECURI
 
 MIT License
 
-Copyright (c) 2026 Linux Health Security Scanner Contributors
+Copyright (c) 2026 Auditless Security Scanner Contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -2936,7 +2934,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   - Exclusive mode (run only specified tests)
   - Configurable timeouts (connection and command)
   - Environment-specific profiles (production, development, compliance)
-  - Auto-discovery from `~/.config/linux_health/profiles/`, `/etc/linux_health/profiles/`
+  - Auto-discovery from `~/.config/auditless/profiles/`, `/etc/auditless/profiles/`
   - Template profile generator
 
 - ✅ **Test Filtering** — Granular control over scan execution

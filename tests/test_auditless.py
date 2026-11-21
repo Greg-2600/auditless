@@ -1,13 +1,11 @@
 import json
-import sys
 import tempfile
-import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from linux_health.checks import (
+from auditless.checks import (
     CheckResult,
     DetailedSecurityInfo,
     SystemInfo,
@@ -32,9 +30,9 @@ from linux_health.checks import (
     reset_command_cache,
     run_all_checks,
 )
-from linux_health.cli import build_parser, main, parse_ports
-from linux_health.report import render_report, render_report_json, render_report_text
-from linux_health.scanner import COMMON_PORTS, PortStatus
+from auditless.cli import build_parser, parse_ports
+from auditless.report import render_report, render_report_json, render_report_text
+from auditless.scanner import COMMON_PORTS, PortStatus
 
 
 # Disable command caching for tests to ensure fresh mocks
@@ -130,11 +128,11 @@ class TestBuildParser:
     """Tests for CLI argument parser"""
 
     def test_parser_branding_auditless_primary(self):
-        """Parser presents auditless as primary with alias epilog"""
+        """Parser presents the canonical auditless entry point."""
         parser = build_parser()
         assert parser.prog == "auditless"
         assert "Auditless" in (parser.description or "")
-        assert "linux-health" in (parser.epilog or "")
+        assert "auditless" in (parser.epilog or "")
 
     def test_parser_accepts_hostname_and_username(self):
         """Test parser accepts required hostname and username arguments"""
@@ -224,38 +222,6 @@ class TestBuildParser:
         assert args.check_package_hygiene is False
 
 
-class TestAliasDeprecation:
-    """linux-health entry point warns but keeps working through v3.x"""
-
-    def test_alias_emits_warning_and_stderr(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
-    ) -> None:
-        """Invoking as linux-health warns (both channels) yet still parses."""
-        monkeypatch.setattr(sys, "argv", ["linux-health"])
-        with pytest.warns(DeprecationWarning, match="deprecated"):
-            with pytest.raises(SystemExit):
-                main([])
-        assert "deprecated" in capsys.readouterr().err
-
-    def test_alias_exe_suffix_warns(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
-    ) -> None:
-        """Windows linux-health.exe triggers the same notice."""
-        monkeypatch.setattr(sys, "argv", [r"C:\tools\linux-health.exe"])
-        with pytest.warns(DeprecationWarning, match="v4.0"):
-            with pytest.raises(SystemExit):
-                main([])
-        capsys.readouterr()
-
-    def test_primary_name_is_silent(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Invoking as auditless emits no deprecation warning."""
-        monkeypatch.setattr(sys, "argv", ["auditless"])
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            with pytest.raises(SystemExit):
-                main([])
-
-
 class TestCheckTestIdRegistry:
     """Every registry check emits its mapped test ID at runtime."""
 
@@ -264,8 +230,8 @@ class TestCheckTestIdRegistry:
         import inspect
         import re
 
-        import linux_health.checks as checks_mod
-        from linux_health.test_ids import CHECK_TEST_IDS
+        import auditless.checks as checks_mod
+        from auditless.test_ids import CHECK_TEST_IDS
 
         called = set(
             re.findall(r"\b(check_\w+)\(", inspect.getsource(checks_mod._check_thunks))
@@ -280,11 +246,11 @@ class TestCheckTestIdRegistry:
         import inspect
         import re
 
-        import linux_health.checks_audit as audit_mod
-        import linux_health.checks_database as database_mod
-        import linux_health.checks_filesystem as filesystem_mod
-        import linux_health.checks_packages as packages_mod
-        from linux_health.test_ids import CHECK_TEST_IDS
+        import auditless.checks_audit as audit_mod
+        import auditless.checks_database as database_mod
+        import auditless.checks_filesystem as filesystem_mod
+        import auditless.checks_packages as packages_mod
+        from auditless.test_ids import CHECK_TEST_IDS
 
         modules = (audit_mod, filesystem_mod, database_mod, packages_mod)
         for mod in modules:
@@ -307,10 +273,10 @@ class TestCheckTestIdRegistry:
 
         from unittest.mock import MagicMock
 
-        from linux_health.checks_audit import run_all_audit_checks
-        from linux_health.checks_database import run_all_database_checks
-        from linux_health.checks_filesystem import run_all_filesystem_checks
-        from linux_health.checks_packages import run_all_package_management_checks
+        from auditless.checks_audit import run_all_audit_checks
+        from auditless.checks_database import run_all_database_checks
+        from auditless.checks_filesystem import run_all_filesystem_checks
+        from auditless.checks_packages import run_all_package_management_checks
 
         def exploding_ssh() -> MagicMock:
             def boom(command: str, timeout: float = 10.0) -> tuple:  # type: ignore[return]
@@ -341,7 +307,7 @@ class TestCheckTestIdRegistry:
         "func_name,test_id",
         sorted(
             __import__(
-                "linux_health.test_ids", fromlist=["CHECK_TEST_IDS"]
+                "auditless.test_ids", fromlist=["CHECK_TEST_IDS"]
             ).CHECK_TEST_IDS.items()
         ),
     )
@@ -350,11 +316,11 @@ class TestCheckTestIdRegistry:
         import inspect
         from unittest.mock import MagicMock
 
-        import linux_health.checks as checks_mod
-        import linux_health.checks_audit as audit_mod
-        import linux_health.checks_database as database_mod
-        import linux_health.checks_filesystem as filesystem_mod
-        import linux_health.checks_packages as packages_mod
+        import auditless.checks as checks_mod
+        import auditless.checks_audit as audit_mod
+        import auditless.checks_database as database_mod
+        import auditless.checks_filesystem as filesystem_mod
+        import auditless.checks_packages as packages_mod
 
         fn = None
         for mod in (checks_mod, audit_mod, filesystem_mod, database_mod, packages_mod):
@@ -381,8 +347,8 @@ class TestMainScanOrchestration:
     """End-to-end main() flow with a stubbed SSH backend (no network)."""
 
     def _patch_all(self, monkeypatch, **overrides):
-        from linux_health import cli
-        from linux_health.checks import CheckResult, SystemInfo
+        from auditless import cli
+        from auditless.checks import CheckResult, SystemInfo
 
         info = SystemInfo("h", "TestOS 1.0", "1.0", "1 day", "u")
         check = CheckResult("C", "Item", "pass", "d", "r", test_id="T-1")
@@ -434,7 +400,7 @@ class TestMainScanOrchestration:
             "gather_unused_packages",
         ):
             monkeypatch.setattr(cli, name, lambda *a, **k: "x")
-        from linux_health.scanner import PortStatus as _PortStatus
+        from auditless.scanner import PortStatus as _PortStatus
 
         monkeypatch.setattr(
             cli,
@@ -446,7 +412,7 @@ class TestMainScanOrchestration:
         return FakeSession
 
     def test_main_text_scan_prints_report(self, monkeypatch, capsys):
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
         assert cli.main(["h", "u", "pw"]) == 0
@@ -454,7 +420,7 @@ class TestMainScanOrchestration:
 
     def test_main_jobs_flag_selects_runner(self, monkeypatch):
         """--jobs 1 runs sequential, default/>1 runs the parallel pool."""
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
         calls: list[str] = []
@@ -477,7 +443,7 @@ class TestMainScanOrchestration:
         """Expired deadline renders completed phases plus a WARN marker."""
         import json
 
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
         ticks = iter([1000.0, 1000.0, 9999.0])
@@ -494,7 +460,7 @@ class TestMainScanOrchestration:
         """Without --deadline the scan completes with no truncation marker."""
         import json
 
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
         out = tmp_path / "r.json"
@@ -505,8 +471,8 @@ class TestMainScanOrchestration:
 
     def test_main_no_cache_restores_state(self, monkeypatch):
         """--no-cache disables for one scan, then restores prior state."""
-        from linux_health import cli
-        from linux_health.checks import (
+        from auditless import cli
+        from auditless.checks import (
             disable_command_cache,
             enable_command_cache,
             is_command_cache_enabled,
@@ -527,7 +493,7 @@ class TestMainScanOrchestration:
 
     def test_main_aborts_on_sudo_failure(self, monkeypatch, capsys):
         """Wrong sudo password fails fast with a clear, secret-free error."""
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
         monkeypatch.setattr(cli, "_preflight_sudo", lambda ssh, pw: False)
@@ -540,7 +506,7 @@ class TestMainScanOrchestration:
 
     def test_main_proceeds_on_sudo_success(self, monkeypatch):
         """Verified sudo continues into the normal scan."""
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
         monkeypatch.setattr(cli, "_preflight_sudo", lambda ssh, pw: True)
@@ -548,7 +514,7 @@ class TestMainScanOrchestration:
 
     def test_main_skips_preflight_without_password(self, monkeypatch):
         """Key-auth scans never probe sudo (nothing to verify)."""
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
 
@@ -562,7 +528,7 @@ class TestMainScanOrchestration:
         """Probe truth table: success, failure, and inconclusive sessions."""
         from unittest.mock import MagicMock, Mock
 
-        from linux_health import cli
+        from auditless import cli
 
         def session_for(outputs):
             ssh = Mock()
@@ -585,7 +551,7 @@ class TestMainScanOrchestration:
     def test_main_json_scan_writes_file(self, monkeypatch, tmp_path):
         import json
 
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
         out = tmp_path / "r.json"
@@ -595,7 +561,7 @@ class TestMainScanOrchestration:
         )
 
     def test_main_markdown_scan_writes_file(self, monkeypatch, tmp_path):
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
         out = tmp_path / "r.md"
@@ -603,7 +569,7 @@ class TestMainScanOrchestration:
         assert out.read_text(encoding="utf-8")
 
     def test_main_passes_key_and_strict_flags(self, monkeypatch):
-        from linux_health import cli
+        from auditless import cli
 
         fake = self._patch_all(monkeypatch)
         assert (
@@ -614,7 +580,7 @@ class TestMainScanOrchestration:
         assert fake.kwargs["strict_host_key_checking"] is True
 
     def test_main_ssh_failure_exits_2(self, monkeypatch, capsys):
-        from linux_health import cli
+        from auditless import cli
 
         self._patch_all(monkeypatch)
 
@@ -857,7 +823,7 @@ class TestCheckAccounts:
         """Only root with UID 0 is clean."""
         from unittest.mock import MagicMock, Mock
 
-        from linux_health.checks import check_accounts
+        from auditless.checks import check_accounts
 
         mock_ssh = Mock()
         mock_ssh._client = None
@@ -870,7 +836,7 @@ class TestCheckAccounts:
         """Extra UID 0 accounts are a backdoor indicator (fail, not warn)."""
         from unittest.mock import MagicMock, Mock
 
-        from linux_health.checks import check_accounts
+        from auditless.checks import check_accounts
 
         mock_ssh = Mock()
         mock_ssh._client = None
@@ -886,7 +852,7 @@ class TestCheckStaleUserAccounts:
 
     def test_stale_user_check_returns_result(self):
         """Test that stale user account check returns a CheckResult"""
-        from linux_health.checks import check_stale_user_accounts
+        from auditless.checks import check_stale_user_accounts
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "", ""))
@@ -898,7 +864,7 @@ class TestCheckStaleUserAccounts:
 
     def test_no_stale_users_returns_pass(self):
         """Test when no stale users found"""
-        from linux_health.checks import check_stale_user_accounts
+        from auditless.checks import check_stale_user_accounts
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "", ""))
@@ -912,7 +878,7 @@ class TestCheckAbnormalNetworkProcesses:
 
     def test_normal_services_returns_pass(self):
         """Test that normal services return PASS"""
-        from linux_health.checks import check_abnormal_network_processes
+        from auditless.checks import check_abnormal_network_processes
 
         mock_ssh = Mock()
         # Simulate normal listening services (ssh, http, dns)
@@ -927,7 +893,7 @@ LISTEN 0 128 127.0.0.1:53 0.0.0.0:* users:(("dnsmasq",pid=9999,fd=10))"""
 
     def test_suspicious_netcat_detected(self):
         """Test detection of netcat listener"""
-        from linux_health.checks import check_abnormal_network_processes
+        from auditless.checks import check_abnormal_network_processes
 
         mock_ssh = Mock()
         output = """LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1234,fd=3))
@@ -940,7 +906,7 @@ LISTEN 0 128 0.0.0.0:9999 0.0.0.0:* users:(("nc",pid=6789,fd=4))"""
 
     def test_suspicious_shell_detected(self):
         """Test detection of shell listening"""
-        from linux_health.checks import check_abnormal_network_processes
+        from auditless.checks import check_abnormal_network_processes
 
         mock_ssh = Mock()
         output = """LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1234,fd=3))
@@ -956,7 +922,7 @@ LISTEN 0 128 0.0.0.0:4444 0.0.0.0:* users:(("bash",pid=7890,fd=5))"""
 
     def test_no_listeners_returns_pass(self):
         """Test when no listeners found"""
-        from linux_health.checks import check_abnormal_network_processes
+        from auditless.checks import check_abnormal_network_processes
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "", ""))
@@ -966,7 +932,7 @@ LISTEN 0 128 0.0.0.0:4444 0.0.0.0:* users:(("bash",pid=7890,fd=5))"""
 
     def test_command_failure_returns_pass(self):
         """Test graceful handling of command failure"""
-        from linux_health.checks import check_abnormal_network_processes
+        from auditless.checks import check_abnormal_network_processes
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(1, "", "Command error"))
@@ -1055,7 +1021,7 @@ class TestCheckSuspiciousProcessLocations:
 
     def test_no_suspicious_processes_returns_pass(self):
         """Test when no processes in suspicious locations"""
-        from linux_health.checks import check_suspicious_process_locations
+        from auditless.checks import check_suspicious_process_locations
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "", ""))
@@ -1065,7 +1031,7 @@ class TestCheckSuspiciousProcessLocations:
 
     def test_process_in_tmp_detected(self):
         """Test detection of process in /tmp"""
-        from linux_health.checks import check_suspicious_process_locations
+        from auditless.checks import check_suspicious_process_locations
 
         mock_ssh = Mock()
         output = "bash    1234 user    0r   REG  ... /tmp/malware"
@@ -1076,7 +1042,7 @@ class TestCheckSuspiciousProcessLocations:
 
     def test_command_failure_returns_pass(self):
         """Test graceful failure handling"""
-        from linux_health.checks import check_suspicious_process_locations
+        from auditless.checks import check_suspicious_process_locations
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(1, "", "Command not found"))
@@ -1090,7 +1056,7 @@ class TestCheckUnexpectedSudoUsage:
 
     def test_normal_sudoers_returns_pass(self):
         """Test with normal sudoers configuration"""
-        from linux_health.checks import check_unexpected_sudo_usage
+        from auditless.checks import check_unexpected_sudo_usage
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(
@@ -1105,7 +1071,7 @@ class TestCheckUnexpectedSudoUsage:
 
     def test_nopasswd_sudoers_detected(self):
         """Test detection of NOPASSWD sudoers"""
-        from linux_health.checks import check_unexpected_sudo_usage
+        from auditless.checks import check_unexpected_sudo_usage
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(
@@ -1121,7 +1087,7 @@ class TestCheckUnexpectedSudoUsage:
 
     def test_suspicious_sudo_commands_detected(self):
         """Test detection of suspicious sudo commands"""
-        from linux_health.checks import check_unexpected_sudo_usage
+        from auditless.checks import check_unexpected_sudo_usage
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(
@@ -1140,7 +1106,7 @@ class TestCheckRecentlyCreatedAccounts:
 
     def test_no_recent_accounts_returns_pass(self):
         """Test when no recent accounts exist"""
-        from linux_health.checks import check_recently_created_accounts
+        from auditless.checks import check_recently_created_accounts
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "", ""))
@@ -1152,7 +1118,7 @@ class TestCheckRecentlyCreatedAccounts:
         """Test detection of recently created account"""
         from datetime import datetime, timedelta
 
-        from linux_health.checks import check_recently_created_accounts
+        from auditless.checks import check_recently_created_accounts
 
         now = datetime.now()
         recent_date = now - timedelta(days=5)
@@ -1170,7 +1136,7 @@ class TestCheckRecentlyCreatedAccounts:
         """Test that old accounts return pass"""
         from datetime import datetime, timedelta
 
-        from linux_health.checks import check_recently_created_accounts
+        from auditless.checks import check_recently_created_accounts
 
         now = datetime.now()
         old_date = now - timedelta(days=90)
@@ -1189,7 +1155,7 @@ class TestCheckSystemBinaryModifications:
 
     def test_no_modified_binaries_returns_pass(self):
         """Test when no binaries modified"""
-        from linux_health.checks import check_system_binary_modifications
+        from auditless.checks import check_system_binary_modifications
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "", ""))
@@ -1199,7 +1165,7 @@ class TestCheckSystemBinaryModifications:
 
     def test_modified_binary_detected(self):
         """Test detection of recently modified binary"""
-        from linux_health.checks import check_system_binary_modifications
+        from auditless.checks import check_system_binary_modifications
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "/bin/bash", ""))
@@ -1210,7 +1176,7 @@ class TestCheckSystemBinaryModifications:
 
     def test_multiple_modified_binaries_detected(self):
         """Test detection of multiple modified binaries"""
-        from linux_health.checks import check_system_binary_modifications
+        from auditless.checks import check_system_binary_modifications
 
         mock_ssh = Mock()
         output = "/bin/bash\n/usr/bin/sudo\n/sbin/init"
@@ -1226,7 +1192,7 @@ class TestCheckFailedLoginSpike:
 
     def test_normal_failed_logins_returns_pass(self):
         """Test with normal number of failed logins"""
-        from linux_health.checks import check_failed_login_spike
+        from auditless.checks import check_failed_login_spike
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(
@@ -1241,7 +1207,7 @@ class TestCheckFailedLoginSpike:
 
     def test_high_failed_logins_returns_warn(self):
         """Test detection of high failed login count"""
-        from linux_health.checks import check_failed_login_spike
+        from auditless.checks import check_failed_login_spike
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(
@@ -1257,7 +1223,7 @@ class TestCheckFailedLoginSpike:
 
     def test_command_failure_returns_pass(self):
         """Test graceful handling of auth log unavailability"""
-        from linux_health.checks import check_failed_login_spike
+        from auditless.checks import check_failed_login_spike
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(1, "", "Permission denied"))
@@ -1620,9 +1586,9 @@ class TestSSHSession:
         """Test SSH session context manager protocol"""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
 
-        with patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class:
+        with patch("auditless.ssh_client.paramiko.SSHClient") as mock_client_class:
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
 
@@ -1636,9 +1602,9 @@ class TestSSHSession:
         """Test running SSH commands"""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
 
-        with patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class:
+        with patch("auditless.ssh_client.paramiko.SSHClient") as mock_client_class:
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
 
@@ -1665,7 +1631,7 @@ class TestSSHSession:
 
     def test_ssh_session_run_not_connected_raises(self):
         """Test running command without connection raises error"""
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
 
         session = SSHSession("host", "user", "pass")
 
@@ -1676,11 +1642,11 @@ class TestSSHSession:
         """Bastion connections open a direct-tcpip channel first."""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
 
         with (
-            patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class,
-            patch("linux_health.ssh_client.paramiko.Transport") as mock_transport_class,
+            patch("auditless.ssh_client.paramiko.SSHClient") as mock_client_class,
+            patch("auditless.ssh_client.paramiko.Transport") as mock_transport_class,
         ):
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
@@ -1718,12 +1684,12 @@ class TestSSHSession:
         """Gateway key loader tries RSA/Ed25519/ECDSA in order."""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
 
         session = SSHSession("h", "u", "p", gateway={"key_path": "/k"})
-        with patch("linux_health.ssh_client.paramiko.RSAKey") as rsa:
+        with patch("auditless.ssh_client.paramiko.RSAKey") as rsa:
             rsa.from_private_key_file.side_effect = ValueError("nope")
-            with patch("linux_health.ssh_client.paramiko.Ed25519Key") as ed:
+            with patch("auditless.ssh_client.paramiko.Ed25519Key") as ed:
                 ed.from_private_key_file.return_value = MagicMock()
                 assert (
                     session._load_gateway_key() is ed.from_private_key_file.return_value
@@ -1731,7 +1697,7 @@ class TestSSHSession:
 
     def test_ssh_session_gateway_bad_key_raises(self, tmp_path):
         """Unreadable gateway keys fail fast with a clear error."""
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
 
         session = SSHSession("h", "u", "p", gateway={"key_path": "/nonexistent-key"})
         with pytest.raises(ValueError, match="unreadable gateway key"):
@@ -1741,11 +1707,11 @@ class TestSSHSession:
         """Direct connections never touch Transport."""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
 
         with (
-            patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class,
-            patch("linux_health.ssh_client.paramiko.Transport") as mock_transport_class,
+            patch("auditless.ssh_client.paramiko.SSHClient") as mock_client_class,
+            patch("auditless.ssh_client.paramiko.Transport") as mock_transport_class,
         ):
             mock_client_class.return_value = MagicMock()
             session = SSHSession("host", "user", "pass")
@@ -1758,10 +1724,10 @@ class TestSSHSession:
         """Test default host key policy is reject (fail closed)"""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
         from paramiko.client import RejectPolicy
 
-        with patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class:
+        with patch("auditless.ssh_client.paramiko.SSHClient") as mock_client_class:
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
 
@@ -1777,10 +1743,10 @@ class TestSSHSession:
         """--no-strict-host-key-checking restores the old auto-add policy."""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
         from paramiko.client import AutoAddPolicy
 
-        with patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class:
+        with patch("auditless.ssh_client.paramiko.SSHClient") as mock_client_class:
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
 
@@ -1795,10 +1761,10 @@ class TestSSHSession:
         """Test strict mode rejects unknown host keys (MITM protection)"""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
         from paramiko.client import RejectPolicy
 
-        with patch("linux_health.ssh_client.paramiko.SSHClient") as mock_client_class:
+        with patch("auditless.ssh_client.paramiko.SSHClient") as mock_client_class:
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
 
@@ -1816,9 +1782,9 @@ class TestPortScanner:
         """Test scanning a single open port"""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.scanner import _scan_single
+        from auditless.scanner import _scan_single
 
-        with patch("linux_health.scanner.socket.socket") as mock_socket_class:
+        with patch("auditless.scanner.socket.socket") as mock_socket_class:
             mock_socket = MagicMock()
             mock_socket_class.return_value.__enter__.return_value = mock_socket
             mock_socket.connect.return_value = None
@@ -1834,9 +1800,9 @@ class TestPortScanner:
         import socket
         from unittest.mock import MagicMock, patch
 
-        from linux_health.scanner import _scan_single
+        from auditless.scanner import _scan_single
 
-        with patch("linux_health.scanner.socket.socket") as mock_socket_class:
+        with patch("auditless.scanner.socket.socket") as mock_socket_class:
             mock_socket = MagicMock()
             mock_socket_class.return_value.__enter__.return_value = mock_socket
             mock_socket.connect.side_effect = socket.timeout()
@@ -1851,9 +1817,9 @@ class TestPortScanner:
         """Test scanning a port with connection refused"""
         from unittest.mock import MagicMock, patch
 
-        from linux_health.scanner import _scan_single
+        from auditless.scanner import _scan_single
 
-        with patch("linux_health.scanner.socket.socket") as mock_socket_class:
+        with patch("auditless.scanner.socket.socket") as mock_socket_class:
             mock_socket = MagicMock()
             mock_socket_class.return_value.__enter__.return_value = mock_socket
             mock_socket.connect.side_effect = OSError("Connection refused")
@@ -1868,10 +1834,10 @@ class TestPortScanner:
         """Test that port scanning deduplicates ports"""
         from unittest.mock import patch
 
-        from linux_health.scanner import scan_ports
+        from auditless.scanner import scan_ports
 
-        with patch("linux_health.scanner._scan_single") as mock_scan:
-            from linux_health.scanner import PortStatus
+        with patch("auditless.scanner._scan_single") as mock_scan:
+            from auditless.scanner import PortStatus
 
             mock_scan.return_value = PortStatus(port=80, open=True, reason="Connected")
 
@@ -1885,10 +1851,10 @@ class TestPortScanner:
         """Test that invalid ports are filtered"""
         from unittest.mock import patch
 
-        from linux_health.scanner import scan_ports
+        from auditless.scanner import scan_ports
 
-        with patch("linux_health.scanner._scan_single") as mock_scan:
-            from linux_health.scanner import PortStatus
+        with patch("auditless.scanner._scan_single") as mock_scan:
+            from auditless.scanner import PortStatus
 
             mock_scan.return_value = PortStatus(port=80, open=True, reason="Connected")
 
@@ -1898,7 +1864,7 @@ class TestPortScanner:
 
     def test_normalize_host_strips_brackets(self):
         """Bracketed IPv6 literals normalize for socket/SSH APIs"""
-        from linux_health.scanner import normalize_host
+        from auditless.scanner import normalize_host
 
         assert normalize_host("[::1]") == "::1"
         assert normalize_host("::1") == "::1"
@@ -1912,7 +1878,7 @@ class TestPortScanner:
         """Real dual-stack probe: open and closed ports on ::1."""
         import socket
 
-        from linux_health.scanner import scan_ports
+        from auditless.scanner import scan_ports
 
         try:
             listener = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
@@ -1930,7 +1896,7 @@ class TestPortScanner:
 
     def test_ssh_session_strips_brackets(self):
         """SSH connections use the bare address for bracketed input."""
-        from linux_health.ssh_client import SSHSession
+        from auditless.ssh_client import SSHSession
 
         assert SSHSession("[::1]", "u", "pw").hostname == "::1"
         assert SSHSession("example.com", "u", "pw").hostname == "example.com"
@@ -1941,7 +1907,7 @@ class TestCLIFunctions:
 
     def test_build_parser_creates_parser(self):
         """Test that build_parser creates valid argument parser"""
-        from linux_health.cli import build_parser
+        from auditless.cli import build_parser
 
         parser = build_parser()
 
@@ -1950,7 +1916,7 @@ class TestCLIFunctions:
 
     def test_build_parser_required_args(self):
         """Test parser accepts required arguments"""
-        from linux_health.cli import build_parser
+        from auditless.cli import build_parser
 
         parser = build_parser()
         args = parser.parse_args(["host", "user", "pass"])
@@ -1961,7 +1927,7 @@ class TestCLIFunctions:
 
     def test_build_parser_optional_args(self):
         """Test parser accepts optional arguments"""
-        from linux_health.cli import build_parser
+        from auditless.cli import build_parser
 
         parser = build_parser()
         args = parser.parse_args(
@@ -1990,7 +1956,7 @@ class TestCLIFunctions:
 
     def test_build_parser_flags(self):
         """Test parser boolean flags"""
-        from linux_health.cli import build_parser
+        from auditless.cli import build_parser
 
         parser = build_parser()
         args = parser.parse_args(
@@ -2127,7 +2093,7 @@ class TestCommandTimeout:
 
     def test_set_command_timeout(self):
         """Test setting command timeout"""
-        from linux_health.checks import set_command_timeout
+        from auditless.checks import set_command_timeout
 
         set_command_timeout(120.0)
 
@@ -2136,7 +2102,7 @@ class TestCommandTimeout:
 
     def test_set_command_timeout_minimum(self):
         """Test command timeout has minimum value"""
-        from linux_health.checks import set_command_timeout
+        from auditless.checks import set_command_timeout
 
         # Should not raise, should clamp to minimum
         set_command_timeout(0.5)
@@ -2150,7 +2116,7 @@ class TestDetailedSecurityInfoCommands:
 
     def test_gather_suid_binaries(self):
         """Test gathering SUID binaries"""
-        from linux_health.checks import gather_suid_binaries
+        from auditless.checks import gather_suid_binaries
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "/usr/bin/sudo\n/usr/bin/passwd", ""))
@@ -2164,7 +2130,7 @@ class TestDetailedSecurityInfoCommands:
 
     def test_gather_root_logins(self):
         """Test gathering root login attempts"""
-        from linux_health.checks import gather_root_logins
+        from auditless.checks import gather_root_logins
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "root pts/0 192.168.1.1", ""))
@@ -2175,7 +2141,7 @@ class TestDetailedSecurityInfoCommands:
 
     def test_gather_disk_usage_dirs(self):
         """Test gathering disk usage by directory"""
-        from linux_health.checks import gather_disk_usage_dirs
+        from auditless.checks import gather_disk_usage_dirs
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "1G /var/log\n500M /tmp", ""))
@@ -2186,7 +2152,7 @@ class TestDetailedSecurityInfoCommands:
 
     def test_gather_firewall_rules(self):
         """Test gathering firewall rules"""
-        from linux_health.checks import gather_firewall_rules
+        from auditless.checks import gather_firewall_rules
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "ACCEPT all", ""))
@@ -2197,7 +2163,7 @@ class TestDetailedSecurityInfoCommands:
 
     def test_gather_sudoers_info(self):
         """Test gathering sudoers information"""
-        from linux_health.checks import gather_sudoers_info
+        from auditless.checks import gather_sudoers_info
 
         mock_ssh = Mock()
         mock_ssh.run = MagicMock(return_value=(0, "user ALL=(ALL) ALL", ""))
@@ -2326,7 +2292,7 @@ class TestConfigurationSystem:
     def test_config_import_available(self):
         """Test that config module is importable"""
         try:
-            from linux_health import config
+            from auditless import config
 
             assert hasattr(config, "ScanProfile")
             assert hasattr(config, "load_profile")
@@ -2337,7 +2303,7 @@ class TestConfigurationSystem:
     def test_scan_profile_creation(self):
         """Test creating ScanProfile"""
         try:
-            from linux_health.config import ScanProfile
+            from auditless.config import ScanProfile
 
             profile = ScanProfile(
                 name="test",
@@ -2354,7 +2320,7 @@ class TestConfigurationSystem:
     def test_should_skip_test_by_id(self):
         """Test skipping by test ID"""
         try:
-            from linux_health.config import ScanProfile, should_skip_test
+            from auditless.config import ScanProfile, should_skip_test
 
             profile = ScanProfile(skip_tests={"STOR-6310"})
 
@@ -2366,7 +2332,7 @@ class TestConfigurationSystem:
     def test_should_skip_test_by_category(self):
         """Test skipping by category"""
         try:
-            from linux_health.config import ScanProfile, should_skip_test
+            from auditless.config import ScanProfile, should_skip_test
 
             profile = ScanProfile(skip_categories={"Storage", "Memory"})
 
@@ -2379,7 +2345,7 @@ class TestConfigurationSystem:
     def test_should_skip_test_only_mode(self):
         """Test only_tests exclusive mode"""
         try:
-            from linux_health.config import ScanProfile, should_skip_test
+            from auditless.config import ScanProfile, should_skip_test
 
             profile = ScanProfile(only_tests={"STOR-6310", "MEM-2914"})
 
@@ -2392,7 +2358,7 @@ class TestConfigurationSystem:
     def test_load_profile_from_yaml(self):
         """Test loading profile from YAML file"""
         try:
-            from linux_health.config import load_profile
+            from auditless.config import load_profile
 
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".yaml", delete=False
@@ -2512,7 +2478,7 @@ class TestHardeningIndex:
                 recommendation="Recommendation",
             ),
         ]
-        from linux_health.report import calculate_hardening_index
+        from auditless.report import calculate_hardening_index
 
         index = calculate_hardening_index(checks)
         assert index["overall_index"] == 100
@@ -2535,7 +2501,7 @@ class TestHardeningIndex:
                 recommendation="Recommendation",
             ),
         ]
-        from linux_health.report import calculate_hardening_index
+        from auditless.report import calculate_hardening_index
 
         index = calculate_hardening_index(checks)
         # 1 pass (100%) + 1 warn (50%) = 75%
@@ -2559,7 +2525,7 @@ class TestHardeningIndex:
                 recommendation="Recommendation",
             ),
         ]
-        from linux_health.report import calculate_hardening_index
+        from auditless.report import calculate_hardening_index
 
         index = calculate_hardening_index(checks)
         # 1 pass (100%) + 1 fail (0%) = 50%
@@ -2583,7 +2549,7 @@ class TestHardeningIndex:
                 recommendation="Recommendation",
             ),
         ]
-        from linux_health.report import calculate_hardening_index
+        from auditless.report import calculate_hardening_index
 
         index = calculate_hardening_index(checks)
         assert index["unknown"] == 1
@@ -2602,7 +2568,7 @@ class TestHardeningIndex:
                 recommendation="Recommendation",
             ),
         ]
-        from linux_health.report import calculate_hardening_index
+        from auditless.report import calculate_hardening_index
 
         index = calculate_hardening_index(checks)
         assert index["overall_index"] == 0
@@ -2614,14 +2580,14 @@ class TestProfileLoading:
 
     def test_load_nonexistent_profile_raises_error(self):
         """Test that loading nonexistent profile raises error"""
-        from linux_health.config import load_profile
+        from auditless.config import load_profile
 
         with pytest.raises(FileNotFoundError):
             load_profile("/nonexistent/profile.yaml")
 
     def test_load_profile_with_invalid_yaml_fails_gracefully(self):
         """Test that invalid YAML is handled properly"""
-        from linux_health.config import load_profile
+        from auditless.config import load_profile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("invalid: [yaml content\n")
@@ -2636,7 +2602,7 @@ class TestProfileLoading:
 
     def test_create_default_profile(self):
         """Test creating default profile"""
-        from linux_health.config import create_default_profile
+        from auditless.config import create_default_profile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "default.yaml"
@@ -2807,7 +2773,7 @@ class TestPerformanceOptimizations:
 
     def test_command_cache_stores_results(self):
         """Test that command cache stores and retrieves results."""
-        from linux_health.checks import enable_command_cache
+        from auditless.checks import enable_command_cache
 
         enable_command_cache()
         reset_command_cache()
@@ -2828,7 +2794,7 @@ class TestPerformanceOptimizations:
         )
 
         # Simulate running a command through _run
-        from linux_health.checks import _run
+        from auditless.checks import _run
 
         cmd = "test command"
         result = _run(mock_ssh, cmd, use_cache=True)
@@ -2839,7 +2805,7 @@ class TestPerformanceOptimizations:
 
     def test_cache_cleared_between_sessions(self):
         """Test that cache can be cleared for new sessions."""
-        from linux_health.checks import _COMMAND_CACHE
+        from auditless.checks import _COMMAND_CACHE
 
         reset_command_cache()
         assert len(_COMMAND_CACHE) == 0
@@ -2917,7 +2883,7 @@ def test_main_only_tests_filters_to_subset(monkeypatch, tmp_path):
     """--only-tests keeps matching IDs and drops everything else."""
     import json
 
-    from linux_health import cli
+    from auditless import cli
 
     TestMainScanOrchestration()._patch_all(monkeypatch)
     out = tmp_path / "r.json"
@@ -2935,7 +2901,7 @@ def test_main_skip_tests_drops_match(monkeypatch, tmp_path):
     """--skip-tests removes matching IDs and keeps the rest."""
     import json
 
-    from linux_health import cli
+    from auditless import cli
 
     TestMainScanOrchestration()._patch_all(monkeypatch)
     out = tmp_path / "r.json"
@@ -2973,7 +2939,7 @@ class TestCheckSudoersDAuditing:
 
     def test_no_sudo_passes(self):
         """Hosts without sudo are clean by definition."""
-        from linux_health.checks import check_sudoers_d_auditing
+        from auditless.checks import check_sudoers_d_auditing
 
         ssh = self._session([("command -v sudo", (1, "", ""))])
         result = check_sudoers_d_auditing(ssh, "")
@@ -2982,7 +2948,7 @@ class TestCheckSudoersDAuditing:
 
     def test_clean_sudoers_passes(self):
         """Scoped config without NOPASSWD passes."""
-        from linux_health.checks import check_sudoers_d_auditing
+        from auditless.checks import check_sudoers_d_auditing
 
         ssh = self._session(
             [
@@ -2996,7 +2962,7 @@ class TestCheckSudoersDAuditing:
 
     def test_unrestricted_nopasswd_fails(self):
         """NOPASSWD: ALL is an auth bypass (fail)."""
-        from linux_health.checks import check_sudoers_d_auditing
+        from auditless.checks import check_sudoers_d_auditing
 
         ssh = self._session(
             [
@@ -3014,7 +2980,7 @@ class TestCheckSudoersDAuditing:
 
     def test_scoped_nopasswd_warns(self):
         """Command-scoped NOPASSWD is a review item, not a failure."""
-        from linux_health.checks import check_sudoers_d_auditing
+        from auditless.checks import check_sudoers_d_auditing
 
         ssh = self._session(
             [
@@ -3031,7 +2997,7 @@ class TestCheckSudoersDAuditing:
 
     def test_authenticate_disabled_fails(self):
         """!authenticate anywhere fails closed."""
-        from linux_health.checks import check_sudoers_d_auditing
+        from auditless.checks import check_sudoers_d_auditing
 
         ssh = self._session(
             [
@@ -3046,7 +3012,7 @@ class TestCheckSudoersDAuditing:
 
     def test_world_writable_sudoers_fails(self):
         """Group/world-writable sudoers files are a privesc vector."""
-        from linux_health.checks import check_sudoers_d_auditing
+        from auditless.checks import check_sudoers_d_auditing
 
         ssh = self._session(
             [
@@ -3061,7 +3027,7 @@ class TestCheckSudoersDAuditing:
 
     def test_commented_nopasswd_ignored(self):
         """Commented-out entries must not trip the check."""
-        from linux_health.checks import check_sudoers_d_auditing
+        from auditless.checks import check_sudoers_d_auditing
 
         ssh = self._session(
             [
@@ -3099,7 +3065,7 @@ class TestCheckPamFaillock:
 
     def test_faillock_absent_warns(self):
         """No pam_faillock in stacks means no throttling (warn)."""
-        from linux_health.checks import check_pam_faillock
+        from auditless.checks import check_pam_faillock
 
         ssh = self._session([("pam_faillock.so", (0, "", ""))])
         result = check_pam_faillock(ssh, "")
@@ -3108,7 +3074,7 @@ class TestCheckPamFaillock:
 
     def test_complete_config_passes(self):
         """Explicit deny/unlock_time/retry is clean."""
-        from linux_health.checks import check_pam_faillock
+        from auditless.checks import check_pam_faillock
 
         ssh = self._session(
             [
@@ -3125,7 +3091,7 @@ class TestCheckPamFaillock:
 
     def test_generous_deny_warns(self):
         """deny above 5 is called out."""
-        from linux_health.checks import check_pam_faillock
+        from auditless.checks import check_pam_faillock
 
         ssh = self._session(
             [
@@ -3143,7 +3109,7 @@ class TestCheckPamFaillock:
 
     def test_missing_values_warn(self):
         """Implicit defaults are flagged for explicitness."""
-        from linux_health.checks import check_pam_faillock
+        from auditless.checks import check_pam_faillock
 
         ssh = self._session(
             [
@@ -3160,7 +3126,7 @@ class TestCheckPamFaillock:
 
     def test_excessive_retry_warns(self):
         """retry above 3 aids guessing."""
-        from linux_health.checks import check_pam_faillock
+        from auditless.checks import check_pam_faillock
 
         ssh = self._session(
             [
@@ -3216,7 +3182,7 @@ class TestCheckSSHConfigDirectives:
 
     def test_hardened_sshd_all_pass(self):
         """Fully hardened sshd -T passes every directive incl. rating."""
-        from linux_health.checks import check_ssh_config
+        from auditless.checks import check_ssh_config
 
         ssh = self._session([("sshd -T", (0, self.HARDENED_T, ""))])
         found = self._by_item(check_ssh_config(ssh, ""))
@@ -3232,7 +3198,7 @@ class TestCheckSSHConfigDirectives:
 
     def test_default_sshd_warns_new_directives(self):
         """Stock defaults warn on all four new directives (Poor rating)."""
-        from linux_health.checks import check_ssh_config
+        from auditless.checks import check_ssh_config
 
         ssh = self._session([("sshd -T", (0, self.DEFAULT_T, ""))])
         found = self._by_item(check_ssh_config(ssh, ""))
@@ -3249,7 +3215,7 @@ class TestCheckSSHConfigDirectives:
 
     def test_grep_fallback_with_directives(self):
         """Config-grep path honors set directives and skips comments."""
-        from linux_health.checks import check_ssh_config
+        from auditless.checks import check_ssh_config
 
         ssh = self._session(
             [
@@ -3270,7 +3236,7 @@ class TestCheckSSHConfigDirectives:
 
     def test_time_parser_units(self):
         """sshd time values parse across bare/s/m/h forms."""
-        from linux_health.checks import _parse_sshd_time
+        from auditless.checks import _parse_sshd_time
 
         assert _parse_sshd_time("60") == 60
         assert _parse_sshd_time("60s") == 60
@@ -3305,7 +3271,7 @@ class TestCheckSecureBoot:
 
     def test_no_efi_passes_not_applicable(self):
         """VMs/containers without EFI firmware pass (not applicable)."""
-        from linux_health.checks import check_secure_boot
+        from auditless.checks import check_secure_boot
 
         ssh = self._session([("[ -d /sys/firmware/efi ]", (0, "NOEFI", ""))])
         result = check_secure_boot(ssh, "")
@@ -3314,7 +3280,7 @@ class TestCheckSecureBoot:
 
     def test_enabled_and_enforced_passes(self):
         """Secure Boot on with enforced module signatures is clean."""
-        from linux_health.checks import check_secure_boot
+        from auditless.checks import check_secure_boot
 
         ssh = self._session(
             [
@@ -3334,7 +3300,7 @@ class TestCheckSecureBoot:
 
     def test_disabled_warns(self):
         """Disabled Secure Boot is a hardening gap."""
-        from linux_health.checks import check_secure_boot
+        from auditless.checks import check_secure_boot
 
         ssh = self._session(
             [
@@ -3349,7 +3315,7 @@ class TestCheckSecureBoot:
 
     def test_unenforced_signatures_warns(self):
         """Secure Boot without module enforcement is inconsistent."""
-        from linux_health.checks import check_secure_boot
+        from auditless.checks import check_secure_boot
 
         ssh = self._session(
             [
@@ -3364,7 +3330,7 @@ class TestCheckSecureBoot:
 
     def test_indeterminable_warns(self):
         """EFI present but unreadable state warns instead of passing."""
-        from linux_health.checks import check_secure_boot
+        from auditless.checks import check_secure_boot
 
         ssh = self._session(
             [
@@ -3396,7 +3362,7 @@ class TestCheckKernelLivepatch:
 
     def test_no_tooling_is_unknown(self):
         """Absent tooling is informational unknown, excluded from scoring."""
-        from linux_health.checks import check_kernel_livepatch
+        from auditless.checks import check_kernel_livepatch
 
         ssh = self._session("", code=1)
         result = check_kernel_livepatch(ssh, "")
@@ -3405,7 +3371,7 @@ class TestCheckKernelLivepatch:
 
     def test_canonical_active_passes(self):
         """Enabled Canonical Livepatch with applied patches is clean."""
-        from linux_health.checks import check_kernel_livepatch
+        from auditless.checks import check_kernel_livepatch
 
         ssh = self._session(
             "/usr/bin/canonical-livepatch\n"
@@ -3417,7 +3383,7 @@ class TestCheckKernelLivepatch:
 
     def test_canonical_disabled_warns(self):
         """Installed but not enabled warns (never fails)."""
-        from linux_health.checks import check_kernel_livepatch
+        from auditless.checks import check_kernel_livepatch
 
         ssh = self._session(
             "/usr/bin/canonical-livepatch\n"
@@ -3428,7 +3394,7 @@ class TestCheckKernelLivepatch:
 
     def test_kpatch_loaded_passes(self):
         """Loaded kpatch modules pass."""
-        from linux_health.checks import check_kernel_livepatch
+        from auditless.checks import check_kernel_livepatch
 
         ssh = self._session(
             "/usr/bin/kpatch\nLoaded patch modules:\nkpatch_5_15_0_91\n"
@@ -3438,7 +3404,7 @@ class TestCheckKernelLivepatch:
 
     def test_kpatch_idle_warns(self):
         """kpatch present with no loaded patches warns."""
-        from linux_health.checks import check_kernel_livepatch
+        from auditless.checks import check_kernel_livepatch
 
         ssh = self._session("/usr/bin/kpatch\nLoaded patch modules:\n")
         result = check_kernel_livepatch(ssh, "")
@@ -3446,7 +3412,7 @@ class TestCheckKernelLivepatch:
 
     def test_sysfs_enabled_passes(self):
         """A live /sys/kernel/livepatch enabled flag passes."""
-        from linux_health.checks import check_kernel_livepatch
+        from auditless.checks import check_kernel_livepatch
 
         ssh = self._session("/sys/kernel/livepatch/kpatch_5_15_0_91/enabled:1\n")
         result = check_kernel_livepatch(ssh, "")
@@ -3454,7 +3420,7 @@ class TestCheckKernelLivepatch:
 
     def test_never_fails(self):
         """Report-only contract: no input may produce FAIL."""
-        from linux_health.checks import check_kernel_livepatch
+        from auditless.checks import check_kernel_livepatch
 
         for output in (
             "",
@@ -3499,7 +3465,7 @@ class TestCheckSysctlExtended:
 
     def test_hardened_passes(self):
         """Fully hardened extended set (incl. paranoid=4) passes."""
-        from linux_health.checks import check_sysctl_extended
+        from auditless.checks import check_sysctl_extended
 
         ssh = self._session([self._HARDENED, "kernel.perf_event_paranoid = 4\n"])
         result = check_sysctl_extended(ssh)
@@ -3508,7 +3474,7 @@ class TestCheckSysctlExtended:
 
     def test_bpf_enabled_warns(self):
         """Unprivileged BPF allowed is a hardening gap."""
-        from linux_health.checks import check_sysctl_extended
+        from auditless.checks import check_sysctl_extended
 
         out = self._HARDENED.replace(
             "kernel.unprivileged_bpf_disabled = 2",
@@ -3521,7 +3487,7 @@ class TestCheckSysctlExtended:
 
     def test_forwarding_warns(self):
         """IP forwarding on warns."""
-        from linux_health.checks import check_sysctl_extended
+        from auditless.checks import check_sysctl_extended
 
         out = self._HARDENED.replace(
             "net.ipv4.ip_forward = 0", "net.ipv4.ip_forward = 1"
@@ -3533,7 +3499,7 @@ class TestCheckSysctlExtended:
 
     def test_paranoid_low_warns(self):
         """perf_event_paranoid=1 warns; >=2 is accepted."""
-        from linux_health.checks import check_sysctl_extended
+        from auditless.checks import check_sysctl_extended
 
         ssh = self._session([self._HARDENED, "kernel.perf_event_paranoid = 1\n"])
         result = check_sysctl_extended(ssh)
@@ -3542,7 +3508,7 @@ class TestCheckSysctlExtended:
 
     def test_missing_keys_skipped(self):
         """Absent keys (old/RHEL kernels) skip without failing."""
-        from linux_health.checks import check_sysctl_extended
+        from auditless.checks import check_sysctl_extended
 
         out = (
             "net.ipv4.ip_forward = 0\n"
@@ -3557,7 +3523,7 @@ class TestCheckSysctlExtended:
 
     def test_no_keys_unknown(self):
         """Zero readable keys is unknown, not a false pass."""
-        from linux_health.checks import check_sysctl_extended
+        from auditless.checks import check_sysctl_extended
 
         ssh = self._session(["", ""], code=0)
         result = check_sysctl_extended(ssh)
@@ -3565,7 +3531,7 @@ class TestCheckSysctlExtended:
 
     def test_sysctl_failed_unknown(self):
         """sysctl failure is unknown, not a false pass."""
-        from linux_health.checks import check_sysctl_extended
+        from auditless.checks import check_sysctl_extended
 
         ssh = self._session(["", ""], code=1)
         result = check_sysctl_extended(ssh)
@@ -3600,7 +3566,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_no_tools_warns(self):
         """No FIM tooling still warns as before."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session("", "")
         result = check_file_integrity_tools(ssh)
@@ -3609,7 +3575,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_aide_fresh_passes(self):
         """AIDE with fresh DB and cron schedule passes."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session(
             "aide",
@@ -3625,7 +3591,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_aide_uninitialized_warns(self):
         """AIDE binary with no database warns (presence is not enough)."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session("aide", self._probe())
         result = check_file_integrity_tools(ssh)
@@ -3634,7 +3600,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_aide_unscheduled_warns(self):
         """AIDE with DB but no scheduled checks warns."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session("aide", self._probe(f"AIDE_DB:{self.NOW - 86400}"))
         result = check_file_integrity_tools(ssh)
@@ -3643,7 +3609,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_aide_stale_warns(self):
         """AIDE database older than 90 days warns despite schedule."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session(
             "aide",
@@ -3658,7 +3624,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_tripwire_timer_passes(self):
         """Tripwire with DB and systemd timer passes."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session(
             "tripwire",
@@ -3672,7 +3638,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_ossec_running_passes(self):
         """OSSEC with live syscheck daemon passes."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session("ossec-control", self._probe("OSSEC_PROC:running"))
         result = check_file_integrity_tools(ssh)
@@ -3680,7 +3646,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_ossec_dead_warns(self):
         """OSSEC installed with dead daemons warns."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session("ossec-control", self._probe())
         result = check_file_integrity_tools(ssh)
@@ -3689,7 +3655,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_samhain_running_passes(self):
         """Samhain with DB and running daemon passes."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session(
             "samhain",
@@ -3703,7 +3669,7 @@ class TestCheckFileIntegrityFreshness:
 
     def test_unreadable_probe_unknown(self):
         """Tools present but unreadable freshness is unknown, not pass."""
-        from linux_health.checks import check_file_integrity_tools
+        from auditless.checks import check_file_integrity_tools
 
         ssh = self._session("aide", "")
         result = check_file_integrity_tools(ssh)
@@ -3734,7 +3700,7 @@ class TestCheckUsbAuthorization:
 
     def test_module_loaded_warns(self):
         """Loaded usb-storage without modprobe kill still warns."""
-        from linux_health.checks import check_usb_storage
+        from auditless.checks import check_usb_storage
 
         ssh = self._session("usb_storage 12345 0\n", "")
         result = check_usb_storage(ssh, "")
@@ -3743,7 +3709,7 @@ class TestCheckUsbAuthorization:
 
     def test_no_subsystem_passes_na(self):
         """Container/VM without USB subsystem passes as not applicable."""
-        from linux_health.checks import check_usb_storage
+        from auditless.checks import check_usb_storage
 
         ssh = self._session(
             "install usb-storage /bin/true",
@@ -3756,7 +3722,7 @@ class TestCheckUsbAuthorization:
 
     def test_authorized_default_zero_passes(self):
         """Kernel default-deny for new devices passes."""
-        from linux_health.checks import check_usb_storage
+        from auditless.checks import check_usb_storage
 
         ssh = self._session(
             "install usb-storage /bin/true",
@@ -3768,7 +3734,7 @@ class TestCheckUsbAuthorization:
 
     def test_usbguard_active_passes(self):
         """Active USBGuard policy with rules passes."""
-        from linux_health.checks import check_usb_storage
+        from auditless.checks import check_usb_storage
 
         ssh = self._session(
             "install usb-storage /bin/true",
@@ -3781,7 +3747,7 @@ class TestCheckUsbAuthorization:
 
     def test_default_allow_no_policy_warns(self):
         """authorized_default=1 with no policy control warns."""
-        from linux_health.checks import check_usb_storage
+        from auditless.checks import check_usb_storage
 
         ssh = self._session(
             "install usb-storage /bin/true",
@@ -3793,7 +3759,7 @@ class TestCheckUsbAuthorization:
 
     def test_udisks_rules_pass_with_note(self):
         """UDISKS polkit rules pass with a hardening suggestion."""
-        from linux_health.checks import check_usb_storage
+        from auditless.checks import check_usb_storage
 
         ssh = self._session(
             "install usb-storage /bin/true",
@@ -3806,7 +3772,7 @@ class TestCheckUsbAuthorization:
 
     def test_authorized_default_unset_warns(self):
         """authorized_default=-1 (compiled default = allow) warns."""
-        from linux_health.checks import check_usb_storage
+        from auditless.checks import check_usb_storage
 
         ssh = self._session(
             "install usb-storage /bin/true",
@@ -3849,7 +3815,7 @@ class TestCheckFirewallRichRules:
 
     def test_inactive_warns(self):
         """Inactive firewall still warns as before."""
-        from linux_health.checks import check_firewall
+        from auditless.checks import check_firewall
 
         ssh = self._session("Status: inactive\n", "")
         result = check_firewall(ssh, "")
@@ -3858,7 +3824,7 @@ class TestCheckFirewallRichRules:
 
     def test_hardened_iptables_passes(self):
         """Full rich ruleset passes with all four controls named."""
-        from linux_health.checks import check_firewall
+        from auditless.checks import check_firewall
 
         ssh = self._session("Status: active\n", self._HARDENED_IPT)
         result = check_firewall(ssh, "")
@@ -3871,7 +3837,7 @@ class TestCheckFirewallRichRules:
 
     def test_open_policy_warns(self):
         """ACCEPT-by-default policy warns even when active."""
-        from linux_health.checks import check_firewall
+        from auditless.checks import check_firewall
 
         probe = self._HARDENED_IPT.replace("-P INPUT DROP", "-P INPUT ACCEPT")
         ssh = self._session("Status: active\n", probe)
@@ -3881,7 +3847,7 @@ class TestCheckFirewallRichRules:
 
     def test_missing_logging_warns(self):
         """No LOG target warns about logging specifically."""
-        from linux_health.checks import check_firewall
+        from auditless.checks import check_firewall
 
         probe = "\n".join(
             line for line in self._HARDENED_IPT.splitlines() if "-j LOG" not in line
@@ -3893,7 +3859,7 @@ class TestCheckFirewallRichRules:
 
     def test_nft_ruleset_passes(self):
         """nftables backend signals are understood."""
-        from linux_health.checks import check_firewall
+        from auditless.checks import check_firewall
 
         probe = (
             "table inet filter {\n"
@@ -3911,7 +3877,7 @@ class TestCheckFirewallRichRules:
 
     def test_ufw_verbose_passes(self):
         """ufw default-deny plus before.rules evidence passes."""
-        from linux_health.checks import check_firewall
+        from auditless.checks import check_firewall
 
         probe = (
             "Status: active\n"
@@ -3926,7 +3892,7 @@ class TestCheckFirewallRichRules:
 
     def test_unreadable_rules_unknown(self):
         """Active but unreadable ruleset is unknown, not a pass."""
-        from linux_health.checks import check_firewall
+        from auditless.checks import check_firewall
 
         ssh = self._session("Status: active\n", "")
         result = check_firewall(ssh, "")
@@ -3962,7 +3928,7 @@ class TestCheckSocketAttribution:
 
     def test_attributed_passes(self):
         """Listeners owned by packages pass with attribution counts."""
-        from linux_health.checks import check_listening_services
+        from auditless.checks import check_listening_services
 
         attr = (
             "PID:101\nEXE:/usr/sbin/sshd\n/usr/sbin/sshd -D\n\n"
@@ -3978,7 +3944,7 @@ class TestCheckSocketAttribution:
 
     def test_rogue_tmp_binary_warns(self):
         """Unpackaged listener from /tmp warns as possible rogue."""
-        from linux_health.checks import check_listening_services
+        from auditless.checks import check_listening_services
 
         ss_evil = (
             "tcp LISTEN 0 5 0.0.0.0:4444 0.0.0.0:* " 'users:(("evil",pid=666,fd=3))'
@@ -3992,7 +3958,7 @@ class TestCheckSocketAttribution:
 
     def test_deleted_exe_warns(self):
         """Listener on a deleted executable warns."""
-        from linux_health.checks import check_listening_services
+        from auditless.checks import check_listening_services
 
         ss_del = (
             "tcp LISTEN 0 5 0.0.0.0:5555 0.0.0.0:* " 'users:(("gone",pid=777,fd=3))'
@@ -4004,7 +3970,7 @@ class TestCheckSocketAttribution:
 
     def test_no_visibility_unknown(self):
         """Public listeners with no process info are unknown, not pass."""
-        from linux_health.checks import check_listening_services
+        from auditless.checks import check_listening_services
 
         ssh = self._session("tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n", "")
         result = check_listening_services(ssh)
@@ -4012,7 +3978,7 @@ class TestCheckSocketAttribution:
 
     def test_kernel_thread_skipped(self):
         """Kernel-thread listeners (no exe/cmdline) are benign."""
-        from linux_health.checks import check_listening_services
+        from auditless.checks import check_listening_services
 
         attr = (
             "PID:101\nEXE:/usr/sbin/sshd\n/usr/sbin/sshd -D\n\n"
@@ -4026,7 +3992,7 @@ class TestCheckSocketAttribution:
 
     def test_many_listeners_warns(self):
         """>15 public listeners still warns without attribution cost."""
-        from linux_health.checks import check_listening_services
+        from auditless.checks import check_listening_services
 
         from unittest.mock import Mock
 
@@ -4049,7 +4015,7 @@ class TestCheckSocketAttribution:
 
     def test_parse_helpers(self):
         """Unit-cover the ss/attribution parsers."""
-        from linux_health.checks import _parse_attribution, _parse_ss_process
+        from auditless.checks import _parse_attribution, _parse_ss_process
 
         assert _parse_ss_process(self._SS_SSHD) == ("sshd", "101")
         assert _parse_ss_process("tcp LISTEN 0 1 0.0.0.0:1 0.0.0.0:*") == (
@@ -4091,7 +4057,7 @@ class TestCheckCronAllowDeny:
 
     def test_controlled_passes(self):
         """Allow files present and no ww jobs passes."""
-        from linux_health.checks import check_cron_and_timers
+        from auditless.checks import check_cron_and_timers
 
         ssh = self._session(
             self._STAGE1_CLEAN,
@@ -4109,7 +4075,7 @@ class TestCheckCronAllowDeny:
 
     def test_world_writable_warns(self):
         """World-writable job file warns even when counts are clean."""
-        from linux_health.checks import check_cron_and_timers
+        from auditless.checks import check_cron_and_timers
 
         ssh = self._session(
             self._STAGE1_CLEAN,
@@ -4125,7 +4091,7 @@ class TestCheckCronAllowDeny:
 
     def test_missing_allow_files_warns(self):
         """No allow/deny files warns about unrestricted scheduling."""
-        from linux_health.checks import check_cron_and_timers
+        from auditless.checks import check_cron_and_timers
 
         ssh = self._session(self._STAGE1_CLEAN, self._probe([]))
         result = check_cron_and_timers(ssh)
@@ -4135,7 +4101,7 @@ class TestCheckCronAllowDeny:
 
     def test_deny_only_counts_as_controlled(self):
         """cron.deny alone still gates scheduling (partial control)."""
-        from linux_health.checks import check_cron_and_timers
+        from auditless.checks import check_cron_and_timers
 
         ssh = self._session(
             self._STAGE1_CLEAN,
@@ -4151,7 +4117,7 @@ class TestCheckCronAllowDeny:
 
     def test_stage1_warn_preserved(self):
         """Busy user crontab still warns (stage 1 unchanged)."""
-        from linux_health.checks import check_cron_and_timers
+        from auditless.checks import check_cron_and_timers
 
         ssh = self._session(
             "2\n3\n1\n5\n12\n",

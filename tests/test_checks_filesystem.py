@@ -10,8 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from linux_health.checks import disable_command_cache, reset_command_cache
-from linux_health.checks_filesystem import (
+from auditless.checks import disable_command_cache, reset_command_cache
+from auditless.checks_filesystem import (
     check_filesystem_integrity_tools,
     check_home_nosuid,
     check_mount_options_security,

@@ -25,7 +25,7 @@ Examples:
     python ops/onboard_fleet.py --inventory inventory.tsv \
         --password-file ~/.auditless-fleet-password
 
-The script talks to the public API only (linux_health.client.ApiClient), so
+The script talks to the public API only (auditless.client.ApiClient), so
 anything it can do is a supported operation. Passwords are held in memory for
 the request; they are never written to the inventory, output, or server store.
 """
@@ -46,7 +46,7 @@ sys.path.insert(0, str(ROOT))
 
 # ruff: noqa: E402  (sys.path is prepared above)
 # pylint: disable=import-error
-from linux_health.client import ApiClient, ApiError
+from auditless.client import ApiClient, ApiError
 
 # pylint: enable=import-error
 

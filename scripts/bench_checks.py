@@ -27,12 +27,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from linux_health.checks import (  # noqa: E402
+from auditless.checks import (  # noqa: E402
     disable_command_cache,
     run_all_checks,
     run_all_checks_parallel,
 )
-from linux_health.ssh_client import SSHSession  # noqa: E402
+from auditless.ssh_client import SSHSession  # noqa: E402
 
 
 class LatencySSH(SSHSession):

@@ -20,7 +20,7 @@ How to read: `— [P1] description \`area\` (effort: S/M/L)`. Effort S ≤ 1 day
 
 ## Shipped (do not reopen — condensed from v1 items 1–51, 80, 177)
 
-- [x] 1 — [P0] Naming/branding/packaging block: `Auditless` canonical, dual config paths, `auditless` import shim, `linux-health` deprecation policy, Docker/GHCR naming, egg-info + metadata hygiene. `docs` (effort: L)
+- [x] 1 — [P0] Naming/branding/packaging block: `Auditless` canonical, Docker/GHCR naming, egg-info + metadata hygiene. `docs` (effort: L)
 - [x] 2 — [P1] Engine core: parallel checks (`--jobs`, ≥2× perf gate), SSH pool + retry/backoff, strict host keys by default, timeouts + deadline + partial reports, output cache, `--max-output-bytes`. `engine` (effort: L)
 - [x] 3 — [P1] Scanner depth: IPv6, banner grabbing, distro helper, privilege model (`unknown` results), real test-ID registry, profiles + lint, deterministic reports. `checks` (effort: L)
 - [x] 4 — [P1] Quality gates: false-positive harness, severity re-grade, `sudo -n` discipline, unknown/skipped status + scoring math, Selenium UI e2e. `tests` (effort: L)
@@ -214,7 +214,7 @@ Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is auth
 - [ ] 148 — [P4] Docs site (MkDocs + `docs/` as source, versioned per release, hosted on GH Pages). `docs` (effort: M)
 - [ ] 149 — [P4] Check-authoring cookbook (`docs/CHECK_AUTHORING.md` mirroring `REMEDIATION_AUTHORING.md`) + template generator (`auditless new-check`). `docs` (effort: M)
 - [ ] 150 — [P4] Architecture Decision Records (`docs/adr/`: naming, scheduler, store backend, auth model). `docs` (effort: S)
-- [ ] 151 — [P4] `PROJECT_STRUCTURE.md` + `FEATURES_ADDED.md` refresh + README badge-freshness guard (static shields drifted once already: test or automation) + remaining `Linux Health` stragglers in README body + fleet note that stock kernels report `authorized_default=-1` + `NAMING.md` upkeep. `docs` (effort: M)
+- [ ] 151 — [P4] `PROJECT_STRUCTURE.md` + `FEATURES_ADDED.md` refresh + README badge-freshness guard (static shields drifted once already: test or automation) + remaining `Auditless` stragglers in README body + fleet note that stock kernels report `authorized_default=-1` + `NAMING.md` upkeep. `docs` (effort: M)
 - [ ] 152 — [P4] Demo environment (`docker compose --profile demo`: scanner + vulnerable target + seeded data). `docs` (effort: M)
 - [ ] 153 — [P4] Video/GIF quickstart in README (60-second scan-to-report). `docs` (effort: S)
 - [ ] 154 — [P4] Community health: `CODE_OF_CONDUCT` enforcement contact, issue/PR templates triage, `good-first-issue` label pass. `community` (effort: S)
@@ -222,7 +222,7 @@ Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is auth
 - [ ] 156 — [P4] Plugin system (entry-point `auditless.checks` third-party checks, sandboxed, profile-filterable) — Lynis parity item. `product` (effort: L)
 - [ ] 157 — [P4] Multi-system central reporting (fleet rollup dashboard already partial → hardened, exportable). `product` (effort: L)
 - [ ] 158 — [P4] CIS-CAT/Lynis report import (migrate existing audit history into Auditless store). `integrations` (effort: M)
-- [ ] 159 — [P4] v4.0 major: complete package rename (`linux_health` → `auditless`) with codemod + migration guide, dropping deprecated aliases. `product` (effort: L)
+- [x] 159 — [P4] v4.0 major: complete package rename to `auditless` with migration guide, dropping deprecated aliases (shim, console script, legacy config paths). `product` (effort: L)
 
 ---
 

@@ -1,4 +1,4 @@
-# Linux Health v3.0 Roadmap: Lynis Feature Parity
+# Auditless v3.0 Roadmap: Lynis Feature Parity
 
 > **Historical — superseded by [`ROADMAP.md`](../ROADMAP.md).**
 > Kept as the v3.0 Lynis-parity design record; its DB/audit/filesystem/
@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-This roadmap outlines how to expand Linux Health from 36 checks to 70+ checks with 30+ test categories, bringing it closer to Lynis feature parity while maintaining its SSH-based simplicity and Python implementation.
+This roadmap outlines how to expand Auditless from 36 checks to 70+ checks with 30+ test categories, bringing it closer to Lynis feature parity while maintaining its SSH-based simplicity and Python implementation.
 
 **Estimated Implementation Time:** 4-6 months for full roadmap  
 **Estimated New Checks:** 35-45 new checks  
@@ -19,7 +19,7 @@ This roadmap outlines how to expand Linux Health from 36 checks to 70+ checks wi
 
 ### 1.1 Database Security Module (8 checks)
 
-**File:** `linux_health/checks_database.py` (new)
+**File:** `auditless/checks_database.py` (new)
 
 ```
 DBS-1000: MySQL/MariaDB Presence
@@ -78,7 +78,7 @@ DBS-1007: Database Backup Configuration
 
 ### 1.2 Accounting & Auditing Module (7 checks)
 
-**File:** `linux_health/checks_audit.py` (new)
+**File:** `auditless/checks_audit.py` (new)
 
 ```
 AUDIT-5000: Process Accounting Status
@@ -134,7 +134,7 @@ AUDIT-5006: Log Retention Policy
 
 ### 2.1 NFS & Filesystem Hardening (6 checks)
 
-**File:** `linux_health/checks_filesystem.py` (extend existing)
+**File:** `auditless/checks_filesystem.py` (extend existing)
 
 ```
 NFS-3000: NFS Export Security
@@ -183,7 +183,7 @@ FS-3005: Filesystem Integrity Monitoring
 
 ### 2.2 Package Management Security (6 checks)
 
-**File:** `linux_health/checks_packages.py` (extend existing)
+**File:** `auditless/checks_packages.py` (extend existing)
 
 ```
 PKGS-7300: Yum Security Plugin
@@ -232,7 +232,7 @@ PKGS-7305: Package Update Status
 
 ### 2.3 Network Time Hardening (5 checks)
 
-**File:** `linux_health/checks_time.py` (extend existing)
+**File:** `auditless/checks_time.py` (extend existing)
 
 ```
 TIME-3100: NTP Service Configuration
@@ -278,7 +278,7 @@ TIME-3104: Time Synchronization
 
 ### 3.1 Container Security (7 checks)
 
-**File:** `linux_health/checks_containers.py` (new)
+**File:** `auditless/checks_containers.py` (new)
 
 ```
 CONT-8100: Docker Installation
@@ -332,7 +332,7 @@ CONT-8106: Container Logging
 
 ### 3.2 Web Server Hardening (8 checks)
 
-**File:** `linux_health/checks_webservers.py` (extend existing)
+**File:** `auditless/checks_webservers.py` (extend existing)
 
 ```
 HTTP-6500: Apache/Nginx SSL Configuration
@@ -391,7 +391,7 @@ HTTP-6507: Web Server Error Messages
 
 ### 3.3 DNS Security (5 checks)
 
-**File:** `linux_health/checks_dns.py` (new)
+**File:** `auditless/checks_dns.py` (new)
 
 ```
 DNS-4000: DNS Service Status
@@ -437,7 +437,7 @@ DNS-4004: DNS Service Hardening
 
 ### 4.1 Home Directory Security (4 checks)
 
-**File:** `linux_health/checks_homedirs.py` (new)
+**File:** `auditless/checks_homedirs.py` (new)
 
 ```
 HOME-9300: Home Directory Permissions
@@ -476,7 +476,7 @@ HOME-9303: SSH Key Permissions
 
 ### 4.2 LDAP Security (4 checks)
 
-**File:** `linux_health/checks_ldap.py` (new)
+**File:** `auditless/checks_ldap.py` (new)
 
 ```
 LDAP-3200: LDAP Client Installation
@@ -515,7 +515,7 @@ LDAP-3203: LDAP Server Hardening
 
 ### 4.3 Mail Services (4 checks)
 
-**File:** `linux_health/checks_mail.py` (new)
+**File:** `auditless/checks_mail.py` (new)
 
 ```
 MAIL-2700: Mail Service Installation
@@ -554,7 +554,7 @@ MAIL-2703: Mail Logging
 
 ### 4.4 Printer Security (3 checks)
 
-**File:** `linux_health/checks_printers.py` (new)
+**File:** `auditless/checks_printers.py` (new)
 
 ```
 PRNT-2400: CUPS Installation
@@ -588,7 +588,7 @@ PRNT-2402: Network Printer Security
 
 ### 4.5 SNMP Security (3 checks)
 
-**File:** `linux_health/checks_snmp.py` (new)
+**File:** `auditless/checks_snmp.py` (new)
 
 ```
 SNMP-5100: SNMP Service Status
@@ -622,7 +622,7 @@ SNMP-5102: SNMP Community Strings
 
 ### 4.6 Virtualization Detection (2 checks)
 
-**File:** `linux_health/checks_virtualization.py` (new)
+**File:** `auditless/checks_virtualization.py` (new)
 
 ```
 VIRT-2200: Hypervisor Detection
@@ -651,7 +651,7 @@ VIRT-2201: Guest Hardening
 
 ### 4.7 Login Banners (2 checks)
 
-**File:** `linux_health/checks_banners.py` (new)
+**File:** `auditless/checks_banners.py` (new)
 
 ```
 BNRZ-1600: Login Banner Presence
@@ -837,7 +837,7 @@ BNRZ-1601: Banner Configuration
 - [ ] Resources allocated
 - [ ] Development started
 
-**Prepared by:** Linux Health Development Team  
+**Prepared by:** Auditless Development Team  
 **Date:** [Current Date]  
 **Status:** Ready for Implementation
 
