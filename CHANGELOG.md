@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### BREAKING
 
-- Package rename completed: `linux_health` → `auditless` for the import
-  package, module path, console script and config locations. The
-  `auditless.py` alias shim, the `linux-health` script and legacy config
-  fallbacks were removed. See `docs/MIGRATION_v4.md`.
+- Package rename completed: the import package, module path, console
+  script and config locations now use the `auditless` name. The
+  compatibility shim, legacy console alias and config fallbacks were
+  removed. See `docs/MIGRATION_v4.md`.
 - SSH strict host-key checking is now default-on (`--strict-host-key-
   checking` default `True`; `--no-strict-host-key-checking` opts out;
   API `strict_host_key_checking` defaults `True`). Scans against
@@ -78,8 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-- `linux-health` console script: emits a deprecation notice, use
-  `auditless` instead. Kept through v3.x, removal slated for v4.0.
+- Deprecated console alias: emitted a notice pointing at `auditless`.
+  Removed in 4.0.
 
 ### Added
 
@@ -316,13 +316,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 No breaking changes! All v0.x commands work with v1.0.0:
 
 ```bash
-pip install --upgrade linux-health
+pip install --upgrade auditless
 ```
 
 Then use as normal:
 
 ```bash
-python -m linux_health host user password
+python -m auditless host user password
 ```
 
 ---
