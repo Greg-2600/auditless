@@ -79,7 +79,7 @@ and verifies them before the release counts as good:
 Verify any release yourself (no secrets needed):
 
 ```bash
-VERSION=${VERSION:-2.5.3}  # export the release you want to verify
+VERSION=${VERSION:-4.0.0}  # export the release you want to verify
 IMG=ghcr.io/greg-2600/auditless:${VERSION}
 cosign verify \
   --certificate-identity-regexp "https://github.com/Greg-2600/auditless/.*" \
