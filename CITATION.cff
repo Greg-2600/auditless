@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it using the metadata from 'CITATION.cff'.
+type: software
+title: auditless
+version: 4.0.1
+date-released: '2026-11-23'
+license: MIT
+repository-code: 'https://github.com/Greg-2600/auditless'
+abstract: >-
+  Agentless SSH Linux security audit platform with 100+ checks across
+  24 categories, hardening score, and JSON reports.
+authors:
+  - given-names: Greg
+    family-names: Baker
+    alias: Greg-2600
+    orcid: 'https://orcid.org/0009-0002-3931-8799'
+keywords:
+  - security
+  - linux
+  - audit
+  - hardening
+  - SSH
+  - agentless
+  - Python
+  - Docker
