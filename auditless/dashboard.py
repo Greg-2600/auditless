@@ -1574,6 +1574,38 @@ app = FastAPI(
     version="1.0",
 )
 
+# Dashboard HTML uses one inline <script>, one <style>, and onclick handlers.
+# Swagger UI at /docs and /redoc loads assets from cdn.jsdelivr.net.
+_SECURITY_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: https://fastapi.tiangolo.com https://cdn.jsdelivr.net; "
+    "font-src 'self' https://cdn.jsdelivr.net; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Attach browser isolation headers to every response.
+
+    HSTS is omitted because the default bind is loopback HTTP. Operators
+    who terminate TLS at a reverse proxy should set HSTS there.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
+    response.headers.setdefault("Content-Security-Policy", _SECURITY_CSP)
+    return response
+
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def index() -> str:
