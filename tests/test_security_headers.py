@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import urllib.request
 
-
 REQUIRED_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",

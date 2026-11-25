@@ -40,6 +40,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, SecretStr
+from starlette.middleware.base import RequestResponseEndpoint
 
 from .discovery import parse_network, probe_hosts
 from .heatmap import build_heatmap
@@ -1590,7 +1591,9 @@ _SECURITY_CSP = (
 
 
 @app.middleware("http")
-async def security_headers(request: Request, call_next):
+async def security_headers(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
     """Attach browser isolation headers to every response.
 
     HSTS is omitted because the default bind is loopback HTTP. Operators
