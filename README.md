@@ -4,7 +4,7 @@
 
 ## Enterprise-Grade Security Assessment Platform for Linux Infrastructure
 
-[![Production Ready](https://img.shields.io/badge/status-production%20ready-success)](https://github.com) [![Version](https://img.shields.io/badge/version-4.0.1-blue)](https://github.com) [![Tests](https://img.shields.io/badge/tests-507%20passing-success)](https://github.com) [![Coverage](https://img.shields.io/badge/coverage-87%25-green)](https://github.com) [![Code Quality](https://img.shields.io/badge/linting-0%20errors-success)](https://github.com) [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org) [![Docker](https://img.shields.io/badge/docker-supported-blue)](https://docker.com) [![Lynis Parity](https://img.shields.io/badge/lynis%20parity-95%25-brightgreen)](https://github.com)
+[![Production Ready](https://img.shields.io/badge/status-production%20ready-success)](https://github.com) [![Version](https://img.shields.io/badge/version-4.0.1-blue)](https://github.com) [![Tests](https://img.shields.io/badge/tests-507%20passing-success)](https://github.com) [![Coverage](https://img.shields.io/badge/coverage-87%25-green)](https://github.com) [![Code Quality](https://img.shields.io/badge/linting-0%20errors-success)](https://github.com) [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org) [![Docker](https://img.shields.io/badge/docker-supported-blue)](https://docker.com) [![Lynis Parity](https://img.shields.io/badge/lynis%20parity-95%25-brightgreen)](https://github.com) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24489259.svg)](https://doi.org/10.5281/zenodo.24489259)
 
 ---
 
@@ -2902,7 +2902,7 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-Cite this software using [CITATION.cff](CITATION.cff).
+Cite this software using [CITATION.cff](CITATION.cff). DOI: [10.5281/zenodo.24489260](https://doi.org/10.5281/zenodo.24489260).
 
 ---
 
@@ -3020,7 +3020,7 @@ Cite this software using [CITATION.cff](CITATION.cff).
 ## Authors & Acknowledgments
 
 **Lead Developer:** Greg B  
-**Current Version:** v2.0.0 (January 2026)  
+**Current Version:** v4.0.1 (January 2026)  
 **Project Status:** Production Ready — 95%+ Lynis Feature Parity  
 **Special Thanks:** Paramiko team, pytest community, Python security tools ecosystem, Lynis project inspiration
 
@@ -3029,7 +3029,7 @@ Cite this software using [CITATION.cff](CITATION.cff).
 ## Enterprise Linux Security Assessment Platform
 
 [![Production Ready](https://img.shields.io/badge/status-production%20ready-success)](https://github.com)
-[![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com)
+[![Version](https://img.shields.io/badge/version-4.0.1-blue)](https://github.com)
 [![Tests Passing](https://img.shields.io/badge/tests-107%2F107-success)](https://github.com)
 [![Lynis Parity](https://img.shields.io/badge/lynis%20parity-95%25-brightgreen)](https://github.com)
 [![Docker](https://img.shields.io/badge/docker-supported-blue)](https://docker.com)

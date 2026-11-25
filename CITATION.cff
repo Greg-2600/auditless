@@ -3,6 +3,7 @@ message: If you use this software, please cite it using the metadata from 'CITAT
 type: software
 title: auditless
 version: 4.0.1
+doi: 10.5281/zenodo.24489260
 date-released: '2026-11-23'
 license: MIT
 repository-code: 'https://github.com/Greg-2600/auditless'
@@ -23,3 +24,10 @@ keywords:
   - agentless
   - Python
   - Docker
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.24489260
+    description: This version
+  - type: doi
+    value: 10.5281/zenodo.24489259
+    description: All versions
