@@ -30,10 +30,23 @@ def test_healthz_sets_security_headers(client) -> None:
     assert "object-src 'none'" in csp
 
 
+def _directives(csp: str) -> dict[str, list[str]]:
+    """Split a CSP header into directive name to source token lists."""
+    directives: dict[str, list[str]] = {}
+    for part in csp.split(";"):
+        tokens = part.split()
+        if tokens:
+            directives[tokens[0]] = tokens[1:]
+    return directives
+
+
 def test_index_and_docs_set_security_headers(client) -> None:
     """SPA and Swagger UI get the same headers, including a CSP that allows docs assets."""
     for path in ("/", "/docs"):
         headers = {k.lower(): v for k, v in _headers(client, path).items()}
         assert headers["x-frame-options"] == "DENY"
         assert headers["x-content-type-options"] == "nosniff"
-        assert "cdn.jsdelivr.net" in headers["content-security-policy"]
+        script_sources = _directives(headers["content-security-policy"])["script-src"]
+        assert any(
+            source == "https://cdn.jsdelivr.net" for source in script_sources
+        ), script_sources
