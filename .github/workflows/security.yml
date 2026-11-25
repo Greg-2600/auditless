@@ -1,0 +1,61 @@
+name: Security
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks v8.30.1
+        run: |
+          curl -fsSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+
+      - name: Scan repository and history
+        run: |
+          ./gitleaks detect --redact --source . --config .gitleaks.toml --report-path gitleaks-report.json
+          {
+            echo "### Secret scan"
+            echo ""
+            echo "gitleaks v8.30.1 found no secrets in the worktree or git history"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  bandit:
+    name: Python security (bandit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Lint for high severity issues
+        run: |
+          pip install bandit==1.9.4
+          bandit -r auditless/ -q -lll
+          {
+            echo "### Python security"
+            echo ""
+            echo "bandit found no high severity issues in auditless"
+          } >> "$GITHUB_STEP_SUMMARY"

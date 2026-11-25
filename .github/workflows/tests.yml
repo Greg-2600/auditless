@@ -2,16 +2,20 @@ name: Tests
 
 on:
   push:
-    branches: [master, main, develop]
   pull_request:
-    branches: [master, main, develop]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -33,20 +37,16 @@ jobs:
           pip install -e .
 
       - name: Lint with Ruff
-        run: |
-          ruff check auditless/ tests/
+        run: ruff check auditless/ tests/
 
       - name: Format check with Black
-        run: |
-          black --check auditless/ tests/
+        run: black --check auditless/ tests/
 
       - name: Lint with Pylint (10.00/10 gate)
-        run: |
-          pylint auditless/ --fail-under=10.0
+        run: pylint auditless/ --fail-under=10.0
 
       - name: Type check with Mypy
-        run: |
-          mypy auditless/
+        run: mypy auditless/
 
       - name: Build distribution (validates release packaging)
         run: |
@@ -54,16 +54,17 @@ jobs:
           python -m build
 
       - name: Security gate with Bandit (HIGH only)
-        run: |
-          bandit -r auditless/ -q -lll
+        run: bandit -r auditless/ -q -lll
 
-      - name: Run tests with pytest
-        run: |
-          pytest tests/ -v --tb=short
-
-      - name: Generate coverage report
+      - name: Run tests with coverage floor
+        shell: bash
         run: |
           pytest tests/ --cov=auditless --cov-report=xml --cov-report=term-missing
+          {
+            echo "### Coverage"
+            echo ""
+            python -m coverage report --format=markdown
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
@@ -75,6 +76,7 @@ jobs:
 
   security:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -90,6 +92,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -106,13 +109,13 @@ jobs:
           pip install -e .
 
       - name: End-to-end suite (containers + real SSH)
-        run: |
-          AUDITLESS_E2E=1 python -m pytest tests/test_e2e.py -v --tb=short
+        run: AUDITLESS_E2E=1 python -m pytest tests/test_e2e.py -v --tb=short
         env:
           AUDITLESS_E2E: "1"
 
   perf:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -133,5 +136,4 @@ jobs:
       # orchestration fails here without flaky absolute-time asserts.
       # The docker-based fleet benchmark stays manual (scripts/README.md).
       - name: Parallel speedup gate (>= 2.0x, i.e. no >50% regression)
-        run: |
-          python scripts/bench_checks.py --latency 0.05 --jobs 8 --repeats 3 --check 2.0
+        run: python scripts/bench_checks.py --latency 0.05 --jobs 8 --repeats 3 --check 2.0
