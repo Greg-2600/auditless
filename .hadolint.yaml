@@ -1,0 +1,6 @@
+ignored:
+  # The Debian slim base owns the openssh-client version. Pinning it here
+  # would break the image whenever the base image is rebuilt.
+  - DL3008
+  # appuser is resolved inside the image and is used by every runtime step.
+  - DL3066

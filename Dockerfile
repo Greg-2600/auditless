@@ -34,4 +34,4 @@ CMD ["--help"]
 
 # Verify CLI loads correctly
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD python -m auditless --help || exit 1
+    CMD ["python", "-m", "auditless", "--help"]

@@ -24,12 +24,20 @@ def test_no_moving_action_pins():
     """Actions pin to versions, never @master/@main (supply-chain hygiene)."""
     import re
 
-    text = " ".join(
-        (WORKFLOWS / name).read_text()
-        for name in ("docker.yml", "release.yml", "tests.yml", "codeql.yml")
-    )
+    text = " ".join(path.read_text() for path in WORKFLOWS.glob("*.yml"))
     for bad in re.findall(r"uses:\s*\S+@(master|main)\b", text):
         raise AssertionError(f"moving action pin found: {bad}")
+
+
+def test_action_pins_are_full_shas_with_version_comments():
+    """Every third party action uses a full SHA and a readable version."""
+    import re
+
+    pin = re.compile(r"uses:\s*\S+@[0-9a-f]{40}\s+#\s*v?\d")
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if "uses:" in line:
+                assert pin.search(line), f"{path.name}:{number} is not SHA pinned"
 
 
 def test_release_signs_and_verifies():

@@ -4,7 +4,18 @@
 
 ## Enterprise-Grade Security Assessment Platform for Linux Infrastructure
 
-[![Production Ready](https://img.shields.io/badge/status-production%20ready-success)](https://github.com) [![Version](https://img.shields.io/badge/version-4.0.1-blue)](https://github.com) [![Tests](https://img.shields.io/badge/tests-507%20passing-success)](https://github.com) [![Coverage](https://img.shields.io/badge/coverage-87%25-green)](https://github.com) [![Code Quality](https://img.shields.io/badge/linting-0%20errors-success)](https://github.com) [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org) [![Docker](https://img.shields.io/badge/docker-supported-blue)](https://docker.com) [![Lynis Parity](https://img.shields.io/badge/lynis%20parity-95%25-brightgreen)](https://github.com) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24489259.svg)](https://doi.org/10.5281/zenodo.24489259)
+[![Tests](https://github.com/Greg-2600/auditless/actions/workflows/tests.yml/badge.svg)](https://github.com/Greg-2600/auditless/actions/workflows/tests.yml)
+[![Lint](https://github.com/Greg-2600/auditless/actions/workflows/lint.yml/badge.svg)](https://github.com/Greg-2600/auditless/actions/workflows/lint.yml)
+[![Security](https://github.com/Greg-2600/auditless/actions/workflows/security.yml/badge.svg)](https://github.com/Greg-2600/auditless/actions/workflows/security.yml)
+[![CodeQL](https://github.com/Greg-2600/auditless/actions/workflows/codeql.yml/badge.svg)](https://github.com/Greg-2600/auditless/actions/workflows/codeql.yml)
+[![Docker](https://github.com/Greg-2600/auditless/actions/workflows/docker.yml/badge.svg)](https://github.com/Greg-2600/auditless/actions/workflows/docker.yml)
+[![Scorecard](https://github.com/Greg-2600/auditless/actions/workflows/scorecard.yml/badge.svg)](https://github.com/Greg-2600/auditless/actions/workflows/scorecard.yml)
+[![Release](https://github.com/Greg-2600/auditless/actions/workflows/release.yml/badge.svg)](https://github.com/Greg-2600/auditless/actions/workflows/release.yml)
+[![Production Ready](https://img.shields.io/badge/status-production%20ready-success)](https://github.com)
+[![Version](https://img.shields.io/badge/version-4.0.1-blue)](https://github.com)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
+[![Lynis Parity](https://img.shields.io/badge/lynis%20parity-95%25-brightgreen)](https://github.com)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24489259.svg)](https://doi.org/10.5281/zenodo.24489259)
 
 ---
 
