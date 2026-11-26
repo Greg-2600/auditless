@@ -12,7 +12,7 @@ Welcome to the comprehensive documentation for **Auditless**
 ### 📖 Project Documentation
 
 #### Release & Features
-- **[RELEASE_NOTES_v2.0.0.md](RELEASE_NOTES_v2.0.0.md)** - v2.0.0 release highlights and migration guide
+- **[MIGRATION_v4.md](MIGRATION_v4.md)** - Upgrade guide for the 4.0 package rename (from 3.x); **[RELEASE_NOTES_v2.0.0.md](RELEASE_NOTES_v2.0.0.md)** - v2.0.0 highlights (historical)
 - **[FEATURES_ADDED.md](FEATURES_ADDED.md)** - Detailed v2.0.0 feature documentation
 - **[../CHANGELOG.md](../CHANGELOG.md)** - Complete version history and changes
 
@@ -29,8 +29,8 @@ Welcome to the comprehensive documentation for **Auditless**
 
 ### 📝 Version Information
 
-**Current Version:** 2.0.0 (Latest)  
-**Release Date:** January 10, 2026  
+**Current Version:** 4.0.1 (Latest)  
+**Release Date:** November 2026  
 **Status:** ✅ Production Ready  
 **Lynis Parity:** 95%
 
