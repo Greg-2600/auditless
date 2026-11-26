@@ -37,6 +37,7 @@ from .checks import (
     run_all_checks,
     run_all_checks_parallel,
     set_command_timeout,
+    set_fim_max_age_days,
     set_max_output_bytes,
 )
 from .checks_audit import run_all_audit_checks
@@ -373,6 +374,9 @@ def main(argv: list[str] | None = None) -> int:
             parse_test_id_list(args.only_tests),
             parse_test_id_list(args.skip_tests),
         )
+
+    # Apply the FIM database-age threshold from the profile (default 90 days)
+    set_fim_max_age_days(profile.fim_max_age_days if profile else None)
 
     # Apply per-command timeout for all SSH execs
     set_command_timeout(args.command_timeout)

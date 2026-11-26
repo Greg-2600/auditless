@@ -6,11 +6,14 @@ from pathlib import Path
 import pytest
 
 from auditless.config import (
+    DEFAULT_FIM_MAX_AGE_DAYS,
+    MAX_FIM_MAX_AGE_DAYS,
     ScanProfile,
     get_config_dirs,
     get_default_profile_paths,
     load_profile_auto,
     merge_cli_test_filters,
+    normalize_fim_max_age_days,
     parse_test_id_list,
 )
 
@@ -89,6 +92,48 @@ def test_list_profiles_uses_shared_dirs(
     found = {entry["name"]: entry for entry in list_profiles()}
     assert found["quick"]["source"] == "profiles-dir"
     assert found["old"]["source"] == "profiles-dir"
+
+
+def test_default_fim_max_age_days() -> None:
+    """Profiles keep the historical 90-day FIM threshold by default."""
+    assert ScanProfile().fim_max_age_days == DEFAULT_FIM_MAX_AGE_DAYS == 90
+
+
+def test_load_profile_custom_fim_max_age_days(tmp_path: Path) -> None:
+    """A profile can tune the FIM database-age threshold."""
+    from auditless.config import load_profile
+
+    profile = tmp_path / "fim.yaml"
+    profile.write_text("name: fim\nfim_max_age_days: 30\n", encoding="utf-8")
+    assert load_profile(profile).fim_max_age_days == 30
+
+
+def test_load_profile_bad_fim_max_age_days_falls_back(tmp_path: Path) -> None:
+    """Invalid YAML values never crash profile loading."""
+    from auditless.config import load_profile
+
+    profile = tmp_path / "fim.yaml"
+    profile.write_text("name: fim\nfim_max_age_days: soon\n", encoding="utf-8")
+    assert load_profile(profile).fim_max_age_days == 90
+
+
+@pytest.mark.parametrize(
+    "bad", [0, -1, MAX_FIM_MAX_AGE_DAYS + 1, 30.0, "30", True, None]
+)
+def test_normalize_fim_max_age_days_rejects_bad_input(bad: object) -> None:
+    """Only positive ints within the sane bound are accepted."""
+    assert normalize_fim_max_age_days(bad) == 90
+    assert normalize_fim_max_age_days(MAX_FIM_MAX_AGE_DAYS) == MAX_FIM_MAX_AGE_DAYS
+
+
+def test_lint_fim_max_age_days_range() -> None:
+    """Profile linting flags out-of-range thresholds, not valid ones."""
+    from auditless.config import lint_profile
+
+    assert lint_profile({"fim_max_age_days": 30}) == ([], [])
+    for bad in (0, -1, MAX_FIM_MAX_AGE_DAYS + 1, "soon"):
+        errors, _ = lint_profile({"fim_max_age_days": bad})
+        assert any("fim_max_age_days" in error for error in errors)
 
 
 def test_parse_test_id_list() -> None:

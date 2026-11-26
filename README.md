@@ -1187,7 +1187,7 @@ for check in failed:
 
 ### Scan Profiles & Configuration System
 
-Customize scan behavior, skip irrelevant checks, and optimize performance with flexible YAML-based configuration profiles—ideal for environment-specific scanning requirements.
+Customize scan behavior, skip irrelevant checks, and optimize performance with flexible YAML-based configuration profiles—ideal for environment-specific scanning requirements. Tune FIM database freshness (`FINT-4316`) with `fim_max_age_days` (1-3650 days, default 90; bad values fall back to 90).
 
 #### Profile Structure
 
@@ -1217,7 +1217,7 @@ skip_tests:
 # Performance tuning
 timeout: 10              # SSH connection timeout (seconds)
 command_timeout: 90      # Individual command timeout (seconds)
-
+fim_max_age_days: 90     # FIM DB age limit (days, 1-3650)
 # Reporting options
 verbose: false
 show_warnings_only: false

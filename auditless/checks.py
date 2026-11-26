@@ -10,6 +10,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, List, Tuple, cast
 
+from .config import DEFAULT_FIM_MAX_AGE_DAYS, normalize_fim_max_age_days
 from .php_hardening import PHP_HARDENING_PROBE, hardening_gaps, probe_sections
 from .ssh_client import SSHSession
 from .test_ids import CHECK_TEST_IDS
@@ -21,6 +22,8 @@ COMMAND_TIMEOUT: float = 60.0
 #: report memory on pathological hosts; ordinary outputs are far smaller.
 #: <= 0 disables the cap (parse-affecting callers use explicit values).
 MAX_OUTPUT_BYTES: int = 1024 * 1024
+#: FIM database age threshold (days) applied from the active scan profile.
+FIM_MAX_AGE_DAYS: int = DEFAULT_FIM_MAX_AGE_DAYS
 # Output cache keyed by (hostname, command): concurrent fleet scans of
 # different hosts must never share entries (they share this process).
 # Invalidation rules (see .github/PERFORMANCE.md):
@@ -48,6 +51,17 @@ def set_max_output_bytes(limit: int) -> None:
     """Set per-command output cap in bytes (<= 0 disables the cap)."""
     global MAX_OUTPUT_BYTES
     MAX_OUTPUT_BYTES = int(limit)
+
+
+def set_fim_max_age_days(days: Any) -> None:
+    """Set the FIM DB age threshold; invalid values fall back to 90 days."""
+    global FIM_MAX_AGE_DAYS
+    FIM_MAX_AGE_DAYS = normalize_fim_max_age_days(days)
+
+
+def get_fim_max_age_days() -> int:
+    """Current FIM database age threshold in days."""
+    return FIM_MAX_AGE_DAYS
 
 
 def truncate_output(text: str, limit: int | None = None) -> str:
@@ -3670,7 +3684,8 @@ def check_file_integrity_tools(ssh: SSHSession) -> CheckResult:
             category,
         )
 
-    stale_limit = 90 * 86400
+    max_age_days = get_fim_max_age_days()
+    stale_limit = max_age_days * 86400
     fresh = []
     problems = []
 
@@ -3693,7 +3708,9 @@ def check_file_integrity_tools(ssh: SSHSession) -> CheckResult:
         elif not has_sched:
             problems.append("AIDE has no scheduled checks (cron/systemd timer)")
         elif now and now - min(db_times) > stale_limit:
-            problems.append("AIDE database older than 90 days (re-initialize)")
+            problems.append(
+                f"AIDE database older than {max_age_days} days (re-initialize)"
+            )
         else:
             fresh.append("AIDE database fresh with scheduled checks")
 
@@ -3710,7 +3727,9 @@ def check_file_integrity_tools(ssh: SSHSession) -> CheckResult:
         elif not has_sched:
             problems.append("Tripwire has no scheduled checks (cron/systemd timer)")
         elif now and now - min(db_times) > stale_limit:
-            problems.append("Tripwire database older than 90 days (re-initialize)")
+            problems.append(
+                f"Tripwire database older than {max_age_days} days (re-initialize)"
+            )
         else:
             fresh.append("Tripwire database fresh with scheduled checks")
 
