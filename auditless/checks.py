@@ -972,6 +972,169 @@ def check_time_sync(ssh: SSHSession) -> CheckResult:
     )
 
 
+MAX_CLOCK_SKEW_SECONDS: float = 1.0
+
+
+def _parse_chrony_offset(text: str) -> float | None:
+    """Extract the current absolute offset (seconds) from chronyc tracking."""
+    for line in text.splitlines():
+        if not line.strip().lower().startswith("system time"):
+            continue
+        match = re.search(r"([+-]?\d+(?:\.\d+)?)\s*seconds?", line, re.IGNORECASE)
+        if match:
+            return abs(float(match.group(1)))
+    return None
+
+
+def _parse_timesync_offset(text: str) -> float | None:
+    """Extract the absolute offset (seconds) from timedatectl timesync-status."""
+    match = re.search(
+        r"^\s*Offset:\s*([+-]?\d+(?:\.\d+)?)\s*(ns|us|µs|ms|s)\b",
+        text,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if not match:
+        return None
+    factors = {"ns": 1e-9, "us": 1e-6, "µs": 1e-6, "ms": 1e-3, "s": 1.0}
+    return abs(float(match.group(1)) * factors[match.group(2).lower()])
+
+
+def _chrony_source_state(config_text: str) -> tuple[bool, bool]:
+    """Whether chrony has NTP sources, and whether any of them use NTS."""
+    has_source = False
+    has_nts = False
+    for raw_line in config_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("#", "!", "FILE:")):
+            continue
+        line = line.split("#", 1)[0].strip()
+        if not re.match(r"^(server|pool|peer)\s+", line, re.IGNORECASE):
+            continue
+        has_source = True
+        if re.search(r"\bnts\b", line, re.IGNORECASE):
+            has_nts = True
+    return has_source, has_nts
+
+
+def check_time_sync_extended(
+    ssh: SSHSession, max_skew_seconds: float = MAX_CLOCK_SKEW_SECONDS
+) -> CheckResult:
+    """Check NTP activity, chrony NTS sources, and maximum clock skew.
+
+    Test ID: TIME-3105
+    Category: Time
+
+    Report-only (never FAIL): active NTP, synchronized clocks, NTS
+    sources, and skew within ``max_skew_seconds`` pass. Inactive NTP,
+    non-NTS chrony sources, or excessive skew warn. Missing tooling is
+    unknown, never a false pass.
+    """
+    category = "Time"
+
+    _, timedatectl_out, _ = _run(
+        ssh, "timedatectl show -p NTP -p NTPSynchronized 2>/dev/null"
+    )
+    _, chrony_out, _ = _run(
+        ssh,
+        "bash -lc 'if command -v chronyc >/dev/null 2>&1; then "
+        "echo CHRONY_PRESENT; chronyc -n tracking 2>/dev/null; "
+        "echo ===AUTHDATA; chronyc -n authdata 2>/dev/null; "
+        "else echo CHRONY_ABSENT; fi'",
+    )
+    _, config_out, _ = _run(
+        ssh,
+        "bash -lc 'for f in /etc/chrony.conf /etc/chrony/chrony.conf "
+        "/etc/chrony/conf.d/*.conf /etc/chrony/sources.d/*.sources; do "
+        '[ -f "$f" ] && { echo "FILE:$f"; '
+        'grep -Ev "^[[:space:]]*#|^[[:space:]]*$" "$f"; }; done\'',
+    )
+    _, timesync_out, _ = _run(ssh, "timedatectl timesync-status 2>/dev/null")
+
+    states: dict[str, str] = {}
+    for line in timedatectl_out.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            states[key.strip()] = value.strip().lower()
+
+    ntp_state = states.get("NTP")
+    sync_state = states.get("NTPSynchronized")
+
+    chrony_present = "CHRONY_PRESENT" in chrony_out
+    if "===AUTHDATA" in chrony_out:
+        tracking_out, authdata_out = chrony_out.split("===AUTHDATA", 1)
+    else:
+        tracking_out, authdata_out = chrony_out, ""
+    nts_active = any(
+        re.search(r"\bNTS\b", line, re.IGNORECASE)
+        for line in authdata_out.splitlines()
+        if line.strip() and not line.strip().lower().startswith("name/")
+    )
+    has_chrony_source, chrony_has_nts = _chrony_source_state(config_out)
+
+    offset = _parse_chrony_offset(tracking_out)
+    if offset is None:
+        offset = _parse_timesync_offset(timesync_out)
+
+    findings: list[str] = []
+    evidence: list[str] = []
+    notes: list[str] = []
+
+    if ntp_state in ("yes", "no"):
+        if ntp_state == "no":
+            findings.append("system NTP client is inactive (timedatectl NTP=no)")
+        else:
+            evidence.append("NTP active")
+    if sync_state in ("yes", "no"):
+        if sync_state == "no":
+            findings.append("clock is not synchronized (NTPSynchronized=no)")
+        else:
+            evidence.append("clock synchronized")
+    if chrony_present:
+        if nts_active:
+            evidence.append("chrony NTS sources active")
+        elif chrony_has_nts:
+            evidence.append("chrony NTS sources configured")
+        elif has_chrony_source:
+            findings.append("chrony sources are configured without NTS authentication")
+    if offset is not None:
+        if offset > max_skew_seconds:
+            findings.append(
+                f"clock skew {offset:.3f}s exceeds {max_skew_seconds:g}s threshold"
+            )
+        else:
+            evidence.append(f"clock skew {offset:.3f}s")
+    elif chrony_present or sync_state == "yes":
+        notes.append("clock skew not measurable")
+
+    if findings:
+        details = "; ".join(findings)
+        if evidence or notes:
+            details += f" ({', '.join(evidence + notes)})"
+        return _warn(
+            "Extended time sync",
+            details,
+            "Keep NTP active with authenticated NTS sources and clock skew "
+            f"below {max_skew_seconds:g}s",
+            category,
+        )
+
+    if evidence:
+        details = "; ".join(evidence + notes)
+        return _pass(
+            "Extended time sync",
+            details,
+            "Maintain NTP synchronization and NTS-authenticated time sources",
+            category,
+        )
+
+    return _unknown(
+        "Extended time sync",
+        "timedatectl and chrony state unavailable — could not assess",
+        "Install/start systemd-timesyncd or chrony to enable time sync checks",
+        category,
+    )
+
+
 def check_accounts(ssh: SSHSession) -> CheckResult:
     category = "Accounts"
     code, out, err = _run(ssh, "awk -F: '$3==0 {print $1}' /etc/passwd")
@@ -4456,6 +4619,7 @@ def _check_thunks(ssh: SSHSession, password: str = "") -> list[tuple[str, _Check
         ("check_ssh_config", lambda: check_ssh_config(ssh, password)),
         ("check_firewall", lambda: check_firewall(ssh, password)),
         ("check_time_sync", lambda: check_time_sync(ssh)),
+        ("check_time_sync_extended", lambda: check_time_sync_extended(ssh)),
         ("check_accounts", lambda: check_accounts(ssh)),
         ("check_stale_user_accounts", lambda: check_stale_user_accounts(ssh)),
         ("check_auth_failures", lambda: check_auth_failures(ssh, password)),
