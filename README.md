@@ -819,7 +819,7 @@ python -m auditless remote.example.com admin password \
 | **Network Listeners** | Public service exposure | Categorize SSH, HTTP, DB, DNS, other | Firewall rule suggestions |
 | **SSH Hardening** | Configuration analysis | PasswordAuth, PermitRootLogin, Port 22 | sshd_config modifications |
 | **Firewall Status** | ufw/firewalld/iptables | WARN: inactive | Enable firewall commands |
-| **Time Synchronization** | NTP/chrony status | FAIL: not synchronized | chrony/systemd-timesyncd setup |
+| **Time Synchronization** | NTP/chrony status, NTS sources, clock skew | WARN: not synchronized, no NTS sources, or skew >1s | chrony/systemd-timesyncd setup |
 
 ### Account Security
 

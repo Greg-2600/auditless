@@ -167,6 +167,17 @@ def test_lint_unknown_ids_suggest(tmp_path: Path) -> None:
     assert any("'NOPE-0'" in e and "did you mean" not in e for e in errors)
 
 
+def test_lint_accepts_time_sync_extended_id() -> None:
+    """The extended time sync check is usable in profiles."""
+    from auditless.config import lint_profile
+
+    errors, warnings = lint_profile(
+        {"skip_tests": ["TIME-3105"], "only_tests": ["TIME-3105"]}
+    )
+    assert not any("TIME-3105" in e and "unknown" in e for e in errors)
+    assert any("skip wins" in w for w in warnings)
+
+
 def _warnings_for_overlap() -> list:
     """Overlap warning helper sharing the overlap fixture profile."""
     from auditless.config import lint_profile
