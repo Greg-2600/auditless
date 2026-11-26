@@ -167,6 +167,17 @@ def test_lint_unknown_ids_suggest(tmp_path: Path) -> None:
     assert any("'NOPE-0'" in e and "did you mean" not in e for e in errors)
 
 
+def test_lint_accepts_container_runtime_socket_id() -> None:
+    """The new runtime socket check is usable in profiles."""
+    from auditless.config import lint_profile
+
+    errors, warnings = lint_profile(
+        {"skip_tests": ["CONT-8107"], "only_tests": ["CONT-8107"]}
+    )
+    assert not any("CONT-8107" in e and "unknown" in e for e in errors)
+    assert any("skip wins" in w for w in warnings)
+
+
 def _warnings_for_overlap() -> list:
     """Overlap warning helper sharing the overlap fixture profile."""
     from auditless.config import lint_profile

@@ -46,7 +46,7 @@ Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is auth
 - [ ] 15 — [P1] Redis/Memcached/Elasticsearch bind + auth checks (no open `0.0.0.0` without password). `checks` (effort: M)
 - [ ] 16 — [P1] TLS certificate expiry scan for local services (not just web: mail, DB). `checks` (effort: M)
 - [ ] 17 — [P1] World-writable + SUID/SGID combined triage with package-owned allowlist to cut noise. `checks` (effort: M)
-- [ ] 18 — [P1] Container runtime socket exposure (`/var/run/docker.sock` perms, Podman socket, containerd). `checks` (effort: S)
+- [x] 18 — [P1] Container runtime socket exposure (`/var/run/docker.sock` perms, Podman socket, containerd). `checks` (effort: S) (done: CONT-8107 audits group-writable and world-accessible Docker/Podman/containerd sockets)
 - [ ] 19 — [P1] Kubernetes kubelet/node CIS-lite (anonymous-auth, read-only-port, event qps) when kubelet detected. `checks` (effort: M)
 - [ ] 20 — [P1] Time sync extended (chrony `nts`, NTS sources, `timedatectl` NTP active, max skew). `checks` (effort: S)
 - [ ] 21 — [P1] Livepatch × reboot-required correlation: a livepatched host pending reboot (`KERN-5830`) scores softer than one without. `checks` (effort: S)

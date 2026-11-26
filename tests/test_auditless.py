@@ -318,12 +318,20 @@ class TestCheckTestIdRegistry:
 
         import auditless.checks as checks_mod
         import auditless.checks_audit as audit_mod
+        import auditless.checks_container as container_mod
         import auditless.checks_database as database_mod
         import auditless.checks_filesystem as filesystem_mod
         import auditless.checks_packages as packages_mod
 
         fn = None
-        for mod in (checks_mod, audit_mod, filesystem_mod, database_mod, packages_mod):
+        for mod in (
+            checks_mod,
+            audit_mod,
+            filesystem_mod,
+            database_mod,
+            packages_mod,
+            container_mod,
+        ):
             fn = getattr(mod, func_name, None)
             if fn is not None:
                 break

@@ -102,7 +102,7 @@ Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+
 | **File Integrity** | 3 | SUID binary monitoring, world-writable files, critical binary modification tracking |
 | **Process Security** | 3 | Network listener analysis, suspicious process locations, abnormal network behavior |
 | **Privilege Escalation** | 3 | Sudo misconfiguration, dangerous capabilities, known exploit vectors |
-| **Container/Kernel** | 2 | Container escape detection, kernel module integrity validation |
+| **Container/Kernel** | 3 | Container escape detection, runtime socket exposure (Docker/Podman/containerd), kernel module integrity validation |
 | **Log Security** | 2 | Log tampering detection, unexpected privilege usage monitoring |
 | **Scheduled Tasks** | 2 | Cron job analysis, at job scanning, systemd timer review, allow/deny access control, world-writable job detection |
 | **Boot/Kernel Hardening** | 5 | GRUB password protection, kernel security parameters (sysctl), Secure Boot + module signature enforcement, livepatch status (report-only), extended sysctl pass (BPF, userns, forwarding) |

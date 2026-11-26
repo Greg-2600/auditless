@@ -9,10 +9,22 @@ Author: Auditless Security Scanner
 
 from typing import TYPE_CHECKING
 
-from auditless.checks import CheckResult, _fail, _pass, _warn
+from auditless.checks import CheckResult, _fail, _pass, _unknown, _warn
 
 if TYPE_CHECKING:
     from auditless.ssh_client import SSHSession
+
+
+_CONTAINER_SOCKET_PROBE = (
+    "for p in /var/run/docker.sock /run/podman/podman.sock "
+    "/run/containerd/containerd.sock /run/user/*/podman/podman.sock "
+    "/run/user/*/docker.sock; do "
+    '[ -S "$p" ] || continue; '
+    'if info=$(stat -Lc "%a %U:%G" "$p" 2>/dev/null); then '
+    'printf "%s %s\\n" "$p" "$info"; '
+    'else printf "unreadable %s\\n" "$p"; fi; '
+    "done"
+)
 
 
 def check_docker_installed(client: "SSHSession", timeout: int = 60) -> CheckResult:
@@ -616,6 +628,125 @@ def check_docker_resource_limits(
         )
 
 
+def check_container_runtime_socket_exposure(
+    client: "SSHSession", timeout: int = 60
+) -> CheckResult:
+    """Check Docker, Podman, and containerd runtime socket exposure.
+
+    Test ID: CONT-8107
+    Category: Containers
+    """
+    category = "Containers"
+    test_id = "CONT-8107"
+
+    try:
+        exit_code, stdout, stderr = client.run(_CONTAINER_SOCKET_PROBE, timeout=timeout)
+        if exit_code != 0 and not stdout.strip():
+            return _unknown(
+                "Container Runtime Socket Exposure",
+                f"Unable to probe container runtime sockets: {stderr.strip()}",
+                "Verify SSH connectivity and permission to inspect runtime sockets",
+                category,
+                test_id,
+            )
+
+        checked: list[str] = []
+        world_accessible: list[str] = []
+        group_writable: list[str] = []
+        unreadable: list[str] = []
+
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("unreadable "):
+                unreadable.append(line.split(None, 1)[1])
+                continue
+            parts = line.split(None, 2)
+            if len(parts) != 3:
+                continue
+            path, mode, ownership = parts
+            try:
+                bits = int(mode, 8)
+            except ValueError:
+                unreadable.append(path)
+                continue
+            checked.append(f"{path} ({mode} {ownership})")
+            if bits & 0o007:
+                world_accessible.append(f"{path} ({mode} {ownership})")
+            elif bits & 0o020:
+                group_writable.append(f"{path} ({mode} {ownership})")
+
+        if world_accessible:
+            details = "World-accessible container runtime socket(s): " + ", ".join(
+                world_accessible
+            )
+            if group_writable:
+                details += "; group-writable: " + ", ".join(group_writable)
+            if unreadable:
+                details += "; unreadable: " + ", ".join(unreadable)
+            return _fail(
+                "Container Runtime Socket Exposure",
+                details,
+                "Restrict runtime sockets to root or a dedicated admin group "
+                "and remove world access",
+                category,
+                test_id,
+            )
+
+        if group_writable:
+            details = "Group-writable container runtime socket(s): " + ", ".join(
+                group_writable
+            )
+            if unreadable:
+                details += "; unreadable: " + ", ".join(unreadable)
+            return _warn(
+                "Container Runtime Socket Exposure",
+                details + " (runtime group access is root-equivalent)",
+                "Remove group write access to runtime sockets or restrict the "
+                "group to trusted administrators",
+                category,
+                test_id,
+            )
+
+        if unreadable:
+            return _unknown(
+                "Container Runtime Socket Exposure",
+                "Unable to inspect container runtime socket(s): "
+                + ", ".join(unreadable),
+                "Verify permission to stat runtime sockets",
+                category,
+                test_id,
+            )
+
+        if checked:
+            return _pass(
+                "Container Runtime Socket Exposure",
+                "Container runtime sockets use restrictive permissions: "
+                + ", ".join(checked),
+                "Maintain root-only access to container runtime sockets",
+                category,
+                test_id,
+            )
+
+        return _pass(
+            "Container Runtime Socket Exposure",
+            "No container runtime sockets found",
+            "Maintain root-only access to runtime sockets if containers are added",
+            category,
+            test_id,
+        )
+
+    except Exception as e:
+        return _fail(
+            "Container Runtime Socket Exposure",
+            f"Error checking container runtime socket exposure: {str(e)}",
+            "Verify SSH connectivity and permissions",
+            category,
+            test_id,
+        )
+
+
 def run_all_checks(client: "SSHSession", timeout: int = 60) -> list[CheckResult]:
     """Run all container security checks.
 
@@ -634,4 +765,5 @@ def run_all_checks(client: "SSHSession", timeout: int = 60) -> list[CheckResult]
         check_docker_container_runtime(client, timeout),
         check_docker_network_isolation(client, timeout),
         check_docker_resource_limits(client, timeout),
+        check_container_runtime_socket_exposure(client, timeout),
     ]

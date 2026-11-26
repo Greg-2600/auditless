@@ -33,6 +33,7 @@ UNMAPPED_REASONS: dict[str, str] = {
     "AUTH-9283": "exploit-vector review has no direct CIS control",
     "PROC-3602": "deleted-handle review has no CIS control",
     "CONT-8104": "containers are outside the CIS OS benchmark",
+    "CONT-8107": "container runtime sockets are outside the CIS OS benchmark",
     "NETW-3035": "resolver monitoring has no CIS control",
     "NETW-3200": "anomaly detection has no CIS control",
     "TOOL-5002": "compiler presence has no CIS control",

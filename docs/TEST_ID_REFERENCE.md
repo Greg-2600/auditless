@@ -199,6 +199,7 @@ Examples:
 | CONT-8104 | Network Isolation | CONT-8040 | Planned |
 | CONT-8105 | Escape Prevention | CONT-8050 | Planned |
 | CONT-8106 | Container Logging | CONT-8060 | Planned |
+| CONT-8107 | Runtime Socket Exposure | CONT-8070 | Implemented |
 
 ### Web Server Hardening (HTTP)
 | Test ID | Check Name | Lynis Equivalent | Status |
@@ -285,7 +286,7 @@ Examples:
 | ACCT | Accounting | 5000-5099 | - | 5000-5006 |
 | BNRZ | Banners | 1600-1699 | - | 1600-1601 |
 | BOOT | Boot | 5100-5199 | - | - |
-| CONT | Containers | 8000-8099 | 8000 | 8100-8106 |
+| CONT | Containers | 8000-8099 | 8000 | 8100-8107 |
 | CPU | CPU/Load | 2800-2899 | 2800 | - |
 | DB | Databases | 1000-1099 | - | 1000-1007 |
 | DHCP | DHCP | 3400-3499 | - | - |
