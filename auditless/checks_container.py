@@ -26,6 +26,8 @@ _CONTAINER_SOCKET_PROBE = (
     "done"
 )
 
+_ROOT_EQUIVALENT_GROUPS = frozenset({"root", "docker", "podman", "containerd"})
+
 
 def check_docker_installed(client: "SSHSession", timeout: int = 60) -> CheckResult:
     """Check if Docker is installed on the system.
@@ -653,6 +655,7 @@ def check_container_runtime_socket_exposure(
         checked: list[str] = []
         world_accessible: list[str] = []
         group_writable: list[str] = []
+        root_equivalent_group: list[str] = []
         unreadable: list[str] = []
 
         for line in stdout.splitlines():
@@ -675,7 +678,11 @@ def check_container_runtime_socket_exposure(
             if bits & 0o007:
                 world_accessible.append(f"{path} ({mode} {ownership})")
             elif bits & 0o020:
-                group_writable.append(f"{path} ({mode} {ownership})")
+                owner, _, group = ownership.partition(":")
+                if owner == "root" and group in _ROOT_EQUIVALENT_GROUPS:
+                    root_equivalent_group.append(f"{path} ({mode} {ownership})")
+                else:
+                    group_writable.append(f"{path} ({mode} {ownership})")
 
         if world_accessible:
             details = "World-accessible container runtime socket(s): " + ", ".join(
@@ -720,11 +727,19 @@ def check_container_runtime_socket_exposure(
             )
 
         if checked:
+            details = (
+                "Container runtime sockets use compliant permissions: "
+                + ", ".join(checked)
+            )
+            if root_equivalent_group:
+                details += (
+                    "; membership in the root/docker/podman/containerd group is "
+                    "root-equivalent: " + ", ".join(root_equivalent_group)
+                )
             return _pass(
                 "Container Runtime Socket Exposure",
-                "Container runtime sockets use restrictive permissions: "
-                + ", ".join(checked),
-                "Maintain root-only access to container runtime sockets",
+                details,
+                "Maintain restricted access to container runtime sockets",
                 category,
                 test_id,
             )
