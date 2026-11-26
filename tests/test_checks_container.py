@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from auditless.checks_container import (
+    check_container_runtime_socket_exposure,
     check_docker_container_runtime,
     check_docker_daemon_config,
     check_docker_image_security,
@@ -149,6 +150,333 @@ class TestCheckDockerSocketPermissions(unittest.TestCase):
         result = check_docker_socket_permissions(client)
         assert result.status == "fail"
         assert "Unable to read Docker socket permissions" in result.details
+
+
+class TestCheckContainerRuntimeSocketExposure(unittest.TestCase):
+    """Tests for check_container_runtime_socket_exposure function."""
+
+    def test_group_writable_docker_socket_passes(self):
+        """The standard 660 root:docker socket is CIS-compliant."""
+        client = mock_ssh_exec(
+            [
+                (0, "/var/run/docker.sock 660 root:docker\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "pass"
+        assert result.test_id == "CONT-8107"
+        assert "/var/run/docker.sock (660 root:docker)" in result.details
+        assert (
+            "membership in the root/docker/podman/containerd group is root-equivalent"
+            in (result.details)
+        )
+
+    def test_group_write_bit_is_the_trigger(self):
+        """Only group write marks a trusted-group socket as root-equivalent."""
+        read_only = mock_ssh_exec([(0, "/var/run/docker.sock 640 root:docker\n", "")])
+        result = check_container_runtime_socket_exposure(read_only)
+        assert result.status == "pass"
+        assert "root-equivalent" not in result.details
+
+        read_write = mock_ssh_exec([(0, "/var/run/docker.sock 620 root:docker\n", "")])
+        result = check_container_runtime_socket_exposure(read_write)
+        assert result.status == "pass"
+        assert "root-equivalent" in result.details
+
+    def test_group_writable_runtime_group_sockets_pass(self):
+        """Root-owned sockets in trusted runtime groups pass."""
+        for group in ("root", "podman", "containerd"):
+            with self.subTest(group=group):
+                client = mock_ssh_exec(
+                    [(0, f"/var/run/docker.sock 660 root:{group}\n", "")]
+                )
+                result = check_container_runtime_socket_exposure(client)
+                assert result.status == "pass"
+                assert f"(660 root:{group})" in result.details
+
+    def test_group_writable_root_users_socket_warns(self):
+        """Group write outside the trusted runtime groups warns."""
+        client = mock_ssh_exec(
+            [
+                (0, "/var/run/docker.sock 660 root:users\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "warn"
+        assert "Group-writable" in result.details
+        assert "/var/run/docker.sock (660 root:users)" in result.details
+
+    def test_group_writable_non_root_owner_warns(self):
+        """A non-root owner with a runtime group still warns."""
+        client = mock_ssh_exec(
+            [
+                (0, "/var/run/docker.sock 660 alice:docker\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "warn"
+        assert "Group-writable" in result.details
+        assert "/var/run/docker.sock (660 alice:docker)" in result.details
+
+    def test_world_writable_trusted_group_socket_fails(self):
+        """World bits still fail even for a trusted runtime group."""
+        client = mock_ssh_exec(
+            [
+                (0, "/var/run/docker.sock 666 root:docker\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "fail"
+        assert "World-accessible" in result.details
+
+    def test_world_readable_socket_fails(self):
+        """A world-readable runtime socket is a world-accessible exposure."""
+        client = mock_ssh_exec(
+            [
+                (0, "/run/containerd/containerd.sock 644 root:root\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "fail"
+        assert "World-accessible" in result.details
+        assert "/run/containerd/containerd.sock (644 root:root)" in result.details
+
+    def test_world_writable_podman_socket_fails(self):
+        """A world-writable Podman socket fails."""
+        client = mock_ssh_exec(
+            [
+                (0, "/run/podman/podman.sock 666 root:root\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "fail"
+        assert "World-accessible" in result.details
+        assert "/run/podman/podman.sock (666 root:root)" in result.details
+
+    def test_world_execute_only_socket_fails(self):
+        """Any world permission bit counts as world-accessible."""
+        client = mock_ssh_exec(
+            [
+                (0, "/var/run/docker.sock 601 root:root\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "fail"
+        assert "World-accessible" in result.details
+
+    def test_mixed_exposures_prefer_fail(self):
+        """World access wins over group write when both are present."""
+        client = mock_ssh_exec(
+            [
+                (
+                    0,
+                    "/var/run/docker.sock 660 root:users\n"
+                    "/run/podman/podman.sock 666 root:root\n",
+                    "",
+                ),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "fail"
+        assert "/run/podman/podman.sock (666 root:root)" in result.details
+        assert "group-writable: /var/run/docker.sock (660 root:users)" in (
+            result.details
+        )
+
+    def test_world_access_with_unreadable_socket_reports_both(self):
+        """Known world access fails even when another socket cannot be read."""
+        client = mock_ssh_exec(
+            [
+                (
+                    0,
+                    "/run/podman/podman.sock 666 root:root\n"
+                    "unreadable /run/user/1000/podman/podman.sock\n",
+                    "",
+                ),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "fail"
+        assert "/run/user/1000/podman/podman.sock" in result.details
+
+    def test_group_write_with_unreadable_socket_reports_both(self):
+        """Known group write warns and notes the unreadable socket."""
+        client = mock_ssh_exec(
+            [
+                (
+                    0,
+                    "/var/run/docker.sock 660 root:users\n"
+                    "unreadable /run/user/1000/podman/podman.sock\n",
+                    "",
+                ),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "warn"
+        assert "/run/user/1000/podman/podman.sock" in result.details
+
+    def test_blank_and_malformed_lines_are_ignored(self):
+        """Blank or incomplete probe lines do not become findings."""
+        client = mock_ssh_exec(
+            [
+                (0, "\n\nmalformed\n/var/run/docker.sock 600 root:root\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "pass"
+        assert "/var/run/docker.sock (600 root:root)" in result.details
+
+    def test_unreadable_socket_is_unknown(self):
+        """An unreadable socket is unknown, never a false pass."""
+        client = mock_ssh_exec(
+            [
+                (0, "unreadable /run/user/1000/podman/podman.sock\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "unknown"
+        assert "/run/user/1000/podman/podman.sock" in result.details
+
+    def test_unreadable_and_secure_sockets_is_unknown(self):
+        """Unreadable sockets keep the verdict honest even if others are safe."""
+        client = mock_ssh_exec(
+            [
+                (
+                    0,
+                    "/var/run/docker.sock 600 root:root\n"
+                    "unreadable /run/user/1000/podman/podman.sock\n",
+                    "",
+                ),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "unknown"
+        assert "/run/user/1000/podman/podman.sock" in result.details
+
+    def test_trusted_group_socket_with_unreadable_socket_is_unknown(self):
+        """A compliant group socket cannot hide an unreadable one."""
+        client = mock_ssh_exec(
+            [
+                (
+                    0,
+                    "/var/run/docker.sock 660 root:docker\n"
+                    "unreadable /run/user/1000/podman/podman.sock\n",
+                    "",
+                ),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "unknown"
+        assert "/run/user/1000/podman/podman.sock" in result.details
+
+    def test_probe_failure_is_unknown(self):
+        """A probe that cannot run does not claim a pass."""
+        client = mock_ssh_exec(
+            [
+                (1, "", "Permission denied"),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "unknown"
+        assert "Unable to probe" in result.details
+
+    def test_malformed_mode_is_unknown(self):
+        """A malformed stat mode cannot be assessed."""
+        client = mock_ssh_exec(
+            [
+                (0, "/var/run/docker.sock not-a-mode root:root\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "unknown"
+        assert "/var/run/docker.sock" in result.details
+
+    def test_check_exception_fails(self):
+        """Test exception handling during socket exposure check."""
+        client = mock_ssh_exec(
+            [
+                Exception("Connection timeout"),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "fail"
+        assert "Error checking container runtime socket exposure" in result.details
+
+
+class TestContainerRuntimeSocketFalsePositives(unittest.TestCase):
+    """Benign runtime layouts must not be reported as exposure."""
+
+    def test_no_runtime_sockets_passes(self):
+        """Hosts without container runtimes pass as not applicable."""
+        client = mock_ssh_exec([(0, "", "")])
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "pass"
+        assert result.details == "No container runtime sockets found"
+
+    def test_root_only_sockets_pass(self):
+        """Root-only Docker, Podman, and containerd sockets pass."""
+        client = mock_ssh_exec(
+            [
+                (
+                    0,
+                    "/var/run/docker.sock 600 root:root\n"
+                    "/run/podman/podman.sock 600 root:root\n"
+                    "/run/containerd/containerd.sock 600 root:root\n",
+                    "",
+                ),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "pass"
+        assert "/var/run/docker.sock (600 root:root)" in result.details
+        assert "/run/podman/podman.sock (600 root:root)" in result.details
+        assert "/run/containerd/containerd.sock (600 root:root)" in result.details
+
+    def test_group_read_only_socket_passes(self):
+        """Group-readable without group write is not exposure."""
+        client = mock_ssh_exec(
+            [
+                (0, "/var/run/docker.sock 640 root:root\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "pass"
+        assert "(640 root:root)" in result.details
+
+    def test_group_execute_only_socket_passes(self):
+        """Group-execute without group write is not exposure."""
+        client = mock_ssh_exec(
+            [
+                (0, "/run/containerd/containerd.sock 610 root:root\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "pass"
+
+    def test_rootless_podman_socket_0700_passes(self):
+        """A rootless Podman socket in a private runtime dir passes."""
+        client = mock_ssh_exec(
+            [
+                (
+                    0,
+                    "/run/user/1000/podman/podman.sock 700 alice:alice\n",
+                    "",
+                ),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "pass"
+        assert "/run/user/1000/podman/podman.sock (700 alice:alice)" in (result.details)
+
+    def test_setgid_root_only_socket_passes(self):
+        """Setgid without group write does not trip the exposure check."""
+        client = mock_ssh_exec(
+            [
+                (0, "/var/run/docker.sock 2600 root:root\n", ""),
+            ]
+        )
+        result = check_container_runtime_socket_exposure(client)
+        assert result.status == "pass"
 
 
 class TestCheckDockerDaemonConfig(unittest.TestCase):
@@ -545,7 +873,7 @@ class TestRunAllChecks(unittest.TestCase):
 
         results = run_all_checks(client)
 
-        assert len(results) == 7
+        assert len(results) == 8
         # Check that all results are CheckResult objects with correct test_ids
         expected_test_ids = [
             "CONT-8100",
@@ -555,6 +883,7 @@ class TestRunAllChecks(unittest.TestCase):
             "CONT-8104",
             "CONT-8105",
             "CONT-8106",
+            "CONT-8107",
         ]
         actual_test_ids = [result.test_id for result in results]
         assert actual_test_ids == expected_test_ids
@@ -576,7 +905,7 @@ class TestRealSessionInterface(unittest.TestCase):
         client = MagicMock(spec=SSHSession)
         client.run.return_value = (0, "", "")
         results = run_all_checks(client)
-        assert len(results) == 7
+        assert len(results) == 8
         assert all(isinstance(r, CheckResult) for r in results)
 
     def test_docker_installed_uses_run_not_exec_command(self):
