@@ -50,7 +50,7 @@ Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is auth
 - [ ] 19 — [P1] Kubernetes kubelet/node CIS-lite (anonymous-auth, read-only-port, event qps) when kubelet detected. `checks` (effort: M)
 - [x] 20 — [P1] Time sync extended (chrony `nts`, NTS sources, `timedatectl` NTP active, max skew). `checks` (effort: S) (done: TIME-3105 audits NTP active/sync, chrony NTS sources, and skew >1s report-only)
 - [ ] 21 — [P1] Livepatch × reboot-required correlation: a livepatched host pending reboot (`KERN-5830`) scores softer than one without. `checks` (effort: S)
-- [ ] 22 — [P1] FIM database-age threshold (`90d` today) profile-configurable instead of hardcoded. `checks` (effort: S)
+- [x] 22 — [P1] FIM database-age threshold (`90d` today) profile-configurable instead of hardcoded. `checks` (effort: S) (done: `fim_max_age_days` profile setting drives AIDE/Tripwire freshness with 90-day default and validated fallback)
 
 ---
 

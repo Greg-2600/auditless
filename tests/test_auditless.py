@@ -426,6 +426,22 @@ class TestMainScanOrchestration:
         assert cli.main(["h", "u", "pw"]) == 0
         assert "h" in capsys.readouterr().out
 
+    def test_profile_fim_threshold_reaches_checks(self, monkeypatch, tmp_path):
+        """--profile applies the FIM threshold; the next scan resets it."""
+        from auditless import cli
+        from auditless.checks import get_fim_max_age_days, set_fim_max_age_days
+
+        self._patch_all(monkeypatch)
+        profile = tmp_path / "fim.yaml"
+        profile.write_text("name: fim\nfim_max_age_days: 30\n", encoding="utf-8")
+        try:
+            assert cli.main(["h", "u", "pw", "--profile", str(profile)]) == 0
+            assert get_fim_max_age_days() == 30
+            assert cli.main(["h", "u", "pw"]) == 0
+            assert get_fim_max_age_days() == 90
+        finally:
+            set_fim_max_age_days(None)
+
     def test_main_jobs_flag_selects_runner(self, monkeypatch):
         """--jobs 1 runs sequential, default/>1 runs the parallel pool."""
         from auditless import cli
@@ -3736,8 +3752,81 @@ class TestCheckFileIntegrityFreshness:
         ssh.run = fake_run
         return ssh
 
+    @pytest.fixture(autouse=True)
+    def _restore_fim_age(self):
+        """Keep the module-level FIM threshold isolated per test."""
+        from auditless.checks import get_fim_max_age_days, set_fim_max_age_days
+
+        original = get_fim_max_age_days()
+        set_fim_max_age_days(None)
+        yield
+        set_fim_max_age_days(original)
+
     def _probe(self, *lines):
         return f"NOW:{self.NOW}\n" + "".join(line + "\n" for line in lines)
+
+    def _stale_aide_session(self):
+        """AIDE with an old DB and a cron schedule."""
+        return self._session(
+            "aide",
+            self._probe(
+                f"AIDE_DB:{self.NOW - 100 * 86400}",
+                "/etc/cron.daily/aide",
+            ),
+        )
+
+    def test_default_fim_threshold_is_90_days(self):
+        """Without a profile the threshold stays at 90 days."""
+        from auditless.checks import check_file_integrity_tools, get_fim_max_age_days
+
+        assert get_fim_max_age_days() == 90
+        result = check_file_integrity_tools(self._stale_aide_session())
+        assert result.status == "warn"
+        assert "90 days" in result.details
+
+    def test_custom_fim_threshold_changes_verdict_and_text(self):
+        """A configured threshold drives both the verdict and problem text."""
+        from auditless.checks import check_file_integrity_tools, set_fim_max_age_days
+
+        set_fim_max_age_days(120)
+        result = check_file_integrity_tools(self._stale_aide_session())
+        assert result.status == "pass"
+
+        set_fim_max_age_days(30)
+        result = check_file_integrity_tools(self._stale_aide_session())
+        assert result.status == "warn"
+        assert "30 days" in result.details
+
+    def test_custom_fim_threshold_tripwire_text(self):
+        """Tripwire staleness wording uses the configured threshold too."""
+        from auditless.checks import check_file_integrity_tools, set_fim_max_age_days
+
+        set_fim_max_age_days(30)
+        ssh = self._session(
+            "tripwire",
+            self._probe(
+                f"TRIPWIRE_DB:{self.NOW - 100 * 86400}",
+                "tripwire-check.timer",
+            ),
+        )
+        result = check_file_integrity_tools(ssh)
+        assert result.status == "warn"
+        assert "Tripwire database older than 30 days" in result.details
+
+    @pytest.mark.parametrize("bad", [0, -5, 3651, 30.0, "soon", True])
+    def test_bad_fim_threshold_falls_back_without_crash(self, bad):
+        """Invalid thresholds never crash the check and revert to 90 days."""
+        from auditless.checks import (
+            check_file_integrity_tools,
+            get_fim_max_age_days,
+            set_fim_max_age_days,
+        )
+
+        set_fim_max_age_days(bad)
+        assert get_fim_max_age_days() == 90
+        result = check_file_integrity_tools(self._stale_aide_session())
+        assert result.status == "warn"
+        assert "90 days" in result.details
 
     def test_no_tools_warns(self):
         """No FIM tooling still warns as before."""

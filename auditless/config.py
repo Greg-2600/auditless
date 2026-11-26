@@ -14,6 +14,25 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
+#: FIM database age threshold used when a profile omits or invalidates it.
+DEFAULT_FIM_MAX_AGE_DAYS = 90
+#: Ten years: above this a "freshness" threshold stops being meaningful.
+MAX_FIM_MAX_AGE_DAYS = 3650
+
+
+def normalize_fim_max_age_days(value: Any) -> int:
+    """Return a valid FIM age threshold in days, or 90 on bad input.
+
+    Accepts only positive integers up to :data:`MAX_FIM_MAX_AGE_DAYS`;
+    booleans, floats, strings and out-of-range values fall back to 90
+    instead of raising.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return DEFAULT_FIM_MAX_AGE_DAYS
+    if not 1 <= value <= MAX_FIM_MAX_AGE_DAYS:
+        return DEFAULT_FIM_MAX_AGE_DAYS
+    return value
+
 
 @dataclass
 class ScanProfile:
@@ -32,6 +51,7 @@ class ScanProfile:
     enable_package_hygiene: bool = False
     timeout: int = 10
     command_timeout: int = 60
+    fim_max_age_days: int = DEFAULT_FIM_MAX_AGE_DAYS
 
     # Reporting
     show_warnings_only: bool = False
@@ -74,6 +94,9 @@ def load_profile(profile_path: str | Path) -> ScanProfile:
         enable_package_hygiene=data.get("enable_package_hygiene", False),
         timeout=data.get("timeout", 10),
         command_timeout=data.get("command_timeout", 60),
+        fim_max_age_days=normalize_fim_max_age_days(
+            data.get("fim_max_age_days", DEFAULT_FIM_MAX_AGE_DAYS)
+        ),
         show_warnings_only=data.get("show_warnings_only", False),
         verbose=data.get("verbose", False),
         custom_settings=data.get("custom_settings", {}),
@@ -116,6 +139,9 @@ enable_package_hygiene: false
 # Timeout settings (seconds)
 timeout: 10
 command_timeout: 60
+
+# FIM database age threshold in days (1-3650, default 90)
+fim_max_age_days: 90
 
 # Reporting options
 show_warnings_only: false
@@ -241,6 +267,7 @@ _PROFILE_FIELD_TYPES: dict[str, tuple[type, ...]] = {
     "enable_package_hygiene": (bool,),
     "timeout": (int,),
     "command_timeout": (int,),
+    "fim_max_age_days": (int,),
     "show_warnings_only": (bool,),
     "verbose": (bool,),
     "custom_settings": (dict,),
@@ -300,6 +327,15 @@ def lint_profile(data: object) -> tuple[list[str], list[str]]:
             bad_items = [v for v in value if not isinstance(v, str)]
             if bad_items:
                 errors.append(f"{key!r} entries must be strings")
+        if (
+            key == "fim_max_age_days"
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+        ):
+            if not 1 <= value <= MAX_FIM_MAX_AGE_DAYS:
+                errors.append(
+                    f"fim_max_age_days must be 1..{MAX_FIM_MAX_AGE_DAYS} days"
+                )
     skip = data.get("skip_tests") or []
     only = data.get("only_tests") or []
     if isinstance(skip, list) and isinstance(only, list):
