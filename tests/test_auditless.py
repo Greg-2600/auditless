@@ -3352,6 +3352,173 @@ class TestCheckSecureBoot:
         assert "could not determine" in result.details.lower()
 
 
+class TestCheckTimeSyncExtended:
+    """Tests for extended time sync checks (TIME-3105). Report-only: never FAIL."""
+
+    _host_seq = 0
+
+    _TIMEDATECTL = "NTP=yes\nNTPSynchronized=yes\n"
+    _CHRONY = (
+        "CHRONY_PRESENT\n"
+        "Reference ID    : 162.159.200.1 (time.cloudflare.com)\n"
+        "System time     : 0.000012345 seconds slow of NTP time\n"
+        "===AUTHDATA\n"
+        "Name/IP address            Mode KeyID Type KLen Expiry\n"
+        "time.cloudflare.com        NTS      1   15  256     88\n"
+    )
+    _CONFIG = (
+        "FILE:/etc/chrony.conf\n"
+        "pool time.cloudflare.com iburst nts\n"
+        "ntstrustedcerts /etc/chrony/certs\n"
+    )
+
+    def _session(self, timedatectl="", chrony="", config="", timesync="", code=0):
+        from unittest.mock import Mock
+
+        TestCheckTimeSyncExtended._host_seq += 1
+        hostname = f"timesync-test-{TestCheckTimeSyncExtended._host_seq}"
+
+        def fake_run(command, timeout=10.0):
+            if command.startswith("timedatectl show"):
+                return code, timedatectl, ""
+            if "command -v chronyc" in command:
+                return 0, chrony, ""
+            if "for f in /etc/chrony.conf" in command:
+                return 0, config, ""
+            if command.startswith("timedatectl timesync-status"):
+                return code, timesync, ""
+            return 0, "", ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        return ssh
+
+    def test_hardened_chrony_nts_passes(self):
+        """Active NTP plus configured/active NTS and low skew passes."""
+        from auditless.checks import check_time_sync_extended
+
+        ssh = self._session(self._TIMEDATECTL, self._CHRONY, self._CONFIG)
+        result = check_time_sync_extended(ssh)
+        assert result.status == "pass"
+        assert result.test_id == "TIME-3105"
+        assert "NTS sources active" in result.details
+        assert "clock skew" in result.details
+
+    def test_ntp_inactive_warns(self):
+        """timedatectl NTP=no is a hardening gap, not a failure."""
+        from auditless.checks import check_time_sync_extended
+
+        ssh = self._session("NTP=no\nNTPSynchronized=no\n")
+        result = check_time_sync_extended(ssh)
+        assert result.status == "warn"
+        assert "inactive" in result.details
+        assert result.status != "fail"
+
+    def test_not_synchronized_warns(self):
+        """An active but unsynchronized NTP client warns."""
+        from auditless.checks import check_time_sync_extended
+
+        ssh = self._session("NTP=yes\nNTPSynchronized=no\n")
+        result = check_time_sync_extended(ssh)
+        assert result.status == "warn"
+        assert "not synchronized" in result.details
+
+    def test_high_skew_warns(self):
+        """Skew above the threshold warns without failing the host."""
+        from auditless.checks import check_time_sync_extended
+
+        chrony = self._CHRONY.replace(
+            "0.000012345 seconds slow", "2.500000 seconds slow"
+        )
+        ssh = self._session(self._TIMEDATECTL, chrony, self._CONFIG)
+        result = check_time_sync_extended(ssh)
+        assert result.status == "warn"
+        assert "exceeds 1s threshold" in result.details
+
+    def test_non_nts_chrony_sources_warn(self):
+        """Chrony sources without NTS authentication warn."""
+        from auditless.checks import check_time_sync_extended
+
+        config = "FILE:/etc/chrony.conf\nserver pool.ntp.org iburst\n"
+        chrony = (
+            "CHRONY_PRESENT\n"
+            "System time     : 0.000001 seconds fast of NTP time\n"
+            "===AUTHDATA\n"
+            "Name/IP address            Mode KeyID Type KLen Expiry\n"
+            "pool.ntp.org               NTP      0    0    0     0\n"
+        )
+        ssh = self._session(self._TIMEDATECTL, chrony, config)
+        result = check_time_sync_extended(ssh)
+        assert result.status == "warn"
+        assert "without NTS authentication" in result.details
+
+    def test_commented_nts_source_is_not_counted(self):
+        """A commented-out NTS source is benign, not a claimed NTS config."""
+        from auditless.checks import check_time_sync_extended
+
+        config = "FILE:/etc/chrony.conf\n# pool time.cloudflare.com nts\n"
+        ssh = self._session(
+            self._TIMEDATECTL,
+            "CHRONY_PRESENT\nSystem time : 0.000001 seconds fast\n===AUTHDATA\n",
+            config,
+        )
+        result = check_time_sync_extended(ssh)
+        assert result.status == "pass"
+
+    def test_timesyncd_only_host_passes_without_nts_warning(self):
+        """systemd-timesyncd hosts have no chrony NTS to flag (false-positive guard)."""
+        from auditless.checks import check_time_sync_extended
+
+        ssh = self._session(
+            self._TIMEDATECTL,
+            "CHRONY_ABSENT\n",
+            "",
+            "Offset: +2.500ms\n",
+        )
+        result = check_time_sync_extended(ssh)
+        assert result.status == "pass"
+        assert "NTS" not in result.details
+        assert "clock skew 0.003s" in result.details
+
+    def test_subsecond_timesync_offset_is_below_threshold(self):
+        """A sub-second timedatectl offset does not trip the skew threshold."""
+        from auditless.checks import check_time_sync_extended
+
+        ssh = self._session(
+            self._TIMEDATECTL,
+            "CHRONY_ABSENT\n",
+            "",
+            "Offset: 900000us\n",
+        )
+        result = check_time_sync_extended(ssh)
+        assert result.status == "pass"
+        assert "clock skew 0.900s" in result.details
+
+    def test_no_tooling_is_unknown(self):
+        """Absent timedatectl/chrony is unknown, not a false pass."""
+        from auditless.checks import check_time_sync_extended
+
+        ssh = self._session("", "", "", "", code=1)
+        result = check_time_sync_extended(ssh)
+        assert result.status == "unknown"
+        assert result.test_id == "TIME-3105"
+
+    def test_never_fails(self):
+        """Report-only contract: no input may produce FAIL."""
+        from auditless.checks import check_time_sync_extended
+
+        for timedatectl, chrony, config, timesync in (
+            ("", "", "", ""),
+            ("garbage $$$ output\n", "CHRONY_PRESENT\n", "FILE:/x\n", ""),
+            ("NTP=no\nNTPSynchronized=no\n", "", "", "Offset: +99s\n"),
+            (self._TIMEDATECTL, self._CHRONY, "FILE:/x\nserver nts\n", ""),
+        ):
+            ssh = self._session(timedatectl, chrony, config, timesync)
+            assert check_time_sync_extended(ssh).status != "fail"
+
+
 class TestCheckKernelLivepatch:
     """Tests for kernel livepatch status (KRNL-5790). Report-only: never FAIL."""
 

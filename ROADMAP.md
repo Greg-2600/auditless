@@ -48,7 +48,7 @@ Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is auth
 - [ ] 17 — [P1] World-writable + SUID/SGID combined triage with package-owned allowlist to cut noise. `checks` (effort: M)
 - [x] 18 — [P1] Container runtime socket exposure (`/var/run/docker.sock` perms, Podman socket, containerd). `checks` (effort: S) (done: CONT-8107 fails world-accessible sockets, warns on group write outside root/docker/podman/containerd, and passes CIS-compliant root-owned runtime-group defaults)
 - [ ] 19 — [P1] Kubernetes kubelet/node CIS-lite (anonymous-auth, read-only-port, event qps) when kubelet detected. `checks` (effort: M)
-- [ ] 20 — [P1] Time sync extended (chrony `nts`, NTS sources, `timedatectl` NTP active, max skew). `checks` (effort: S)
+- [x] 20 — [P1] Time sync extended (chrony `nts`, NTS sources, `timedatectl` NTP active, max skew). `checks` (effort: S) (done: TIME-3105 audits NTP active/sync, chrony NTS sources, and skew >1s report-only)
 - [ ] 21 — [P1] Livepatch × reboot-required correlation: a livepatched host pending reboot (`KERN-5830`) scores softer than one without. `checks` (effort: S)
 - [ ] 22 — [P1] FIM database-age threshold (`90d` today) profile-configurable instead of hardcoded. `checks` (effort: S)
 

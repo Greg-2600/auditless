@@ -19,6 +19,7 @@ CHECK_TEST_IDS: dict[str, str] = {
     "check_ssh_config": "SSH-7408",
     "check_firewall": "FIRE-4512",
     "check_time_sync": "TIME-3104",
+    "check_time_sync_extended": "TIME-3105",
     "check_accounts": "AUTH-9234",
     "check_auth_failures": "AUTH-9252",
     "check_root_logins": "AUTH-9262",
