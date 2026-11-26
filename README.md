@@ -36,7 +36,7 @@ Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+
 - **📈 Hardening Index** — 0-100 scoring with per-category breakdown and quality gates
 - **📄 Multiple Output Formats** — Text, Markdown, and **JSON** for automation and integration
 - **⚙️ Profile System** — YAML-based configuration for environment-specific scanning
-- **⚡ Production Hardened** — Full test suite (334 tests passing), robust error handling, Docker-ready
+- **⚡ Production Hardened** — Full test suite (816 tests passing, 90% coverage), robust error handling, Docker-ready
 - **📋 Executive Reporting** — Professional reports with hardening scores and remediation guidance
 - **🔧 Extensible Architecture** — Modular design enables rapid custom check development
 - **🐳 Container Native** — Full Docker/Kubernetes support for CI/CD integration
@@ -1536,7 +1536,7 @@ auditless/
 │   ├── scanner.py                  # TCP port scanner (lightweight) (56 lines)
 │   └── ssh_client.py               # Paramiko SSH wrapper (60 lines)
 ├── tests/
-│   └── test_auditless.py        # Comprehensive test suite (87 tests, 1,100+ lines)
+│   └── test_auditless.py        # Comprehensive test suite (341 tests, 4,100+ lines)
 ├── .github/
 │   └── copilot-instructions.md     # Development agent configuration
 ├── Dockerfile                       # Production container image definition
@@ -1788,33 +1788,33 @@ black auditless/ tests/ && ruff check auditless/ tests/
 
 ### Test Suite Overview
 
-**Status:** 469 unit tests passing + 14 end-to-end tests (100% pass rate)  
-**Coverage:** 85% overall  
-**Framework:** pytest 7.0+  
-**Execution Time:** ~8 seconds (unit), ~1 minute (e2e, containerized)
+**Status:** 816 passing locally; 16 e2e skipped (`AUDITLESS_E2E=1` in CI)  
+**Coverage:** 90% overall  
+**Framework:** pytest 9.x  
+**Execution Time:** ~39 seconds (full local suite, e2e skipped)
 
 ### Module Coverage Breakdown
 
 | Module | Stmts | Cover | Focus Areas |
 | ------ | ----- | ------- | -------- | ----------- |
-| `checks.py` | 1337 | **74%** | Security check logic, threat detection |
-| `cli.py` | 122 | **90%** | Argument parsing, orchestration |
-| `report.py` | 361 | **88%** | Text/Markdown/JSON formatting |
-| `scanner.py` | 29 | **100%** | Port scanning logic |
-| `ssh_client.py` | 37 | **100%** | SSH connection wrapper |
-| `dashboard.py` | 648 | **90%** | FastAPI app, UI, API routes |
-| `store.py` / `scheduler.py` / `compliance.py` / `client.py` | — | **90–100%** | Persistence, scheduling, scoring, API client |
+| `checks.py` | 1823 | **82%** | Security check logic, threat detection |
+| `cli.py` | 201 | **93%** | Argument parsing, orchestration |
+| `report.py` | 379 | **92%** | Text/Markdown/JSON formatting |
+| `scanner.py` | 81 | **95%** | Port scanning logic |
+| `ssh_client.py` | 213 | **95%** | SSH connection wrapper |
+| `dashboard.py` | 976 | **89%** | FastAPI app, UI, API routes |
+| `store.py` | 315 | **96%** | Persistence |
+| `scheduler.py` | 90 | **94%** | Scheduling |
+| `compliance.py` | 96 | **100%** | Compliance scoring |
+| `client.py` | 202 | **99%** | API client |
+| **Total** | **6045** | **90%** | All modules |
 
 ### Test Categories
 
-#### Unit Tests (107 total)
-
-- **Check Logic** (70 tests): Pass/warn/fail scenarios, error handling
-- **CLI Interface** (13 tests): Argument parsing, validation
-- **Port Scanner** (5 tests): Port scanning, connection handling
-- **SSH Session** (3 tests): Connection management, command execution
-- **Report Rendering** (6 tests): Text/Markdown formatting, status grouping
-- **Data Structures** (10 tests): CheckResult, SystemInfo, detailed security info
+The suite is organized by module under `tests/` (core checks, domain checks,
+dashboard/API, store, scheduler, SSH, compliance, packaging, docs, and e2e).
+It currently collects 832 tests: 816 pass locally and the 16 containerized
+e2e tests are skipped unless `AUDITLESS_E2E=1` is set.
 
 #### Test Execution
 
@@ -1853,7 +1853,7 @@ pytest tests/ -s
 pytest tests/ -vv --tb=long
 ```
 
-#### End-to-End Suite (`tests/test_e2e.py`, 15 tests)
+#### End-to-End Suite (`tests/test_e2e.py`, 16 tests)
 
 Spins up real containers — a throwaway OpenSSH server plus the app image —
 and exercises every feature through the public `ApiClient`: CLI scans in
@@ -3014,8 +3014,8 @@ Cite this software using [CITATION.cff](CITATION.cff). DOI: [10.5281/zenodo.2448
 
 #### Quality Assurance
 
-- ✅ 107 unit tests (100% pass rate)
-- ✅ 66% code coverage (71% checks.py, 100% scanner.py, 100% ssh_client.py)
+- ✅ 816 tests passing locally (16 e2e tests run in CI)
+- ✅ 90% code coverage (82% checks.py, 95% scanner.py, 95% ssh_client.py)
 - ✅ Zero linting errors (ruff, black)
 - ✅ Production hardened
 
@@ -3041,7 +3041,7 @@ Cite this software using [CITATION.cff](CITATION.cff). DOI: [10.5281/zenodo.2448
 
 [![Production Ready](https://img.shields.io/badge/status-production%20ready-success)](https://github.com)
 [![Version](https://img.shields.io/badge/version-4.0.1-blue)](https://github.com)
-[![Tests Passing](https://img.shields.io/badge/tests-107%2F107-success)](https://github.com)
+[![Tests Passing](https://img.shields.io/badge/tests-816%2F816-success)](https://github.com)
 [![Lynis Parity](https://img.shields.io/badge/lynis%20parity-95%25-brightgreen)](https://github.com)
 [![Docker](https://img.shields.io/badge/docker-supported-blue)](https://docker.com)
 
