@@ -171,6 +171,18 @@ class TestCheckContainerRuntimeSocketExposure(unittest.TestCase):
             in (result.details)
         )
 
+    def test_group_write_bit_is_the_trigger(self):
+        """Only group write marks a trusted-group socket as root-equivalent."""
+        read_only = mock_ssh_exec([(0, "/var/run/docker.sock 640 root:docker\n", "")])
+        result = check_container_runtime_socket_exposure(read_only)
+        assert result.status == "pass"
+        assert "root-equivalent" not in result.details
+
+        read_write = mock_ssh_exec([(0, "/var/run/docker.sock 620 root:docker\n", "")])
+        result = check_container_runtime_socket_exposure(read_write)
+        assert result.status == "pass"
+        assert "root-equivalent" in result.details
+
     def test_group_writable_runtime_group_sockets_pass(self):
         """Root-owned sockets in trusted runtime groups pass."""
         for group in ("root", "podman", "containerd"):
