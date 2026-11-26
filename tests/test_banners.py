@@ -5,8 +5,11 @@ import socket
 import threading
 from typing import Any
 
+import pytest
+
 from auditless.report import render_report_json, render_report_text
 from auditless.scanner import (
+    KNOWN_SERVICES,
     PortStatus,
     _grab_banner,
     _identify_service,
@@ -103,9 +106,20 @@ def test_scan_single_reports_banner_service_version() -> None:
     assert found.version == "9.6p1"
 
 
-def test_scan_ports_opt_out_skips_banners() -> None:
+def test_scan_ports_opt_out_skips_banners(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """grab_banners=False keeps service guess, drops the banner read."""
-    results = scan_ports("127.0.0.1", [22], timeout=3.0, grab_banners=False)
+    holder: dict[str, Any] = {}
+    port = _serve_once(b"", holder)
+    monkeypatch.setitem(KNOWN_SERVICES, port, "ssh")
+
+    def _unexpected_banner(*_args: Any, **_kwargs: Any) -> str:
+        raise AssertionError("banner should not be read when disabled")
+
+    monkeypatch.setattr("auditless.scanner._grab_banner", _unexpected_banner)
+    results = scan_ports("127.0.0.1", [port], timeout=3.0, grab_banners=False)
+    assert results[0].open is True
     assert results[0].banner is None
     assert results[0].service == "ssh"
 
