@@ -7,6 +7,7 @@ public API surface exactly as users see it.
 
 import json
 import socket
+import time
 from pathlib import Path
 
 import pytest
@@ -948,6 +949,114 @@ def test_reports_persisted_and_diffed(client, monkeypatch):
     with pytest.raises(ApiError) as exc_info:
         client.diff_reports(ids[1], ids[0])
     assert exc_info.value.status == 404
+
+
+def test_list_reports_filters_and_pagination(client):
+    """Reports support status/host/time filters and bounded paging."""
+    store = dashboard.get_store()
+    store.save_report("r1", "alpha", "u", "done", None, None, "h1", 100.0, 101.0)
+    store.save_report("r2", "beta", "u", "error", None, "boom", "h2", 200.0, 201.0)
+    store.save_report("r3", "alpha", "u", "done", None, None, "h1", 300.0, 301.0)
+
+    assert [r["id"] for r in client.list_reports()] == ["r3", "r2", "r1"]
+    assert [r["id"] for r in client.list_reports(limit=2)] == ["r3", "r2"]
+    assert [r["id"] for r in client.list_reports(limit=1, offset=1)] == ["r2"]
+    assert [r["id"] for r in client.list_reports(status="error")] == ["r2"]
+    assert [r["id"] for r in client.list_reports(host_id="h1")] == ["r3", "r1"]
+    assert [r["id"] for r in client.list_reports(host="alpha")] == ["r3", "r1"]
+    assert [r["id"] for r in client.list_reports(since=150, until=250)] == ["r2"]
+    assert [
+        r["id"]
+        for r in client.list_reports(
+            since="1970-01-01T00:02:30Z", until="1970-01-01T00:04:10Z"
+        )
+    ] == ["r2"]
+
+    for bad in (
+        {"status": "bogus"},
+        {"since": "not-a-date"},
+        {"until": "not-a-date"},
+        {"since": 300, "until": 100},
+    ):
+        with pytest.raises(ApiError) as exc_info:
+            client.list_reports(**bad)
+        assert exc_info.value.status == 400
+    for bad in ({"limit": 0}, {"limit": 9999}, {"offset": -1}):
+        with pytest.raises(ApiError) as exc_info:
+            client.list_reports(**bad)
+        assert exc_info.value.status == 422
+
+
+def test_list_hosts_filters_and_pagination(client):
+    """Hosts keep the all-hosts default while offering filters and paging."""
+    first = client.create_host("web-a", "10.0.0.1", "u")
+    second = client.create_host("db-b", "10.0.0.2", "u")
+
+    all_hosts = client.list_hosts()
+    assert {h["id"] for h in all_hosts} == {first["id"], second["id"]}
+    assert [h["id"] for h in client.list_hosts(limit=1)] == [all_hosts[0]["id"]]
+    assert [h["id"] for h in client.list_hosts(limit=1, offset=1)] == [
+        all_hosts[1]["id"]
+    ]
+    assert [h["id"] for h in client.list_hosts(host="web")] == [first["id"]]
+    assert [h["id"] for h in client.list_hosts(host="10.0.0.2")] == [second["id"]]
+    now = time.time()
+    assert {h["id"] for h in client.list_hosts(since=now - 60, until=now + 60)} == {
+        first["id"],
+        second["id"],
+    }
+    assert client.list_hosts(since=now + 60) == []
+
+    for bad in ({"since": "not-a-date"}, {"until": "not-a-date"}):
+        with pytest.raises(ApiError) as exc_info:
+            client.list_hosts(**bad)
+        assert exc_info.value.status == 400
+    with pytest.raises(ApiError) as exc_info:
+        client.list_hosts(since=now, until=now - 60)
+    assert exc_info.value.status == 400
+    for bad in ({"limit": 0}, {"limit": 9999}, {"offset": -1}):
+        with pytest.raises(ApiError) as exc_info:
+            client.list_hosts(**bad)
+        assert exc_info.value.status == 422
+
+
+def test_list_scans_filters_and_pagination(client):
+    """Scan history supports host/status/time filters and bounded paging."""
+    for job_id, hostname, status, created in (
+        ("s1", "web-01", "done", 100.0),
+        ("s2", "db-01", "error", 200.0),
+        ("s3", "web-02", "done", 300.0),
+    ):
+        dashboard._register_job(
+            dashboard.ScanJob(
+                id=job_id,
+                hostname=hostname,
+                username="u",
+                status=status,
+                created_at=created,
+            )
+        )
+
+    assert [j["id"] for j in client.list_scans()] == ["s3", "s2", "s1"]
+    assert [j["id"] for j in client.list_scans(limit=2)] == ["s3", "s2"]
+    assert [j["id"] for j in client.list_scans(limit=1, offset=1)] == ["s2"]
+    assert [j["id"] for j in client.list_scans(status="done")] == ["s3", "s1"]
+    assert [j["id"] for j in client.list_scans(host="web")] == ["s3", "s1"]
+    assert [j["id"] for j in client.list_scans(since=150, until=250)] == ["s2"]
+
+    for bad in (
+        {"status": "bogus"},
+        {"since": "not-a-date"},
+        {"until": "not-a-date"},
+        {"since": 300, "until": 100},
+    ):
+        with pytest.raises(ApiError) as exc_info:
+            client.list_scans(**bad)
+        assert exc_info.value.status == 400
+    for bad in ({"limit": 0}, {"limit": 9999}, {"offset": -1}):
+        with pytest.raises(ApiError) as exc_info:
+            client.list_scans(**bad)
+        assert exc_info.value.status == 422
 
 
 def test_ssh_key_auth_wiring(monkeypatch):

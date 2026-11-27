@@ -217,12 +217,46 @@ class Store:
             ).fetchone()
         return dict(row) if row else None
 
-    def list_hosts(self) -> list[dict]:
-        """All hosts, newest first."""
+    def list_hosts(
+        self,
+        limit: int | None = None,
+        offset: int = 0,
+        host: str | None = None,
+        since: float | None = None,
+        until: float | None = None,
+    ) -> list[dict]:
+        """Hosts newest first, optionally filtered and paginated.
+
+        ``host`` matches a name or hostname substring. Omitting every
+        argument keeps the historical "all hosts" response.
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if host:
+            clauses.append("(name LIKE ? OR hostname LIKE ?)")
+            pattern = f"%{host}%"
+            params.extend([pattern, pattern])
+        if since is not None:
+            clauses.append("created_at >= ?")
+            params.append(since)
+        if until is not None:
+            clauses.append("created_at <= ?")
+            params.append(until)
+        query = "SELECT * FROM hosts"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+            if offset:
+                query += " OFFSET ?"
+                params.append(offset)
+        elif offset:
+            query += " LIMIT -1 OFFSET ?"
+            params.append(offset)
         with _connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT * FROM hosts ORDER BY created_at DESC"
-            ).fetchall()
+            rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
     def delete_host(self, host_id: str) -> bool:
@@ -553,24 +587,52 @@ class Store:
             ).fetchone()
         return dict(row) if row else None
 
-    def list_reports(self, host_id: str | None = None, limit: int = 50) -> list[dict]:
-        """Stored reports, newest first, optionally filtered by host."""
+    def list_reports(
+        self,
+        host_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+        host: str | None = None,
+        since: float | None = None,
+        until: float | None = None,
+    ) -> list[dict]:
+        """Stored reports newest first, with optional filters and paging.
+
+        ``host_id`` matches a saved host exactly; ``host`` matches a
+        hostname substring. ``status`` and the created-at range narrow the
+        result further.
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if host_id:
+            clauses.append("host_id = ?")
+            params.append(host_id)
+        if host:
+            clauses.append("hostname LIKE ?")
+            params.append(f"%{host}%")
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if since is not None:
+            clauses.append("created_at >= ?")
+            params.append(since)
+        if until is not None:
+            clauses.append("created_at <= ?")
+            params.append(until)
+        query = (
+            "SELECT id, host_id, hostname, username, status,"
+            " hardening_index, error, created_at, finished_at FROM reports"
+        )
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        if offset:
+            query += " OFFSET ?"
+            params.append(offset)
         with _connect(self.db_path) as conn:
-            if host_id:
-                rows = conn.execute(
-                    "SELECT id, host_id, hostname, username, status,"
-                    " hardening_index, error, created_at, finished_at"
-                    " FROM reports WHERE host_id = ? ORDER BY created_at DESC"
-                    " LIMIT ?",
-                    (host_id, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT id, host_id, hostname, username, status,"
-                    " hardening_index, error, created_at, finished_at"
-                    " FROM reports ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
+            rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
     def delete_report(self, report_id: str) -> bool:

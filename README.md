@@ -401,7 +401,7 @@ exposing it.
   `--jump-key-file`, `--jump-password`.
 - **Reports** (`/api/reports`) persist across restarts; **diff**
   (`/api/diff?from_id=..&to_id=..`, plus the UI Compare button) shows
-  fixed vs regressed checks and the hardening-index delta per host.
+  fixed/regressed checks; lists page and filter by host, status, date.
 - **Backups** (`POST /api/maintenance/backup`, plus a daily automatic
   snapshot, pruned server-side) protect the SQLite store.
 
