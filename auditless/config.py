@@ -19,6 +19,11 @@ DEFAULT_FIM_MAX_AGE_DAYS = 90
 #: Ten years: above this a "freshness" threshold stops being meaningful.
 MAX_FIM_MAX_AGE_DAYS = 3650
 
+#: Warn when a local service certificate expires within this many days.
+DEFAULT_TLS_CERT_WARN_DAYS = 30
+#: Ten years: above this an expiry warning stops being meaningful.
+MAX_TLS_CERT_WARN_DAYS = 3650
+
 
 def normalize_fim_max_age_days(value: Any) -> int:
     """Return a valid FIM age threshold in days, or 90 on bad input.
@@ -31,6 +36,20 @@ def normalize_fim_max_age_days(value: Any) -> int:
         return DEFAULT_FIM_MAX_AGE_DAYS
     if not 1 <= value <= MAX_FIM_MAX_AGE_DAYS:
         return DEFAULT_FIM_MAX_AGE_DAYS
+    return value
+
+
+def normalize_tls_cert_warn_days(value: Any) -> int:
+    """Return a valid TLS expiry warning threshold, or 30 on bad input.
+
+    Accepts only positive integers up to
+    :data:`MAX_TLS_CERT_WARN_DAYS`; booleans, floats, strings and
+    out-of-range values fall back to 30 instead of raising.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return DEFAULT_TLS_CERT_WARN_DAYS
+    if not 1 <= value <= MAX_TLS_CERT_WARN_DAYS:
+        return DEFAULT_TLS_CERT_WARN_DAYS
     return value
 
 
@@ -52,6 +71,7 @@ class ScanProfile:
     timeout: int = 10
     command_timeout: int = 60
     fim_max_age_days: int = DEFAULT_FIM_MAX_AGE_DAYS
+    tls_cert_warn_days: int = DEFAULT_TLS_CERT_WARN_DAYS
 
     # Reporting
     show_warnings_only: bool = False
@@ -96,6 +116,9 @@ def load_profile(profile_path: str | Path) -> ScanProfile:
         command_timeout=data.get("command_timeout", 60),
         fim_max_age_days=normalize_fim_max_age_days(
             data.get("fim_max_age_days", DEFAULT_FIM_MAX_AGE_DAYS)
+        ),
+        tls_cert_warn_days=normalize_tls_cert_warn_days(
+            data.get("tls_cert_warn_days", DEFAULT_TLS_CERT_WARN_DAYS)
         ),
         show_warnings_only=data.get("show_warnings_only", False),
         verbose=data.get("verbose", False),
@@ -142,6 +165,9 @@ command_timeout: 60
 
 # FIM database age threshold in days (1-3650, default 90)
 fim_max_age_days: 90
+
+# Warn when local service certificates expire within this many days
+tls_cert_warn_days: 30
 
 # Reporting options
 show_warnings_only: false
@@ -268,6 +294,7 @@ _PROFILE_FIELD_TYPES: dict[str, tuple[type, ...]] = {
     "timeout": (int,),
     "command_timeout": (int,),
     "fim_max_age_days": (int,),
+    "tls_cert_warn_days": (int,),
     "show_warnings_only": (bool,),
     "verbose": (bool,),
     "custom_settings": (dict,),
@@ -335,6 +362,15 @@ def lint_profile(data: object) -> tuple[list[str], list[str]]:
             if not 1 <= value <= MAX_FIM_MAX_AGE_DAYS:
                 errors.append(
                     f"fim_max_age_days must be 1..{MAX_FIM_MAX_AGE_DAYS} days"
+                )
+        if (
+            key == "tls_cert_warn_days"
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+        ):
+            if not 1 <= value <= MAX_TLS_CERT_WARN_DAYS:
+                errors.append(
+                    f"tls_cert_warn_days must be 1..{MAX_TLS_CERT_WARN_DAYS} days"
                 )
     skip = data.get("skip_tests") or []
     only = data.get("only_tests") or []

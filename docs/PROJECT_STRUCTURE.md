@@ -8,6 +8,7 @@ auditless/
 │   ├── checks.py          # Security check functions (50+ checks)
 │   ├── checks_audit.py / checks_container.py / checks_database.py
 │   ├── checks_dns.py / checks_filesystem.py / checks_packages.py
+│   ├── checks_tls.py      # Local service TLS certificate expiry
 │   ├── checks_webserver.py  # Phase 1-3 check modules
 │   ├── cli.py             # Command-line interface
 │   ├── client.py          # First-party ApiClient (stdlib, dogfooded by tests)

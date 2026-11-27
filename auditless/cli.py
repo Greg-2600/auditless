@@ -46,6 +46,7 @@ from .checks_database import run_all_database_checks
 from .checks_dns import run_all_dns_checks
 from .checks_filesystem import run_all_filesystem_checks
 from .checks_packages import run_all_package_management_checks
+from .checks_tls import run_all_tls_checks, set_tls_cert_warn_days
 from .checks_webserver import run_all_webserver_checks
 from .report import render_report, render_report_json, render_report_text
 from .scanner import COMMON_PORTS, scan_ports
@@ -377,6 +378,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Apply the FIM database-age threshold from the profile (default 90 days)
     set_fim_max_age_days(profile.fim_max_age_days if profile else None)
+    # Apply the TLS certificate expiry warning threshold (default 30 days)
+    set_tls_cert_warn_days(profile.tls_cert_warn_days if profile else None)
 
     # Apply per-command timeout for all SSH execs
     set_command_timeout(args.command_timeout)
@@ -451,6 +454,7 @@ def main(argv: list[str] | None = None) -> int:
                     lambda: run_all_container_checks(ssh, args.command_timeout),
                 ),
                 ("webserver", lambda: run_all_webserver_checks(ssh, password)),
+                ("tls", lambda: run_all_tls_checks(ssh, password)),
                 ("dns", lambda: run_all_dns_checks(ssh, password)),
             ]
             check_results: list[CheckResult] = []

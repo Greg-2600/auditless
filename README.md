@@ -116,12 +116,13 @@ Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+
 | **System Tools** | 1 | Compiler presence on production, development tools audit |
 | **Hardware Security** | 2 | USB storage controls, hardware security module checks, USB device authorization (authorized_default, USBGuard, UDISKS) |
 | **Web Server** | 1 | Apache/Nginx configuration, version disclosure, SSL/TLS setup |
+| **TLS Certificates** | 1 | Local service certificate expiry (mail, database, web) with configurable warning threshold |
 | **Database** | 2 | MySQL/PostgreSQL security, authentication, remote access controls, Redis/Memcached/Elasticsearch bind and auth exposure |
 | **Mail Server** | 1 | Postfix/Exim/Sendmail relay protection, TLS configuration |
 | **Application Security** | 1 | PHP configuration hardening, exact dangerous-function allowlist, version disclosure, FPM pool user/socket/bind and opcache API restrictions |
 | **Name Service** | 1 | DNS resolver configuration, DNSSEC validation, redundancy checks |
 
-**Total: 100+ Security Checks** across **24 domains**
+**Total: 100+ Security Checks** across **25 domains**
 
 ### Platform Capabilities
 
@@ -820,6 +821,7 @@ python -m auditless remote.example.com admin password \
 | **SSH Hardening** | Configuration analysis | PasswordAuth, PermitRootLogin, Port 22 | sshd_config modifications |
 | **Firewall Status** | ufw/firewalld/iptables | WARN: inactive | Enable firewall commands |
 | **Time Synchronization** | NTP/chrony status, NTS sources, clock skew | WARN: not synchronized, no NTS sources, or skew >1s | chrony/systemd-timesyncd setup |
+| **Local Service Certificates** | Postfix/Dovecot/PostgreSQL/MySQL/Nginx/Apache cert expiry | WARN: expires within 30 days; FAIL: already expired | Renew certificates and automate rotation |
 
 ### Account Security
 
@@ -1187,7 +1189,7 @@ for check in failed:
 
 ### Scan Profiles & Configuration System
 
-Customize scan behavior, skip irrelevant checks, and optimize performance with flexible YAML-based configuration profiles—ideal for environment-specific scanning requirements. Tune FIM database freshness (`FINT-4316`) with `fim_max_age_days` (1-3650 days, default 90; bad values fall back to 90).
+Customize scan behavior, skip irrelevant checks, and optimize performance with flexible YAML-based configuration profiles—ideal for environment-specific scanning requirements. Tune FIM database freshness (`FINT-4316`) with `fim_max_age_days` (1-3650 days, default 90; bad values fall back to 90), and the local service certificate warning window (`TLS-4500`) with `tls_cert_warn_days` (1-3650 days, default 30; bad values fall back to 30).
 
 #### Profile Structure
 
@@ -1218,6 +1220,7 @@ skip_tests:
 timeout: 10              # SSH connection timeout (seconds)
 command_timeout: 90      # Individual command timeout (seconds)
 fim_max_age_days: 90     # FIM DB age limit (days, 1-3650)
+tls_cert_warn_days: 30   # Warn when service certs expire within N days (1-3650)
 # Reporting options
 verbose: false
 show_warnings_only: false
