@@ -494,6 +494,16 @@ def check_reboot_required(ssh: SSHSession) -> CheckResult:
     category = "Patching"
     code, _, _ = _run(ssh, "[ -f /var/run/reboot-required ]")
     if code == 0:
+        _, livepatch_out, _ = _run(ssh, _KERNEL_LIVEPATCH_CMD)
+        if _livepatch_active(livepatch_out):
+            return _pass(
+                "Reboot needed",
+                "/var/run/reboot-required present, but kernel livepatching "
+                "is active — pending kernel fixes are already applied",
+                "Schedule a reboot at the next convenient maintenance "
+                "window; livepatch covers kernel fixes until then",
+                category,
+            )
         return _warn(
             "Reboot needed",
             "/var/run/reboot-required present",
@@ -3554,6 +3564,34 @@ def check_secure_boot(ssh: SSHSession, password: str = "") -> CheckResult:
     )
 
 
+_KERNEL_LIVEPATCH_CMD = (
+    "bash -lc 'command -v canonical-livepatch 2>/dev/null; "
+    "canonical-livepatch status 2>/dev/null; "
+    "command -v kpatch 2>/dev/null; kpatch list 2>/dev/null; "
+    "for d in /sys/kernel/livepatch/*/enabled; do "
+    '[ -f "$d" ] && echo "$d:$(cat $d 2>/dev/null)"; done\''
+)
+
+
+def _livepatch_active(output: str) -> bool:
+    """Whether livepatch probe output shows an active live patch."""
+    text = output.lower()
+    canonical_on = (
+        "enabled: true" in text
+        or "status: enabled" in text
+        or "patch state: applied" in text
+    )
+    sysfs_on = any(
+        line.split(":")[-1].strip() == "1"
+        for line in output.splitlines()
+        if "/sys/kernel/livepatch/" in line
+    )
+    kpatch_loaded = any(
+        line.strip().startswith("kpatch_") for line in output.splitlines()
+    )
+    return canonical_on or sysfs_on or kpatch_loaded
+
+
 def check_kernel_livepatch(ssh: SSHSession, password: str = "") -> CheckResult:
     """Check kernel livepatch status (canonical-livepatch, kpatch).
 
@@ -3563,36 +3601,19 @@ def check_kernel_livepatch(ssh: SSHSession, password: str = "") -> CheckResult:
     """
     category = "Boot/Kernel"
 
-    cmd = (
-        "bash -lc 'command -v canonical-livepatch 2>/dev/null; "
-        "canonical-livepatch status 2>/dev/null; "
-        "command -v kpatch 2>/dev/null; kpatch list 2>/dev/null; "
-        "for d in /sys/kernel/livepatch/*/enabled; do "
-        '[ -f "$d" ] && echo "$d:$(cat $d 2>/dev/null)"; done\''
-    )
+    cmd = _KERNEL_LIVEPATCH_CMD
     if password:
         cmd = f"sudo -S {cmd}"
     _, out, _ = _run(ssh, cmd, password)
     text = out.lower()
 
-    canonical_on = (
-        "enabled: true" in text
-        or "status: enabled" in text
-        or "patch state: applied" in text
-    )
     canonical_off = (
         "enabled: false" in text
         or "machine is not enabled" in text
         or "not enabled" in text
     )
-    sysfs_on = any(
-        line.split(":")[-1].strip() == "1"
-        for line in out.splitlines()
-        if "/sys/kernel/livepatch/" in line
-    )
-    kpatch_loaded = any(line.strip().startswith("kpatch_") for line in out.splitlines())
 
-    if canonical_on or sysfs_on or kpatch_loaded:
+    if _livepatch_active(out):
         return _pass(
             "Kernel livepatch",
             "Kernel live patching is active",

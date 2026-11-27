@@ -3622,6 +3622,99 @@ class TestCheckKernelLivepatch:
             assert check_kernel_livepatch(ssh, "").status != "fail"
 
 
+class TestCheckRebootRequiredLivepatch:
+    """Tests for reboot-required correlation with livepatch (KERN-5830)."""
+
+    _host_seq = 0
+
+    def _session(self, reboot_present, livepatch_output=""):
+        from unittest.mock import Mock
+
+        TestCheckRebootRequiredLivepatch._host_seq += 1
+        hostname = f"reboot-livepatch-test-{TestCheckRebootRequiredLivepatch._host_seq}"
+        commands = []
+
+        def fake_run(command, timeout=10.0):
+            commands.append(command)
+            if "reboot-required" in command:
+                return (0 if reboot_present else 1), "", ""
+            return 0, livepatch_output, ""
+
+        ssh = Mock()
+        ssh._client = None
+        ssh.hostname = hostname
+        ssh.run = fake_run
+        ssh.commands = commands
+        return ssh
+
+    def test_reboot_without_livepatch_keeps_warning(self):
+        """No livepatch leaves the historical warning and text unchanged."""
+        from auditless.checks import check_reboot_required
+
+        ssh = self._session(True, "")
+        result = check_reboot_required(ssh)
+        assert result.status == "warn"
+        assert result.details == "/var/run/reboot-required present"
+        assert result.recommendation == "Schedule a reboot during maintenance window"
+        assert result.test_id == "KERN-5830"
+
+    def test_reboot_with_canonical_livepatch_scores_softer(self):
+        """Active Canonical Livepatch softens pending reboot to a pass."""
+        from auditless.checks import check_reboot_required
+
+        ssh = self._session(
+            True,
+            "/usr/bin/canonical-livepatch\n"
+            "status: enabled\n"
+            "patch state: applied\n",
+        )
+        result = check_reboot_required(ssh)
+        assert result.status == "pass"
+        assert "livepatch" in result.details.lower()
+        assert "reboot" in result.recommendation.lower()
+        assert result.test_id == "KERN-5830"
+
+    def test_reboot_with_kpatch_loaded_scores_softer(self):
+        """Loaded kpatch modules also soften the pending-reboot finding."""
+        from auditless.checks import check_reboot_required
+
+        ssh = self._session(
+            True,
+            "/usr/bin/kpatch\nLoaded patch modules:\nkpatch_5_15_0_91\n",
+        )
+        assert check_reboot_required(ssh).status == "pass"
+
+    def test_reboot_with_sysfs_livepatch_scores_softer(self):
+        """A live sysfs livepatch flag also softens the finding."""
+        from auditless.checks import check_reboot_required
+
+        ssh = self._session(True, "/sys/kernel/livepatch/kpatch_5_15_0_91/enabled:1\n")
+        assert check_reboot_required(ssh).status == "pass"
+
+    def test_reboot_with_idle_livepatch_still_warns(self):
+        """Installed-but-idle livepatch tooling does not soften the finding."""
+        from auditless.checks import check_reboot_required
+
+        ssh = self._session(
+            True,
+            "/usr/bin/canonical-livepatch\n"
+            "Machine is not enabled. Please run `pro enable`.\n",
+        )
+        result = check_reboot_required(ssh)
+        assert result.status == "warn"
+        assert result.details == "/var/run/reboot-required present"
+
+    def test_no_reboot_flag_does_not_probe_livepatch(self):
+        """Without a pending reboot the check keeps its single probe."""
+        from auditless.checks import check_reboot_required
+
+        ssh = self._session(False, "status: enabled\n")
+        result = check_reboot_required(ssh)
+        assert result.status == "pass"
+        assert result.details == "No reboot-required flag"
+        assert not any("canonical-livepatch" in cmd for cmd in ssh.commands)
+
+
 class TestCheckSysctlExtended:
     """Tests for extended sysctl hardening (KERN-5822)."""
 
