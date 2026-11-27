@@ -213,6 +213,11 @@ Examples:
 | HTTP-6506 | Nginx Config | HTTP-6700 | Planned |
 | HTTP-6507 | Error Messages | HTTP-6750 | Planned |
 
+### Local Service Certificates (TLS)
+| Test ID | Check Name | Lynis Equivalent | Status |
+|---------|------------|------------------|--------|
+| TLS-4500 | Local Service Certificate Expiry | HTTP-6530 | Implemented |
+
 ### DNS Security (DNS)
 | Test ID | Check Name | Lynis Equivalent | Status |
 |---------|------------|------------------|--------|
@@ -311,6 +316,7 @@ Examples:
 | SSH | SSH | 6200-6299 | 6200 | - |
 | STG | Storage | 2300-2399 | 2300 | - |
 | TIME | Time | 3000-3199 | 3001 | 3100-3104 |
+| TLS | Local TLS Certificates | 4500-4599 | 4500 | - |
 | TOOL | Tools | 5000-5399 | 5000, 5100, 5200, 5300, 5400 | - |
 | VIRT | Virtualization | 2200-2299 | - | 2200-2201 |
 

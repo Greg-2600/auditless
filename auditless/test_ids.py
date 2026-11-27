@@ -72,6 +72,8 @@ CHECK_TEST_IDS: dict[str, str] = {
     "check_pam_faillock": "AUTH-9350",
     # Container module (checks_container.py)
     "check_container_runtime_socket_exposure": "CONT-8107",
+    # Local TLS certificate module (checks_tls.py)
+    "check_tls_certificate_expiry": "TLS-4500",
     # Accounting & audit module (checks_audit.py)
     "check_process_accounting": "ACCT-5000",
     "check_auditd_service": "ACCT-5001",

@@ -7,13 +7,16 @@ import pytest
 
 from auditless.config import (
     DEFAULT_FIM_MAX_AGE_DAYS,
+    DEFAULT_TLS_CERT_WARN_DAYS,
     MAX_FIM_MAX_AGE_DAYS,
+    MAX_TLS_CERT_WARN_DAYS,
     ScanProfile,
     get_config_dirs,
     get_default_profile_paths,
     load_profile_auto,
     merge_cli_test_filters,
     normalize_fim_max_age_days,
+    normalize_tls_cert_warn_days,
     parse_test_id_list,
 )
 
@@ -134,6 +137,61 @@ def test_lint_fim_max_age_days_range() -> None:
     for bad in (0, -1, MAX_FIM_MAX_AGE_DAYS + 1, "soon"):
         errors, _ = lint_profile({"fim_max_age_days": bad})
         assert any("fim_max_age_days" in error for error in errors)
+
+
+def test_default_tls_cert_warn_days() -> None:
+    """Profiles keep a 30-day TLS certificate warning window by default."""
+    assert ScanProfile().tls_cert_warn_days == DEFAULT_TLS_CERT_WARN_DAYS == 30
+
+
+def test_load_profile_custom_tls_cert_warn_days(tmp_path: Path) -> None:
+    """A profile can tune the TLS certificate expiry warning threshold."""
+    from auditless.config import load_profile
+
+    profile = tmp_path / "tls.yaml"
+    profile.write_text("name: tls\ntls_cert_warn_days: 45\n", encoding="utf-8")
+    assert load_profile(profile).tls_cert_warn_days == 45
+
+
+def test_load_profile_bad_tls_cert_warn_days_falls_back(tmp_path: Path) -> None:
+    """Invalid YAML values never crash profile loading."""
+    from auditless.config import load_profile
+
+    profile = tmp_path / "tls.yaml"
+    profile.write_text("name: tls\ntls_cert_warn_days: soon\n", encoding="utf-8")
+    assert load_profile(profile).tls_cert_warn_days == 30
+
+
+@pytest.mark.parametrize(
+    "bad", [0, -1, MAX_TLS_CERT_WARN_DAYS + 1, 30.0, "30", True, None]
+)
+def test_normalize_tls_cert_warn_days_rejects_bad_input(bad: object) -> None:
+    """Only positive ints within the sane bound are accepted."""
+    assert normalize_tls_cert_warn_days(bad) == 30
+    assert (
+        normalize_tls_cert_warn_days(MAX_TLS_CERT_WARN_DAYS) == MAX_TLS_CERT_WARN_DAYS
+    )
+
+
+def test_lint_tls_cert_warn_days_range() -> None:
+    """Profile linting flags out-of-range TLS thresholds, not valid ones."""
+    from auditless.config import lint_profile
+
+    assert lint_profile({"tls_cert_warn_days": 30}) == ([], [])
+    for bad in (0, -1, MAX_TLS_CERT_WARN_DAYS + 1, "soon"):
+        errors, _ = lint_profile({"tls_cert_warn_days": bad})
+        assert any("tls_cert_warn_days" in error for error in errors)
+
+
+def test_lint_accepts_tls_cert_expiry_id() -> None:
+    """The local service certificate check is usable in profiles."""
+    from auditless.config import lint_profile
+
+    errors, warnings = lint_profile(
+        {"skip_tests": ["TLS-4500"], "only_tests": ["TLS-4500"]}
+    )
+    assert not any("TLS-4500" in e and "unknown" in e for e in errors)
+    assert any("skip wins" in w for w in warnings)
 
 
 def test_parse_test_id_list() -> None:

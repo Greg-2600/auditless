@@ -250,9 +250,16 @@ class TestCheckTestIdRegistry:
         import auditless.checks_database as database_mod
         import auditless.checks_filesystem as filesystem_mod
         import auditless.checks_packages as packages_mod
+        import auditless.checks_tls as tls_mod
         from auditless.test_ids import CHECK_TEST_IDS
 
-        modules = (audit_mod, filesystem_mod, database_mod, packages_mod)
+        modules = (
+            audit_mod,
+            filesystem_mod,
+            database_mod,
+            packages_mod,
+            tls_mod,
+        )
         for mod in modules:
             names = {
                 name
@@ -322,6 +329,7 @@ class TestCheckTestIdRegistry:
         import auditless.checks_database as database_mod
         import auditless.checks_filesystem as filesystem_mod
         import auditless.checks_packages as packages_mod
+        import auditless.checks_tls as tls_mod
 
         fn = None
         for mod in (
@@ -331,6 +339,7 @@ class TestCheckTestIdRegistry:
             database_mod,
             packages_mod,
             container_mod,
+            tls_mod,
         ):
             fn = getattr(mod, func_name, None)
             if fn is not None:
@@ -388,6 +397,7 @@ class TestMainScanOrchestration:
             "run_all_package_management_checks",
             "run_all_container_checks",
             "run_all_webserver_checks",
+            "run_all_tls_checks",
             "run_all_dns_checks",
         ):
             monkeypatch.setattr(cli, name, lambda *a, **k: [])
@@ -441,6 +451,25 @@ class TestMainScanOrchestration:
             assert get_fim_max_age_days() == 90
         finally:
             set_fim_max_age_days(None)
+
+    def test_profile_tls_threshold_reaches_checks(self, monkeypatch, tmp_path):
+        """--profile applies the TLS threshold; the next scan resets it."""
+        from auditless import cli
+        from auditless.checks_tls import (
+            get_tls_cert_warn_days,
+            set_tls_cert_warn_days,
+        )
+
+        self._patch_all(monkeypatch)
+        profile = tmp_path / "tls.yaml"
+        profile.write_text("name: tls\ntls_cert_warn_days: 45\n", encoding="utf-8")
+        try:
+            assert cli.main(["h", "u", "pw", "--profile", str(profile)]) == 0
+            assert get_tls_cert_warn_days() == 45
+            assert cli.main(["h", "u", "pw"]) == 0
+            assert get_tls_cert_warn_days() == 30
+        finally:
+            set_tls_cert_warn_days(None)
 
     def test_main_jobs_flag_selects_runner(self, monkeypatch):
         """--jobs 1 runs sequential, default/>1 runs the parallel pool."""
