@@ -1,6 +1,6 @@
 """Unit tests for Database Security Module (checks_database.py).
 
-Tests all 8 database security checks (DBS-1000 through DBS-1007) with
+Tests all 9 database security checks (DBS-1000 through DBS-1008) with
 pass/warn/fail scenarios and error handling.
 """
 
@@ -14,6 +14,7 @@ from auditless.checks import disable_command_cache, reset_command_cache
 from auditless.checks_database import (
     check_database_backup_configuration,
     check_database_service_hardening,
+    check_datastore_auth,
     check_mongodb_authentication,
     check_mysql_anonymous_accounts,
     check_mysql_presence,
@@ -493,17 +494,309 @@ class TestCheckDatabaseBackupConfiguration:
         assert "configured" in result.details.lower()
 
 
+class TestCheckDatastoreAuth:
+    """Test Redis/Memcached/Elasticsearch bind and auth checks (DBS-1008)."""
+
+    @staticmethod
+    def _probe(markers: str, listeners: str = "") -> str:
+        """Build a combined presence/listener probe response."""
+        header = "Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port"
+        return f"{markers}\n===LISTENERS===\n{header}\n{listeners}"
+
+    def test_no_datastore_installed_passes_cleanly(self):
+        """Hosts without Redis/Memcached/Elasticsearch skip as not applicable."""
+        ssh = mock_ssh_exec([(0, self._probe(""), "")])
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "pass"
+        assert "No Redis, Memcached, or Elasticsearch" in result.details
+        assert result.test_id == "DBS-1008"
+        assert result.category == "Database"
+
+    def test_redis_public_without_password_fails(self):
+        """Redis on 0.0.0.0 without requirepass is remotely exposed."""
+        ssh = mock_ssh_exec(
+            [
+                (
+                    0,
+                    self._probe(
+                        "BIN:redis-server",
+                        "tcp LISTEN 0 511 0.0.0.0:6379 0.0.0.0:*",
+                    ),
+                    "",
+                ),
+                (
+                    0,
+                    "FILE:/etc/redis/redis.conf\n"
+                    "bind 0.0.0.0\n"
+                    "protected-mode no\n"
+                    "# requirepass should-be-uncommented\n",
+                    "",
+                ),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "fail"
+        assert "Redis listening on 0.0.0.0 without authentication" in result.details
+        assert "requirepass" in result.recommendation
+
+    def test_redis_loopback_with_password_passes(self):
+        """Redis bound to loopback with requirepass is safe."""
+        ssh = mock_ssh_exec(
+            [
+                (
+                    0,
+                    self._probe(
+                        "BIN:redis-server",
+                        "tcp LISTEN 0 511 127.0.0.1:6379 0.0.0.0:*",
+                    ),
+                    "",
+                ),
+                (
+                    0,
+                    "bind 127.0.0.1 -::1\n"
+                    "protected-mode yes\n"
+                    "requirepass s3cret-value\n",
+                    "",
+                ),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "pass"
+        assert "Redis listening on loopback with requirepass" in result.details
+        assert "s3cret-value" not in result.details
+
+    def test_redis_public_config_without_listener_fails(self):
+        """An installed Redis configured for non-loopback access fails."""
+        ssh = mock_ssh_exec(
+            [
+                (0, self._probe("BIN:redis-server"), ""),
+                (0, "bind 0.0.0.0\nprotected-mode no\n", ""),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "fail"
+        assert "configured for non-loopback access" in result.details
+
+    def test_redis_defaults_to_protected_loopback(self):
+        """Missing Redis config keeps protected-mode loopback defaults."""
+        ssh = mock_ssh_exec(
+            [
+                (0, self._probe("BIN:redis-server"), ""),
+                (0, "", ""),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "pass"
+        assert "Redis bound to loopback" in result.details
+
+    def test_redis_acl_password_counts_as_auth(self):
+        """Redis 6 ACL passwords (not just requirepass) count as auth."""
+        ssh = mock_ssh_exec(
+            [
+                (
+                    0,
+                    self._probe(
+                        "BIN:redis-server",
+                        "tcp LISTEN 0 511 0.0.0.0:6379 0.0.0.0:*",
+                    ),
+                    "",
+                ),
+                (0, "bind 0.0.0.0\nuser default on >s3cret ~* +@all\n", ""),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "pass"
+        assert "requirepass/ACL authentication" in result.details
+
+    def test_memcached_public_without_sasl_fails(self):
+        """Memcached listening on all interfaces without SASL is exposed."""
+        ssh = mock_ssh_exec(
+            [
+                (
+                    0,
+                    self._probe(
+                        "BIN:memcached",
+                        "tcp LISTEN 0 128 0.0.0.0:11211 0.0.0.0:*",
+                    ),
+                    "",
+                ),
+                (0, "-l 0.0.0.0\n-p 11211\n", ""),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "fail"
+        assert "Memcached listening on 0.0.0.0 without authentication" in (
+            result.details
+        )
+
+    def test_memcached_loopback_with_sasl_passes(self):
+        """Memcached bound to loopback with SASL is safe."""
+        ssh = mock_ssh_exec(
+            [
+                (
+                    0,
+                    self._probe(
+                        "BIN:memcached",
+                        "tcp LISTEN 0 128 127.0.0.1:11211 0.0.0.0:*",
+                    ),
+                    "",
+                ),
+                (0, "-l 127.0.0.1\n-S\n", ""),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "pass"
+        assert "Memcached listening on loopback with SASL authentication" in (
+            result.details
+        )
+
+    def test_memcached_default_bind_fails_without_listener(self):
+        """Memcached without -l defaults to all interfaces and no auth."""
+        ssh = mock_ssh_exec(
+            [
+                (0, self._probe("BIN:memcached"), ""),
+                (0, "-p 11211\n", ""),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "fail"
+        assert "Memcached configured for non-loopback access" in result.details
+
+    def test_elasticsearch_public_without_security_fails(self):
+        """Elasticsearch on 0.0.0.0 with xpack security off is exposed."""
+        ssh = mock_ssh_exec(
+            [
+                (
+                    0,
+                    self._probe(
+                        "BIN:elasticsearch",
+                        "tcp LISTEN 0 128 0.0.0.0:9200 0.0.0.0:*",
+                    ),
+                    "",
+                ),
+                (
+                    0,
+                    "network.host: 0.0.0.0\nxpack.security.enabled: false\n",
+                    "",
+                ),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "fail"
+        assert "Elasticsearch listening on 0.0.0.0 without authentication" in (
+            result.details
+        )
+
+    def test_elasticsearch_public_with_security_passes(self):
+        """Elasticsearch exposed publicly with xpack security enabled is safe."""
+        ssh = mock_ssh_exec(
+            [
+                (
+                    0,
+                    self._probe(
+                        "BIN:elasticsearch",
+                        "tcp LISTEN 0 128 0.0.0.0:9200 0.0.0.0:*",
+                    ),
+                    "",
+                ),
+                (
+                    0,
+                    "network.host: 0.0.0.0\nxpack.security.enabled: true\n",
+                    "",
+                ),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "pass"
+        assert "Elasticsearch listening on 0.0.0.0 with xpack.security" in (
+            result.details
+        )
+
+    def test_elasticsearch_local_default_passes(self):
+        """Elasticsearch's default _local_ network.host stays on loopback."""
+        ssh = mock_ssh_exec(
+            [
+                (0, self._probe("BIN:elasticsearch"), ""),
+                (0, "network.host: _local_\nxpack.security.enabled: false\n", ""),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "pass"
+        assert "Elasticsearch bound to loopback" in result.details
+
+    def test_elasticsearch_site_host_without_security_fails(self):
+        """Elasticsearch _site_ binds beyond loopback and needs security."""
+        ssh = mock_ssh_exec(
+            [
+                (0, self._probe("BIN:elasticsearch"), ""),
+                (0, "network.host: _site_\n", ""),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "fail"
+        assert "Elasticsearch configured for non-loopback access" in result.details
+
+    def test_elasticsearch_transport_port_is_checked(self):
+        """The 9300 transport port is covered as well as HTTP 9200."""
+        ssh = mock_ssh_exec(
+            [
+                (
+                    0,
+                    self._probe(
+                        "BIN:elasticsearch",
+                        "tcp LISTEN 0 128 [::]:9300 [::]:*",
+                    ),
+                    "",
+                ),
+                (0, "network.host: _site_\n", ""),
+            ]
+        )
+
+        result = check_datastore_auth(ssh)
+
+        assert result.status == "fail"
+        assert "Elasticsearch listening on :: without authentication" in (
+            result.details
+        )
+
+
 class TestRunAllDatabaseChecks:
     """Test run_all_database_checks function."""
 
     def test_all_checks_executed(self):
-        """Test that all 8 database checks are executed."""
+        """Test that all 9 database checks are executed."""
         ssh = MagicMock()
         ssh.exec.return_value = (1, "", "")  # Default: not installed
 
         results = run_all_database_checks(ssh, password="test")
 
-        assert len(results) == 8
+        assert len(results) == 9
         assert all(isinstance(r.test_id, str) for r in results)
         assert all(r.category in ["Database", "Accounting"] for r in results)
 
@@ -514,7 +807,7 @@ class TestRunAllDatabaseChecks:
 
         results = run_all_database_checks(ssh, password="test")
 
-        # Should still return 8 results, all marked unknown (not fail)
-        assert len(results) == 8
+        # Should still return 9 results, all marked unknown (not fail)
+        assert len(results) == 9
         assert all(r.status == "unknown" for r in results)
         assert all("error" in r.details.lower() for r in results)
