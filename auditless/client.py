@@ -258,6 +258,18 @@ class ApiClient:
         result: dict[str, Any] = self._request("GET", f"/api/reports/{report_id}")
         return result
 
+    def get_stored_report_rendered(
+        self,
+        report_id: str,
+        format: str = "json",  # pylint: disable=redefined-builtin
+    ) -> Any:
+        """Persisted report re-rendered as json, md or text (GET .../report)."""
+        return self._request(
+            "GET",
+            f"/api/reports/{report_id}/report",
+            params={"format": format},
+        )
+
     def delete_stored_report(self, report_id: str) -> dict[str, Any]:
         """Forget a persisted report (DELETE /api/reports/{id})."""
         result: dict[str, Any] = self._request("DELETE", f"/api/reports/{report_id}")
