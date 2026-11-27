@@ -116,7 +116,7 @@ Inspired by industry-standard tools like **Lynis**, this scanner achieves **95%+
 | **System Tools** | 1 | Compiler presence on production, development tools audit |
 | **Hardware Security** | 2 | USB storage controls, hardware security module checks, USB device authorization (authorized_default, USBGuard, UDISKS) |
 | **Web Server** | 1 | Apache/Nginx configuration, version disclosure, SSL/TLS setup |
-| **Database** | 1 | MySQL/PostgreSQL security, authentication, remote access controls |
+| **Database** | 2 | MySQL/PostgreSQL security, authentication, remote access controls, Redis/Memcached/Elasticsearch bind and auth exposure |
 | **Mail Server** | 1 | Postfix/Exim/Sendmail relay protection, TLS configuration |
 | **Application Security** | 1 | PHP configuration hardening, exact dangerous-function allowlist, version disclosure, FPM pool user/socket/bind and opcache API restrictions |
 | **Name Service** | 1 | DNS resolver configuration, DNSSEC validation, redundancy checks |

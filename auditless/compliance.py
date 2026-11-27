@@ -50,6 +50,7 @@ UNMAPPED_REASONS: dict[str, str] = {
     "DBS-1005": "databases are outside the CIS OS benchmark",
     "DBS-1006": "databases are outside the CIS OS benchmark",
     "DBS-1007": "databases are outside the CIS OS benchmark",
+    "DBS-1008": "datastore bind/authentication is outside the CIS OS benchmark",
     "MAIL-8816": "mail servers are outside the CIS OS benchmark",
     "PHP-2320": "interpreters are outside the CIS OS benchmark",
     "NAME-4016": "resolver configuration has no CIS control",

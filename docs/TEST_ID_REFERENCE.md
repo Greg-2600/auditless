@@ -135,6 +135,7 @@ Examples:
 | DBS-1005 | MongoDB Authentication | DBS-1900 | Planned |
 | DBS-1006 | Database Hardening | DBS-2000 | Planned |
 | DBS-1007 | Database Backups | DBS-2100 | Planned |
+| DBS-1008 | Redis/Memcached/Elasticsearch Bind + Auth | - | Implemented |
 
 ### Audit & Accounting (ACCT)
 | Test ID | Check Name | Lynis Equivalent | Status |
@@ -288,7 +289,7 @@ Examples:
 | BOOT | Boot | 5100-5199 | - | - |
 | CONT | Containers | 8000-8099 | 8000 | 8100-8107 |
 | CPU | CPU/Load | 2800-2899 | 2800 | - |
-| DB | Databases | 1000-1099 | - | 1000-1007 |
+| DB | Databases | 1000-1099 | - | 1000-1008 |
 | DHCP | DHCP | 3400-3499 | - | - |
 | DNS | DNS | 4000-4099 | - | 4000-4004 |
 | FILE | File Integrity | 6400-6799 | 6510, 6700, 7600, 8100 | - |
