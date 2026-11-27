@@ -66,7 +66,7 @@ Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is auth
 - [ ] 30 — [P1] Per-host scan history timeline with index sparkline drill-down (click point → report). `ui` (effort: M)
 - [ ] 31 — [P1] Compare any two reports from UI (today API-only `/api/diff` + one button path — make it first-class). `ui` (effort: S)
 - [ ] 32 — [P1] Host groups / tags (prod/staging, team) with group-level fleet rollups. `api` (effort: M)
-- [ ] 33 — [P1] API client (`client.py`) parity audit: every new endpoint gets a client method + test on day one. `api` (effort: S)
+- [x] 33 — [P1] API client (`client.py`) parity audit: every new endpoint gets a client method + test on day one. `api` (effort: S) (done: added stored-report re-render client method and an offline route/client parity test)
 - [ ] 34 — [P1] OpenAPI examples + error schema consistency (`application/problem+json` for all 4xx/5xx). `api` (effort: S)
 - [ ] 35 — [P1] Audit-trail UI viewer (hash chain, verify button mirrors `GET /api/audit/verify`). `ui` (effort: S)
 - [ ] 36 — [P1] Token management UI (mint/revoke/last-used) — today API-only. `ui` (effort: M)
