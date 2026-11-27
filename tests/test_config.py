@@ -234,6 +234,17 @@ def test_lint_accepts_container_runtime_socket_id() -> None:
     assert any("skip wins" in w for w in warnings)
 
 
+def test_lint_accepts_datastore_auth_id() -> None:
+    """The datastore bind/auth check is usable in profiles."""
+    from auditless.config import lint_profile
+
+    errors, warnings = lint_profile(
+        {"skip_tests": ["DBS-1008"], "only_tests": ["DBS-1008"]}
+    )
+    assert not any("DBS-1008" in e and "unknown" in e for e in errors)
+    assert any("skip wins" in w for w in warnings)
+
+
 def _warnings_for_overlap() -> list:
     """Overlap warning helper sharing the overlap fixture profile."""
     from auditless.config import lint_profile

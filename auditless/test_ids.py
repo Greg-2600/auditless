@@ -95,6 +95,7 @@ CHECK_TEST_IDS: dict[str, str] = {
     "check_mysql_remote_root": "DBS-1003",
     "check_postgresql_security": "DBS-1004",
     "check_mongodb_authentication": "DBS-1005",
+    "check_datastore_auth": "DBS-1008",
     "check_database_service_hardening": "DBS-1006",
     "check_database_backup_configuration": "DBS-1007",
     # Package module (checks_packages.py)

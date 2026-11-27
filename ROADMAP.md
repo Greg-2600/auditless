@@ -43,7 +43,7 @@ Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is auth
 - [x] 12 — [P1] Logrotate presence + auth/syslog rotation config. `checks` (effort: S)
 - [x] 13 — [P1] Journald persistence (`Storage=persistent`, `SystemMaxUse`, forwarding). `checks` (effort: S) (done: ACCT-5007 audits storage, size limits, forwarding)
 - [x] 14 — [P1] PHP-FPM / opcache / `disable_functions` audit (where PHP present). `checks` (effort: S) (done: PHP-2320 stage 2 audits FPM pools, opcache API, exact disable_functions)
-- [ ] 15 — [P1] Redis/Memcached/Elasticsearch bind + auth checks (no open `0.0.0.0` without password). `checks` (effort: M)
+- [x] 15 — [P1] Redis/Memcached/Elasticsearch bind + auth checks (no open `0.0.0.0` without password). `checks` (effort: M) (done: DBS-1008 fails non-loopback Redis/Memcached/Elasticsearch without auth, passes loopback/authenticated configs, and skips cleanly when absent)
 - [ ] 16 — [P1] TLS certificate expiry scan for local services (not just web: mail, DB). `checks` (effort: M)
 - [ ] 17 — [P1] World-writable + SUID/SGID combined triage with package-owned allowlist to cut noise. `checks` (effort: M)
 - [x] 18 — [P1] Container runtime socket exposure (`/var/run/docker.sock` perms, Podman socket, containerd). `checks` (effort: S) (done: CONT-8107 fails world-accessible sockets, warns on group write outside root/docker/podman/containerd, and passes CIS-compliant root-owned runtime-group defaults)
