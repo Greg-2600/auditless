@@ -64,7 +64,7 @@ Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is auth
 - [ ] 28 — [P1] Global search (hosts, reports, check IDs, CVE strings) with keyboard shortcut. `ui` (effort: M)
 - [ ] 29 — [P1] Saved report views (filters as shareable query strings). `ui` (effort: S)
 - [ ] 30 — [P1] Per-host scan history timeline with index sparkline drill-down (click point → report). `ui` (effort: M)
-- [ ] 31 — [P1] Compare any two reports from UI (today API-only `/api/diff` + one button path — make it first-class). `ui` (effort: S)
+- [x] 31 — [P1] Compare any two reports from UI (today API-only `/api/diff` + one button path — make it first-class). `ui` (effort: S) (done: dedicated compare card filters reports by host, offers baseline/current selectors and reuses `/api/diff`; A/B shortcuts prefill it and host-controlled text is escaped)
 - [ ] 32 — [P1] Host groups / tags (prod/staging, team) with group-level fleet rollups. `api` (effort: M)
 - [x] 33 — [P1] API client (`client.py`) parity audit: every new endpoint gets a client method + test on day one. `api` (effort: S) (done: added stored-report re-render client method and an offline route/client parity test)
 - [ ] 34 — [P1] OpenAPI examples + error schema consistency (`application/problem+json` for all 4xx/5xx). `api` (effort: S)

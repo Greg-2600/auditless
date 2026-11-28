@@ -400,8 +400,9 @@ exposing it.
   is recommended. CLI: `--jump-host`, `--jump-user`, `--jump-port`,
   `--jump-key-file`, `--jump-password`.
 - **Reports** (`/api/reports`) persist across restarts; **diff**
-  (`/api/diff?from_id=..&to_id=..`, plus the UI Compare button) shows
-  fixed/regressed checks; lists page and filter by host, status, date.
+  (`/api/diff?from_id=..&to_id=..`) shows fixed/regressed/changed checks.
+  The UI compare card filters by host and lets you pick any baseline and
+  current report; lists page and filter by host, status, date.
 - **Backups** (`POST /api/maintenance/backup`, plus a daily automatic
   snapshot, pruned server-side) protect the SQLite store.
 
