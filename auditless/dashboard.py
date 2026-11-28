@@ -1149,9 +1149,18 @@ run only &mdash; never stored or logged. Binds to localhost; do not expose witho
 <button onclick="addSched()">Add schedule</button>
 <div id="scheds" class="hist" style="margin-top:10px">loading&hellip;</div>
 </div>
+<div class="card"><h3 style="margin-top:0">Compare reports <span style="color:var(--dim);font-size:12px;font-weight:400">&mdash; pick any two runs for a host</span></h3>
+<div class="row" style="grid-template-columns:1fr 1fr 1fr 130px">
+<div><label>Host</label><select id="cmpHost" onchange="loadCompareReports()"><option value="">all saved reports</option></select></div>
+<div><label>Baseline (A)</label><select id="cmpA"></select></div>
+<div><label>Current (B)</label><select id="cmpB"></select></div>
+<div><label>&nbsp;</label><button id="cmpGo" style="margin:0" onclick="runDiff()" disabled>Compare</button></div>
+</div>
+<div class="note">Checks are matched by test ID; the newest 200 reports for the selected host are listed. The A/B shortcuts in Saved reports prefill these selectors.</div>
+<div class="toolbar"><button style="margin:0" onclick="loadCompareHosts()">Refresh list</button></div>
+<div id="cmpstat" class="hist"></div><div id="cmpout"></div></div>
 <div class="card"><h3 style="margin-top:0">Saved reports (persisted)</h3>
-<div class="toolbar"><button style="margin:0" onclick="loadReports()">Refresh</button>
-<button style="margin:0" onclick="runDiff()">Compare A &rarr; B</button></div>
+<div class="toolbar"><button style="margin:0" onclick="loadReports()">Refresh</button></div>
 <div id="reps" class="hist">loading&hellip;</div><div id="diff"></div></div>
 <div class="card"><h3 style="margin-top:0">Saved hosts</h3>
 <div class="row" style="grid-template-columns:1fr 1fr 1fr 100px 110px">
@@ -1300,7 +1309,46 @@ async function show(id){cur=id;const j=await api("/api/scans/"+id);
  if(j.status==="done"){status("done", j.log||"", false);render(j.report);}
  else if(j.status==="error"){status('<span class="err">'+esc(j.error||"failed")+"</span>", j.log||"", true)}
  else status(esc(j.progress||j.status)+"&hellip;", j.log||"", true)}
-let diffA=null,diffB=null;
+let cmpData=[];
+function cmpLabel(x){const when=x.finished_at||x.created_at;
+ const ts=when?new Date(when*1000).toLocaleString():"unknown time";
+ return (x.hostname||"?")+" \u2014 "+ts+" \u2014 "+(x.hardening_index??"?")+"/100"}
+async function loadCompareHosts(){
+ try{const h=await api("/api/hosts");
+  const sel=document.getElementById("cmpHost");
+  const cur=sel.value;
+  sel.innerHTML='<option value="">all saved reports</option>'+
+   h.map(x=>`<option value="${esc(x.id)}">${esc(x.name)} (${esc(x.hostname)})</option>`).join("");
+  if([...sel.options].some(o=>o.value===cur))sel.value=cur;
+ }catch(e){document.getElementById("cmpstat").textContent="hosts unavailable"}
+ await loadCompareReports()}
+async function loadCompareReports(){
+ const host=document.getElementById("cmpHost").value;
+ const a=document.getElementById("cmpA"),b=document.getElementById("cmpB");
+ const prevA=a.value,prevB=b.value;
+ try{
+  const q=host?"&host_id="+encodeURIComponent(host):"";
+  cmpData=await api("/api/reports?limit=200"+q);
+ }catch(e){cmpData=[]}
+ const opts=cmpData.map(x=>`<option value="${esc(x.id)}">${esc(cmpLabel(x))}</option>`).join("");
+ a.innerHTML=opts;b.innerHTML=opts;
+ const ids=cmpData.map(x=>x.id);
+ a.value=ids.includes(prevA)?prevA:(ids.length>1?ids[1]:(ids[0]||""));
+ b.value=ids.includes(prevB)?prevB:(ids[0]||"");
+ document.getElementById("cmpGo").disabled=cmpData.length<2;
+ const stat=document.getElementById("cmpstat");
+ if(!cmpData.length){stat.textContent="no saved reports for this selection";
+  document.getElementById("cmpout").innerHTML=""}
+ else if(cmpData.length===1){stat.textContent="one report \u2014 scan again to compare";
+  document.getElementById("cmpout").innerHTML=""}
+ else stat.textContent=cmpData.length+" reports available"}
+async function addCmpOption(sel,id){
+ if([...sel.options].some(o=>o.value===id))return true;
+ try{
+  const r=await api("/api/reports/"+encodeURIComponent(id));
+  const o=document.createElement("option");
+  o.value=id;o.textContent=cmpLabel(r);sel.appendChild(o);return true;
+ }catch(e){return false}}
 async function loadHosts(){
  try{const h=await api("/api/hosts");
   hostsel.innerHTML='<option value="">manual entry</option>'+h.map(x=>
@@ -1516,8 +1564,15 @@ async function approveFix(pid){
   `<p class="hist">Verification scan: <a onclick="show('${r.verification_job_id}')">${r.verification_job_id}</a> (polls automatically)</p>`;
  cur=r.verification_job_id;poll();loadHist();}
 async function delReport(id){await api("/api/reports/"+id,{method:"DELETE"});loadReports()}
-function setDiff(which,id){if(which==="A")diffA=id;else diffB=id;
- status("diff: A="+(diffA||"?")+" B="+(diffB||"?"))}
+async function setDiff(which,id){
+ const sel=document.getElementById(which==="A"?"cmpA":"cmpB");
+ if(!(await addCmpOption(sel,id))){
+  status('<span class="err">could not load report for compare</span>');return}
+ sel.value=id;
+ const picked=sel.options[sel.selectedIndex];
+ document.getElementById("cmpstat").textContent=
+  (which==="A"?"baseline A":"current B")+": "+(picked?picked.text:"");
+ document.getElementById("cmpout").scrollIntoView({behavior:"smooth",block:"nearest"})}
 async function showComp(hostId){
  const fw=(document.getElementById("compfw")||{}).value||"auto";
  const c=await api("/api/hosts/"+hostId+"/compliance?framework="+fw);
@@ -1532,16 +1587,29 @@ async function showComp(hostId){
   `<h4>By section</h4><table><tr><th>Section</th><th>Score</th><th>Controls</th></tr>${secs}</table>`+
   `<h4>Controls</h4><table><tr><th>Control</th><th>Level</th><th>Status</th><th>Score</th><th>Tests</th></tr>${rows}</table>`}
 async function runDiff(){
- if(!diffA||!diffB){status('<span class="err">pick A and B reports first</span>');return}
- const d=await api("/api/diff?from_id="+diffA+"&to_id="+diffB);
- const row=x=>`<tr><td>${esc(x.test_id||"")}</td><td>${esc(x.item||"")}</td>`+
-  `<td>${esc(x.from||"")}&rarr;<b>${esc(x.to||"")}</b></td></tr>`;
- document.getElementById("diff").innerHTML=
-  `<h4>Hardening ${d.hardening_before} &rarr; <b>${d.hardening_after}</b>`+
-  ` (delta ${d.hardening_delta>=0?"+":""}${d.hardening_delta})</h4>`+
-  `<h4 class="pass">Fixed (${d.fixed.length})</h4><table>${d.fixed.map(row).join("")}</table>`+
-  `<h4 class="fail">Regressed (${d.regressed.length})</h4><table>${d.regressed.map(row).join("")}</table>`+
-  (d.new.length?`<h4>New (${d.new.length})</h4><table>${d.new.map(row).join("")}</table>`:"");}
+ const a=document.getElementById("cmpA").value;
+ const b=document.getElementById("cmpB").value;
+ const out=document.getElementById("cmpout");
+ if(!a||!b){out.innerHTML='<p class="err">pick two reports first</p>';return}
+ if(a===b){out.innerHTML='<p class="err">pick two different reports</p>';return}
+ try{
+  const d=await api("/api/diff?from_id="+encodeURIComponent(a)+"&to_id="+encodeURIComponent(b));
+  const row=x=>`<tr><td>${esc(x.test_id||"")}</td><td>${esc(x.item||"")}</td>`+
+   `<td>${esc(x.category||"")}</td><td>${esc(x.from||"")}&rarr;<b>${esc(x.to||"")}</b></td></tr>`;
+  const table=items=>items.length?`<table><tr><th>Test</th><th>Item</th><th>Category</th><th>Status</th></tr>`+
+   items.map(row).join("")+"</table>":'<p class="hist">none</p>';
+  const from=d.from||{},to=d.to||{};
+  out.innerHTML=
+   `<h4>${esc(from.hostname||"")} <span style="color:var(--dim)">${esc(a)}</span> &rarr; `+
+   `${esc(to.hostname||"")} <span style="color:var(--dim)">${esc(b)}</span></h4>`+
+   `<h4>Hardening ${d.hardening_before??"?"} &rarr; <b>${d.hardening_after??"?"}</b>`+
+   ` (delta ${d.hardening_delta>=0?"+":""}${d.hardening_delta})</h4>`+
+   `<h4 class="pass">Fixed (${d.fixed.length})</h4>${table(d.fixed)}`+
+   `<h4 class="fail">Regressed (${d.regressed.length})</h4>${table(d.regressed)}`+
+   `<h4>Changed (${(d.changed||[]).length})</h4>${table(d.changed||[])}`+
+   (d.new.length?`<h4>New (${d.new.length})</h4>${table(d.new)}`:"")+
+   (d.gone.length?`<h4>Gone (${d.gone.length})</h4>${table(d.gone)}`:"");
+ }catch(e){out.innerHTML='<p class="err">'+esc(e.message)+"</p>"}}
 function render(r){
  const s=r.summary||{};const cats=r.hardening_by_category||{};
  const el=document.getElementById("result");
@@ -1584,6 +1652,7 @@ function dl(){const b=new Blob([JSON.stringify(window._rep,null,2)],
  a.href=URL.createObjectURL(b);a.download="auditless-report.json";a.click()}
 loadHist();
 loadHosts();
+loadCompareHosts();
 loadReports();
 loadFleet();
 loadHeatmap();

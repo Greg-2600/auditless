@@ -210,6 +210,52 @@ def test_scan_history_link_renders_report(
     assert "Firewall" in result_text
 
 
+def test_compare_any_two_reports_escapes_host_text(
+    driver: Chrome,
+    server: tuple[str, ApiClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pick two runs for one host; diff renders with escaped host text."""
+    base_url, api = server
+    evil = '<img src=x onerror="window.__xss=1">'
+    reports = [_canned_report(), _canned_report()]
+    reports[1]["checks"][0]["status"] = "pass"  # FIRE-4512 fixed
+    reports[1]["summary"]["hardening_index"] = 55
+    pending = iter(reports)
+
+    def fake_run_scan(params: dict[str, Any]) -> dict[str, Any]:
+        params["password"] = None
+        return next(pending)
+
+    monkeypatch.setattr(dashboard, "run_scan", fake_run_scan)
+    host = api.create_host("cmp-host", evil, "root", auth="password")
+    for _ in range(2):
+        done = api.wait_for(api.start_scan(host_id=host["id"], password="pw")["id"])
+        assert done["status"] == "done"
+
+    driver.get(base_url + "/")
+    wait = WebDriverWait(driver, WAIT_SECONDS)
+    wait.until(
+        EC.presence_of_element_located(
+            (By.CSS_SELECTOR, f'#cmpHost option[value="{host["id"]}"]')
+        )
+    )
+    Select(driver.find_element(By.ID, "cmpHost")).select_by_value(host["id"])
+    wait.until(lambda d: len(Select(d.find_element(By.ID, "cmpA")).options) >= 2)
+    assert len(Select(driver.find_element(By.ID, "cmpA")).options) == 2
+    assert len(Select(driver.find_element(By.ID, "cmpB")).options) == 2
+
+    driver.find_element(By.ID, "cmpGo").click()
+    wait.until(EC.text_to_be_present_in_element((By.ID, "cmpout"), "Fixed (1)"))
+    out = driver.find_element(By.ID, "cmpout").text
+    assert "Hardening 50" in out and "55" in out
+    assert "FIRE-4512" in out
+    # Host-controlled text is rendered as text, never as live HTML.
+    assert driver.find_elements(By.CSS_SELECTOR, "#cmpout img") == []
+    assert driver.execute_script("return window.__xss||0") == 0
+    _assert_no_severe_console_errors(driver)
+
+
 def test_fleet_table_shows_saved_host(
     driver: Chrome, server: tuple[str, ApiClient]
 ) -> None:

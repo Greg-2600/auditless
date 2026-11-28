@@ -88,6 +88,20 @@ def test_index_serves_spa(client):
     assert "/docs" in html
 
 
+def test_index_compare_reports_controls(client):
+    """Any two stored reports are selectable and diffed through /api/diff."""
+    import urllib.request
+
+    with urllib.request.urlopen(client.base_url + "/", timeout=10) as resp:
+        html = resp.read().decode()
+    for control in ("cmpHost", "cmpA", "cmpB", "cmpGo", "cmpout"):
+        assert f'id="{control}"' in html
+    assert 'api("/api/diff?from_id="' in html
+    assert "esc(from.hostname" in html
+    assert "esc(to.hostname" in html
+    assert "esc(x.test_id" in html
+
+
 def test_swagger_ui_available(client):
     import urllib.request
 
