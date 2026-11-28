@@ -90,6 +90,7 @@ CHECK_TEST_IDS: dict[str, str] = {
     "check_home_nosuid": "FS-3012",
     "check_var_permissions": "FS-3013",
     "check_filesystem_integrity_tools": "FS-3014",
+    "check_privileged_writable_triage": "FILE-7525",
     # Database module (checks_database.py)
     "check_mysql_presence": "DBS-1000",
     "check_mysql_root_password": "DBS-1001",

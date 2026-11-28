@@ -64,6 +64,7 @@ Examples:
 | FILE-6700 | World-Writable | ✅ | FILE-6700 |
 | FILE-7600 | Critical Perms | ✅ | FILE-7600 |
 | FILE-8100 | Binary Mods | ✅ | FILE-8100 |
+| FILE-7525 | Privileged/Writable Triage | ✅ | FILE-6510, FILE-6700 |
 
 ### System Time (TIME)
 | Test ID | Check Name | Current | Lynis Equivalent |
@@ -297,7 +298,7 @@ Examples:
 | DB | Databases | 1000-1099 | - | 1000-1008 |
 | DHCP | DHCP | 3400-3499 | - | - |
 | DNS | DNS | 4000-4099 | - | 4000-4004 |
-| FILE | File Integrity | 6400-6799 | 6510, 6700, 7600, 8100 | - |
+| FILE | File Integrity | 6400-6799 | 6510, 6700, 7525, 7600, 8100 | - |
 | FIRE | Firewall | 4400-4499 | - | - |
 | HTTP | Web Servers | 6500-6799 | - | 6500-6507 |
 | KRNL | Kernel | 5800-5899 | 5300 | - |

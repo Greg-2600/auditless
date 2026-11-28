@@ -111,6 +111,7 @@ TEST_CIS: dict[str, list[tuple[str, str]]] = {
     "FINT-4316": [("1.3", "direct")],
     "FILE-6310": [("1.1", "partial"), ("6.1", "partial")],
     "FILE-7524": [("6.1", "partial")],
+    "FILE-7525": [("6.1", "partial")],
     "SCHD-7230": [("2.4", "direct")],
     "LOGG-2154": [("4.1", "partial"), ("4.2", "partial")],
     "LOGG-2138": [("4.1", "partial"), ("4.2", "partial")],
