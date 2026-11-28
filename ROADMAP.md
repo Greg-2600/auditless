@@ -58,7 +58,7 @@ Each item = check + test IDs + fixtures + docs. Registry (`test_ids.py`) is auth
 
 - [ ] 23 — [P1] Token auth on by default when `AUDITLESS_TOKEN` set — audit remaining unauthenticated `/api/*` routes; add test matrix; lock timing-safe compare (`hmac.compare_digest`) with a test; assert tokens/secrets never hit logs. `api` (effort: M)
 - [ ] 24 — [P1] RBAC-lite: `viewer` vs `operator` tokens (view vs scan/remediate/rotate). `api` (effort: M)
-- [ ] 25 — [P1] Pagination + filtering on `/api/reports`, `/api/hosts`, `/api/scans` (limit/offset, status, host, date range). `api` (effort: M)
+- [x] 25 — [P1] Pagination + filtering on `/api/reports`, `/api/hosts`, `/api/scans` (limit/offset, status, host, date range). `api` (effort: M) (done: list endpoints accept bounded limit/offset plus status, host and since/until filters with 4xx validation; defaults unchanged and client parity tests cover the new parameters)
 - [ ] 26 — [P1] Live scan progress via WebSocket/SSE (`/api/scans/{id}/events`) instead of poll-only. `api` (effort: M)
 - [ ] 27 — [P1] Bulk host import (CSV/JSON) + export; validation errors reported per-row. `dashboard` (effort: M)
 - [ ] 28 — [P1] Global search (hosts, reports, check IDs, CVE strings) with keyboard shortcut. `ui` (effort: M)

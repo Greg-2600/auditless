@@ -95,9 +95,35 @@ class ApiClient:
         result: dict[str, Any] = self._request("GET", "/openapi.json")
         return result
 
-    def list_scans(self) -> list[dict[str, Any]]:
-        """Recent scan jobs, newest first (GET /api/scans)."""
-        result: list[dict[str, Any]] = self._request("GET", "/api/scans")
+    def list_scans(
+        self,
+        host: str | None = None,
+        status: str | None = None,
+        since: str | float | None = None,
+        until: str | float | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Recent scan jobs, newest first (GET /api/scans).
+
+        Optional host substring, status, created-at range and paging.
+        """
+        params: dict[str, str] = {}
+        if host:
+            params["host"] = host
+        if status:
+            params["status"] = status
+        if since is not None:
+            params["since"] = str(since)
+        if until is not None:
+            params["until"] = str(until)
+        if limit is not None:
+            params["limit"] = str(limit)
+        if offset:
+            params["offset"] = str(offset)
+        result: list[dict[str, Any]] = self._request(
+            "GET", "/api/scans", params=params or None
+        )
         return result
 
     def start_scan(
@@ -195,9 +221,32 @@ class ApiClient:
         )
         return result
 
-    def list_hosts(self) -> list[dict[str, Any]]:
-        """Saved hosts, metadata only (GET /api/hosts)."""
-        result: list[dict[str, Any]] = self._request("GET", "/api/hosts")
+    def list_hosts(
+        self,
+        host: str | None = None,
+        since: str | float | None = None,
+        until: str | float | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Saved hosts, metadata only (GET /api/hosts).
+
+        Optional host substring, created-at range and paging.
+        """
+        params: dict[str, str] = {}
+        if host:
+            params["host"] = host
+        if since is not None:
+            params["since"] = str(since)
+        if until is not None:
+            params["until"] = str(until)
+        if limit is not None:
+            params["limit"] = str(limit)
+        if offset:
+            params["offset"] = str(offset)
+        result: list[dict[str, Any]] = self._request(
+            "GET", "/api/hosts", params=params or None
+        )
         return result
 
     def get_host(self, host_id: str) -> dict[str, Any]:
@@ -242,12 +291,32 @@ class ApiClient:
         return result
 
     def list_reports(
-        self, host_id: str | None = None, limit: int = 50
+        self,
+        host_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+        host: str | None = None,
+        since: str | float | None = None,
+        until: str | float | None = None,
     ) -> list[dict[str, Any]]:
-        """Persisted reports, newest first (GET /api/reports)."""
-        params = {"limit": str(limit)}
+        """Persisted reports, newest first (GET /api/reports).
+
+        Optional host_id/host, status, created-at range and paging.
+        """
+        params: dict[str, str] = {"limit": str(limit)}
+        if offset:
+            params["offset"] = str(offset)
         if host_id:
             params["host_id"] = host_id
+        if host:
+            params["host"] = host
+        if status:
+            params["status"] = status
+        if since is not None:
+            params["since"] = str(since)
+        if until is not None:
+            params["until"] = str(until)
         result: list[dict[str, Any]] = self._request(
             "GET", "/api/reports", params=params
         )

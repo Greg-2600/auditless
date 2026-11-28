@@ -36,7 +36,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, SecretStr
@@ -46,8 +46,61 @@ from .heatmap import build_heatmap
 from .store import Store
 
 MAX_JOBS = 50
+MAX_REPORT_PAGE = 200
+MAX_HOST_PAGE = 500
+SCAN_STATUSES = {"queued", "running", "done", "error"}
+REPORT_STATUSES = {"done", "error"}
 
 _auth_scheme = HTTPBearer(auto_error=False)
+
+
+def _parse_time_param(value: str | None, name: str) -> float | None:
+    """Parse an epoch-seconds or ISO-8601 query timestamp (UTC if naive)."""
+    if value is None or value == "":
+        return None
+    import math
+    from datetime import datetime, timezone
+
+    try:
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            raise ValueError(value)
+        return parsed
+    except ValueError:
+        pass
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{name} must be epoch seconds or ISO-8601",
+        ) from exc
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.timestamp()
+
+
+def _time_range(
+    since: str | None, until: str | None
+) -> tuple[float | None, float | None]:
+    """Parse a since/until pair and reject inverted ranges."""
+    start = _parse_time_param(since, "since")
+    end = _parse_time_param(until, "until")
+    if start is not None and end is not None and start > end:
+        raise HTTPException(status_code=400, detail="since must not be after until")
+    return start, end
+
+
+def _status_filter(status: str | None, allowed: set[str]) -> str | None:
+    """Validate a status filter (empty means no filter)."""
+    if status is None or status == "":
+        return None
+    if status not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"status must be one of: {', '.join(sorted(allowed))}",
+        )
+    return status
 
 
 def require_token(
@@ -1601,10 +1654,36 @@ def api_version() -> dict:
     response_model=list[ScanJobPublic],
     summary="List recent scan jobs (newest first, no credentials)",
 )
-def api_list_scans() -> list[ScanJobPublic]:
-    """Summaries of recent jobs; full reports only via per-job GET."""
+def api_list_scans(
+    host: str | None = None,
+    status: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=MAX_JOBS),
+    offset: int = Query(default=0, ge=0),
+) -> list[ScanJobPublic]:
+    """Summaries of recent jobs; full reports only via per-job GET.
+
+    Supports host substring, status, and created-at range filters plus
+    limit/offset paging. Omitting every parameter preserves the historical
+    newest-first, all-jobs response.
+    """
+    status = _status_filter(status, SCAN_STATUSES)
+    start, end = _time_range(since, until)
     with _jobs_lock:
         jobs = [_jobs[jid] for jid in reversed(_jobs_order) if jid in _jobs]
+    if host:
+        needle = host.lower()
+        jobs = [job for job in jobs if needle in job.hostname.lower()]
+    if status is not None:
+        jobs = [job for job in jobs if job.status == status]
+    if start is not None:
+        jobs = [job for job in jobs if job.created_at >= start]
+    if end is not None:
+        jobs = [job for job in jobs if job.created_at <= end]
+    jobs = jobs[offset:]
+    if limit is not None:
+        jobs = jobs[:limit]
     return [_public_job(job) for job in jobs]
 
 
@@ -1915,9 +1994,23 @@ def _host_public(row: dict) -> HostPublic:
     summary="List saved hosts",
     dependencies=_guarded,
 )
-def api_list_hosts() -> list[HostPublic]:
-    """Saved hosts (metadata only; key bytes never exposed)."""
-    return [_host_public(row) for row in get_store().list_hosts()]
+def api_list_hosts(
+    host: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=MAX_HOST_PAGE),
+    offset: int = Query(default=0, ge=0),
+) -> list[HostPublic]:
+    """Saved hosts (metadata only; key bytes never exposed).
+
+    Filters match host name/hostname substrings and created-at range; the
+    default response still includes every saved host.
+    """
+    start, end = _time_range(since, until)
+    rows = get_store().list_hosts(
+        host=host, since=start, until=end, limit=limit, offset=offset
+    )
+    return [_host_public(row) for row in rows]
 
 
 @app.post(
@@ -2085,9 +2178,31 @@ def api_delete_host_key(
     summary="Persisted scan reports, newest first",
     dependencies=_guarded,
 )
-def api_list_reports(host_id: str | None = None, limit: int = 50) -> list[dict]:
-    """Stored report summaries, optionally filtered by host."""
-    return get_store().list_reports(host_id, max(1, min(limit, 200)))
+def api_list_reports(
+    host_id: str | None = None,
+    host: str | None = None,
+    status: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int = Query(default=50, ge=1, le=MAX_REPORT_PAGE),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
+    """Stored report summaries, optionally filtered by host, status or time.
+
+    ``host_id`` matches a saved host exactly; ``host`` matches a hostname
+    substring. Defaults keep the historical newest-first 50-row response.
+    """
+    status = _status_filter(status, REPORT_STATUSES)
+    start, end = _time_range(since, until)
+    return get_store().list_reports(
+        host_id,
+        limit=limit,
+        offset=offset,
+        status=status,
+        host=host,
+        since=start,
+        until=end,
+    )
 
 
 @app.get(
