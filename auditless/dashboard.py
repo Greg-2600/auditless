@@ -140,7 +140,47 @@ def require_token(
     )
 
 
+# Per-IP caps for scan-start and token-mint routes (Roadmap item 41).
+# Values are module-level so tests can tighten the window without I/O.
+RATE_LIMIT_MAX = 30
+RATE_LIMIT_WINDOW_SEC = 60.0
+_rate_lock = threading.Lock()
+_rate_hits: dict[str, list[float]] = {}
+
+
+def clear_rate_limit() -> None:
+    """Drop recorded hits (called from the test fixture via reset_store)."""
+    with _rate_lock:
+        _rate_hits.clear()
+
+
+def enforce_rate_limit(request: Request) -> None:
+    """Reject a client that has exceeded the per-IP token bucket.
+
+    Uses the immediate peer address only. X-Forwarded-For is ignored so a
+    caller cannot reset the bucket by spoofing a header.
+    """
+    peer = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    window = RATE_LIMIT_WINDOW_SEC
+    limit = RATE_LIMIT_MAX
+    with _rate_lock:
+        hits = [ts for ts in _rate_hits.get(peer, []) if now - ts < window]
+        if len(hits) >= limit:
+            retry_after = max(1, int(window - (now - hits[0])) + 1)
+            _rate_hits[peer] = hits
+            raise HTTPException(
+                status_code=429,
+                detail="rate limit exceeded",
+                headers={"Retry-After": str(retry_after)},
+            )
+        hits.append(now)
+        _rate_hits[peer] = hits
+
+
 _guarded = [Depends(require_token)]
+_rate_guarded = [Depends(require_token), Depends(enforce_rate_limit)]
+
 
 _jobs: dict[str, "ScanJob"] = {}
 _jobs_order: list[str] = []
@@ -164,6 +204,7 @@ def reset_store() -> None:
     """Drop the cached store (tests point at isolated dirs)."""
     global _STORE
     _STORE = None
+    clear_rate_limit()
 
 
 MAX_JOB_LOG_CHARS = 65536
@@ -1689,7 +1730,7 @@ def api_list_scans(
 
 @app.post(
     "/api/scans",
-    dependencies=_guarded,
+    dependencies=_rate_guarded,
     response_model=ScanJobPublic,
     status_code=201,
     summary="Start a scan (password is write-only)",
@@ -1748,7 +1789,7 @@ def api_start_scan(
 
 @app.post(
     "/api/scans/range",
-    dependencies=_guarded,
+    dependencies=_rate_guarded,
     response_model=RangeScanResponse,
     status_code=201,
     summary="Probe a network range and scan every host with SSH open",
@@ -2583,7 +2624,7 @@ class FleetScanRequest(BaseModel):
 @app.post(
     "/api/fleet/scan",
     summary="Scan many hosts in parallel",
-    dependencies=_guarded,
+    dependencies=_rate_guarded,
 )
 def api_fleet_scan(data: FleetScanRequest, actor: str = Depends(require_token)) -> dict:
     """Start one persisted scan per host (bounded pool); returns job ids."""
@@ -2693,7 +2734,7 @@ class RotateRequest(BaseModel):
 @app.post(
     "/api/tokens",
     summary="Create a named API token",
-    dependencies=_guarded,
+    dependencies=_rate_guarded,
 )
 def api_create_token(data: TokenCreate, actor: str = Depends(require_token)) -> dict:
     """Mint a token; the plaintext shows exactly once — store it now."""
