@@ -3869,7 +3869,11 @@ def check_logging_and_auditing(ssh: SSHSession, password: str = "") -> CheckResu
     cmd2 = "bash -lc 'systemctl is-active auditd 2>/dev/null || service auditd status 2>/dev/null'"
     code2, out2, _ = _run(ssh, cmd2)
 
-    auditd_running = "active" in out2.lower() or "running" in out2.lower()
+    auditd_state = out2.strip().lower()
+    auditd_running = bool(
+        re.search(r"\bactive\b", auditd_state)
+        or re.search(r"\bis running\b", auditd_state)
+    )
 
     if not auditd_running:
         return _warn(
