@@ -79,6 +79,19 @@ def test_healthz(client):
     assert client.health() == {"status": "ok"}
 
 
+def test_scheduler_status_endpoint(client):
+    host = client.create_host("h", "h.example", "u")
+    sched = client.create_schedule(host["id"], "nightly", "0 3 * * *")
+    status = client.scheduler_status()
+    assert status["enabled_schedules"] == 1
+    assert [row["schedule_id"] for row in status["next_runs"]] == [sched["id"]]
+    assert status["next_runs"][0]["next_run"] is not None
+    assert status["lag_seconds"] == 0
+    assert status["failures"] == 0
+    assert status["active_runs"] == []
+    assert status["worker_saturation"] == 0.0
+
+
 def test_index_serves_spa(client):
     import urllib.request
 
@@ -285,6 +298,7 @@ def test_openapi_spec_is_complete(client):
         "/api/tokens/{token_id}",
         "/api/audit",
         "/api/audit/verify",
+        "/api/scheduler/status",
         "/api/maintenance/backup",
         "/api/maintenance/migrate-secrets",
         "/api/maintenance/rotate-key",
