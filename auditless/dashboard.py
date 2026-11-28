@@ -2814,6 +2814,18 @@ def api_verify_audit() -> dict:
     return get_store().verify_audit()
 
 
+@app.get(
+    "/api/scheduler/status",
+    summary="Scheduler queue health",
+    dependencies=_guarded,
+)
+def api_scheduler_status() -> dict:
+    """Next runs, lag, recent failures, and worker state (read-only)."""
+    from .scheduler import scheduler_status
+
+    return scheduler_status(get_store())
+
+
 @app.post(
     "/api/maintenance/migrate-secrets",
     summary="Encrypt plaintext secrets in place",

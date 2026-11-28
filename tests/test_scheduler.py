@@ -12,6 +12,7 @@ from auditless.scheduler import (
     post_webhook,
     run_due_schedules,
     scheduler_loop,
+    scheduler_status,
     should_notify,
 )
 from auditless.store import Store
@@ -330,6 +331,51 @@ def test_run_due_skips_overlapping_run(store):
     thread.join(timeout=15)
     assert calls[0][0]["error"] == "boom"  # None report takes the error path
     assert sched_mod._running == set()  # lock released on every path
+
+
+def test_scheduler_status_reports_queue_health(store, monkeypatch):
+    import sqlite3
+
+    import auditless.scheduler as sched_mod
+
+    host = _host(store)
+    due = store.create_schedule(host["id"], "due", "* * * * *")
+    future = store.create_schedule(host["id"], "future", "0 0 1 1 *")
+    with sqlite3.connect(str(store.db_path)) as conn:
+        conn.execute("UPDATE schedules SET next_run = 990.0 WHERE id = ?", (due["id"],))
+        conn.execute(
+            "UPDATE schedules SET next_run = 2000.0 WHERE id = ?", (future["id"],)
+        )
+    store.audit("scheduler", "scan.failed", "scan", "j1", "boom")
+    store.audit("operator", "scan.failed", "scan", "j2", "unrelated")
+    monkeypatch.setattr(sched_mod.time, "time", lambda: 1000.0)
+
+    status = scheduler_status(store)
+
+    assert status["enabled_schedules"] == 2
+    assert status["next_runs"] == [
+        {"schedule_id": due["id"], "name": "due", "next_run": 990.0},
+        {"schedule_id": future["id"], "name": "future", "next_run": 2000.0},
+    ]
+    assert status["lag_seconds"] == 10.0
+    assert status["failures"] == 1
+    assert status["active_runs"] == []
+    assert status["worker_saturation"] == 0.0
+
+
+def test_scheduler_status_shows_busy_worker(store):
+    import auditless.scheduler as sched_mod
+
+    sched = store.create_schedule(_host(store)["id"], "n", "* * * * *")
+    with sched_mod._running_lock:
+        sched_mod._running.add(sched["id"])
+    try:
+        status = scheduler_status(store)
+    finally:
+        with sched_mod._running_lock:
+            sched_mod._running.discard(sched["id"])
+    assert status["active_runs"] == [sched["id"]]
+    assert status["worker_saturation"] == 1.0
 
 
 def test_scheduler_loop_ticks_and_stops(store):

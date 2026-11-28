@@ -309,6 +309,8 @@ docker run --rm -p 127.0.0.1:8080:8080 auditless --serve
 - `POST /api/scans` starts a scan (same CLI pipeline — same checks,
   same reports); poll `GET /api/scans/{id}`; `GET .../report?format=md`
   re-renders finished reports; `GET /api/profiles` lists scan profiles
+- `GET /api/scheduler/status` reports scheduler queue health: next runs,
+  lag, recent failures, and whether the scheduler worker is busy
 - The SSH password is write-only: in server memory for the run only —
   never stored, logged, or returned by the API. The dashboard binds to
   localhost; do not expose it to untrusted networks without authentication

@@ -461,6 +461,11 @@ class ApiClient:
         result: dict[str, Any] = self._request("GET", "/api/audit/verify")
         return result
 
+    def scheduler_status(self) -> dict[str, Any]:
+        """Scheduler queue health (GET /api/scheduler/status)."""
+        result: dict[str, Any] = self._request("GET", "/api/scheduler/status")
+        return result
+
     def migrate_secrets(self) -> dict[str, Any]:
         """Encrypt plaintext secrets in place (POST .../migrate-secrets)."""
         result: dict[str, Any] = self._request(

@@ -140,6 +140,46 @@ def run_due_schedules(store: Any, scan_host: Any) -> list[dict]:
     return outcomes
 
 
+def scheduler_status(store: Any) -> dict[str, Any]:
+    """Read-only snapshot of scheduler queue health.
+
+    Reports the next run of every enabled schedule, how long the oldest due
+    schedule has been waiting, recent scheduler scan failures from the
+    operator audit trail (last 100 records), and whether the single
+    scheduler worker is busy. No network calls or state changes.
+    """
+    now = time.time()
+    schedules = store.list_schedules(enabled_only=True)
+    next_runs = [
+        {
+            "schedule_id": row["id"],
+            "name": row.get("name", ""),
+            "next_run": row.get("next_run"),
+        }
+        for row in sorted(schedules, key=lambda item: item.get("next_run") or 0)
+    ]
+    due = [
+        row["next_run"]
+        for row in schedules
+        if row.get("next_run") and row["next_run"] <= now
+    ]
+    failures = sum(
+        1
+        for row in store.list_audit(limit=100)
+        if row.get("actor") == "scheduler" and row.get("action") == "scan.failed"
+    )
+    with _running_lock:
+        active = sorted(_running)
+    return {
+        "enabled_schedules": len(schedules),
+        "next_runs": next_runs,
+        "lag_seconds": round(max((now - ts for ts in due), default=0.0), 3),
+        "failures": failures,
+        "active_runs": active,
+        "worker_saturation": 1.0 if active else 0.0,
+    }
+
+
 def scheduler_loop(
     store: Any,
     stop: threading.Event,
