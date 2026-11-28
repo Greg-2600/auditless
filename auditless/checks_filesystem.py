@@ -4,15 +4,16 @@ This module implements filesystem security checks for NFS exports, mount options
 partition security, and filesystem integrity monitoring following Lynis-compatible
 test patterns.
 
-Test IDs: NFS-3000 to NFS-3005, FS-3010 to FS-3015
+Test IDs: NFS-3000 to NFS-3005, FS-3010 to FS-3015, FILE-7525
 Category: Filesystem, Storage
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List
 
-from .checks import CheckResult, _fail, _pass, _run, _warn
+from .checks import CheckResult, _fail, _pass, _run, _unknown, _warn
 from .ssh_client import SSHSession
 from .test_ids import CHECK_TEST_IDS
 
@@ -401,6 +402,214 @@ def check_filesystem_integrity_tools(
     )
 
 
+_PRIVILEGED_FILE_PROBE = r"""command -v dpkg-query >/dev/null 2>&1 && tool=dpkg || tool=none
+command -v rpm >/dev/null 2>&1 && [ "$tool" = none ] && tool=rpm
+printf 'tool:%s\n' "$tool"
+find /bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin /etc -xdev \
+  -type f \( -perm -002 -o -perm -4000 -o -perm -2000 \) \
+  -printf '%p\t%m\t%u\t%g\n' 2>/dev/null | head -n 200 | \
+while IFS="$(printf '\t')" read -r path mode owner group; do
+  pkg='-'
+  if [ "$tool" = dpkg ]; then
+    pkg=$(dpkg-query -S "$path" 2>/dev/null | head -n 1 | cut -d: -f1)
+  elif [ "$tool" = rpm ]; then
+    pkg=$(rpm -qf --qf '%{NAME}\n' "$path" 2>/dev/null | head -n 1)
+  fi
+  [ -n "$pkg" ] || pkg='-'
+  printf '%s\t%s\t%s\t%s\t%s\n' "$path" "$mode" "$owner" "$group" "$pkg"
+done
+"""
+
+
+@dataclass(frozen=True)
+class _PrivilegedFile:
+    """One candidate emitted by the read-only permission probe."""
+
+    path: str
+    mode: int
+    owner: str
+    group: str
+    package: str
+
+    @property
+    def world_writable(self) -> bool:
+        """Whether anyone can write the file."""
+        return bool(self.mode & 0o002)
+
+    @property
+    def privileged(self) -> bool:
+        """Whether the SUID or SGID bit is set."""
+        return bool(self.mode & (0o4000 | 0o2000))
+
+    @property
+    def sticky(self) -> bool:
+        """Whether the sticky bit is set on the file."""
+        return bool(self.mode & 0o1000)
+
+    @property
+    def package_owned(self) -> bool:
+        """Whether a package claims this path."""
+        return self.package not in {"", "-"}
+
+
+def _parse_privileged_probe(output: str) -> tuple[str, list[_PrivilegedFile]]:
+    """Parse the package-tool marker and tab-separated candidate rows."""
+    tool = ""
+    files: list[_PrivilegedFile] = []
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("tool:"):
+            tool = line.split(":", 1)[1].strip()
+            continue
+        parts = line.split("\t")
+        if len(parts) != 5:
+            continue
+        path, mode_text, owner, group, package = parts
+        if not path.startswith("/"):
+            continue
+        try:
+            mode = int(mode_text, 8)
+        except ValueError:
+            continue
+        files.append(
+            _PrivilegedFile(path, mode, owner.strip(), group.strip(), package.strip())
+        )
+    return tool, files
+
+
+def _triage_privileged_files(
+    files: list[_PrivilegedFile],
+) -> tuple[list[str], list[str], list[str]]:
+    """Split candidates into unpackaged, packaged-writable, and allowlisted."""
+    unpackaged: list[str] = []
+    packaged_writable: list[str] = []
+    allowlisted: list[str] = []
+    for item in files:
+        if item.world_writable and not item.sticky:
+            kind = "world-writable"
+        elif item.privileged:
+            kind = "SUID/SGID"
+        else:
+            continue
+        label = f"{item.path} ({kind} {item.mode:04o} {item.owner}:{item.group})"
+        if not item.package_owned:
+            unpackaged.append(label)
+        elif kind == "world-writable":
+            packaged_writable.append(f"{label} package {item.package}")
+        else:
+            allowlisted.append(f"{label} package {item.package}")
+    return unpackaged, packaged_writable, allowlisted
+
+
+def check_privileged_writable_triage(
+    ssh: SSHSession, _password: str = ""
+) -> CheckResult:
+    """Triage world-writable and SUID/SGID files against package ownership.
+
+    Test ID: FILE-7525
+    Category: File Permissions
+
+    One bounded read-only probe collects world-writable and SUID/SGID files
+    in system paths together with the owning package (dpkg-query or rpm -qf).
+    Package-owned SUID/SGID binaries are expected and allowlisted; an
+    unpackaged privileged or world-writable file is a finding because no
+    package justifies its presence. Packaged files that became world-writable
+    warn as permission drift. Without a package database the allowlist cannot
+    be applied, so the result is unknown rather than a false pass.
+    """
+    category = "File Permissions"
+    test_id = "FILE-7525"
+    try:
+        code, out, err = _run(ssh, _PRIVILEGED_FILE_PROBE)
+        if code != 0 and not out.strip():
+            return _unknown(
+                "Privileged/Writable File Triage",
+                f"Unable to probe file permissions: {err.strip() or out.strip()}",
+                "Verify SSH connectivity and permission to inspect system files",
+                category,
+                test_id,
+            )
+
+        package_tool, files = _parse_privileged_probe(out)
+        if package_tool not in {"dpkg", "rpm"}:
+            return _unknown(
+                "Privileged/Writable File Triage",
+                "No dpkg-query or rpm available; package-owned allowlist cannot be applied",
+                "Install a package manager or review privileged files manually",
+                category,
+                test_id,
+            )
+
+        unpackaged, packaged_writable, allowlisted = _triage_privileged_files(files)
+        item_name = "Privileged/Writable File Triage"
+        if unpackaged:
+            details = "Unpackaged privileged/writable file(s): " + "; ".join(
+                unpackaged[:5]
+            )
+            if len(unpackaged) > 5:
+                details += f" (+{len(unpackaged) - 5} more)"
+            if allowlisted:
+                details += (
+                    f"; {len(allowlisted)} package-owned SUID/SGID binaries allowlisted"
+                )
+            return _fail(
+                item_name,
+                details,
+                "Investigate unpackaged privileged/writable files: confirm provenance, "
+                "remove setuid/setgid (chmod u-s,g-s) or world write (chmod o-w), "
+                "and reinstall from a trusted package",
+                category,
+                test_id,
+            )
+
+        if packaged_writable:
+            details = "Package-owned world-writable file(s): " + "; ".join(
+                packaged_writable[:5]
+            )
+            return _warn(
+                item_name,
+                details,
+                "Restore packaged permissions (dpkg --verify or rpm -V) and remove "
+                "world write with chmod o-w",
+                category,
+                test_id,
+            )
+
+        if allowlisted:
+            details = (
+                f"{len(allowlisted)} package-owned SUID/SGID binary(ies) allowlisted: "
+                + "; ".join(allowlisted[:3])
+            )
+            if len(allowlisted) > 3:
+                details += f" (+{len(allowlisted) - 3} more)"
+            details += "; no unpackaged privileged or world-writable files"
+            return _pass(
+                item_name,
+                details,
+                "Keep package-owned SUID/SGID binaries tracked by the package manager",
+                category,
+                test_id,
+            )
+
+        return _pass(
+            item_name,
+            "No world-writable or SUID/SGID files in system paths",
+            "Continue periodic permission reviews",
+            category,
+            test_id,
+        )
+    except Exception as e:
+        return _unknown(
+            "Privileged/Writable File Triage",
+            f"Error triaging privileged/writable files: {str(e)}",
+            "Verify SSH connectivity and permissions",
+            category,
+            test_id,
+        )
+
+
 def run_all_filesystem_checks(ssh: SSHSession, password: str = "") -> List[CheckResult]:
     """Run all filesystem and NFS security checks.
 
@@ -414,6 +623,7 @@ def run_all_filesystem_checks(ssh: SSHSession, password: str = "") -> List[Check
         check_home_nosuid,
         check_var_permissions,
         check_filesystem_integrity_tools,
+        check_privileged_writable_triage,
     ]
 
     results = []

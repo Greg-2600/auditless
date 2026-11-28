@@ -1,21 +1,24 @@
 """Unit tests for Filesystem & NFS Security Module (checks_filesystem.py).
 
-Tests all 6 filesystem security checks (NFS-3000, FS-3010 through FS-3014) with
-pass/warn/fail scenarios and error handling.
+Tests all 7 filesystem security checks (NFS-3000, FS-3010 through FS-3014,
+and FILE-7525) with pass/warn/fail scenarios and error handling.
 """
 
 # pylint: disable=protected-access,duplicate-code,line-too-long,too-many-lines,too-few-public-methods,redefined-outer-name,import-outside-toplevel,trailing-newlines
 
+from typing import Callable
 from unittest.mock import MagicMock
 
 import pytest
 
 from auditless.checks import disable_command_cache, reset_command_cache
 from auditless.checks_filesystem import (
+    _parse_privileged_probe,
     check_filesystem_integrity_tools,
     check_home_nosuid,
     check_mount_options_security,
     check_nfs_exports_security,
+    check_privileged_writable_triage,
     check_tmp_noexec,
     check_var_permissions,
     run_all_filesystem_checks,
@@ -58,6 +61,28 @@ def mock_ssh_exec(return_values):
 
     ssh._client.exec_command.side_effect = responses
     return ssh
+
+
+def _probe_row(
+    path: str,
+    mode: str,
+    package: str = "-",
+    owner: str = "root",
+    group: str = "root",
+) -> str:
+    """Build one tab-separated row of canned permission-probe output."""
+    return f"{path}\t{mode}\t{owner}\t{group}\t{package}"
+
+
+@pytest.fixture
+def privileged_probe() -> Callable[..., MagicMock]:
+    """Build a mocked SSH session from canned permission-probe rows."""
+
+    def _build(rows: list[str], tool: str = "dpkg") -> MagicMock:
+        output = f"tool:{tool}\n" + "".join(f"{row}\n" for row in rows)
+        return mock_ssh_exec([(0, output, "")])
+
+    return _build
 
 
 class TestCheckNFSExportsSecurity:
@@ -378,11 +403,152 @@ class TestCheckFilesystemIntegrityTools:
         assert "tripwire" in result.details.lower()
 
 
+class TestCheckPrivilegedWritableTriage:
+    """Test check_privileged_writable_triage (FILE-7525)."""
+
+    def test_package_owned_suid_binaries_are_allowlisted(self, privileged_probe):
+        """Expected packaged SUID/SGID binaries no longer create noise."""
+        rows = [
+            _probe_row("/usr/bin/sudo", "4755", "sudo"),
+            _probe_row("/usr/bin/passwd", "4755", "passwd"),
+            _probe_row("/usr/bin/chfn", "4755", "passwd"),
+        ]
+        result = check_privileged_writable_triage(privileged_probe(rows))
+
+        assert result.status == "pass"
+        assert result.test_id == "FILE-7525"
+        assert result.category == "File Permissions"
+        assert "3 package-owned SUID/SGID binary(ies) allowlisted" in result.details
+        assert "no unpackaged privileged or world-writable files" in result.details
+
+    def test_unpackaged_suid_binary_fails(self, privileged_probe):
+        """An SUID binary with no owning package is actionable."""
+        rows = [
+            _probe_row("/usr/local/bin/backdoor", "4755", owner="alice", group="alice"),
+            _probe_row("/usr/bin/sudo", "4755", "sudo"),
+        ]
+        result = check_privileged_writable_triage(privileged_probe(rows))
+
+        assert result.status == "fail"
+        assert "Unpackaged privileged/writable file(s)" in result.details
+        assert "/usr/local/bin/backdoor (SUID/SGID 4755 alice:alice)" in result.details
+        assert "1 package-owned SUID/SGID binaries allowlisted" in result.details
+
+    def test_unpackaged_world_writable_file_fails(self, privileged_probe):
+        """World write outside the package allowlist is a finding."""
+        rows = [_probe_row("/etc/cron.d/evil", "0666", owner="alice", group="alice")]
+        result = check_privileged_writable_triage(privileged_probe(rows))
+
+        assert result.status == "fail"
+        assert "/etc/cron.d/evil (world-writable 0666 alice:alice)" in result.details
+
+    def test_packaged_world_writable_file_warns(self, privileged_probe):
+        """Package-owned world-write drift warns instead of failing."""
+        rows = [_probe_row("/etc/example.conf", "0666", "coreutils")]
+        result = check_privileged_writable_triage(privileged_probe(rows))
+
+        assert result.status == "warn"
+        assert "Package-owned world-writable file(s)" in result.details
+        assert "package coreutils" in result.details
+
+    def test_sticky_world_writable_file_is_ignored(self, privileged_probe):
+        """A sticky world-writable file is not a finding."""
+        rows = [_probe_row("/etc/example.tmp", "1666")]
+        result = check_privileged_writable_triage(privileged_probe(rows))
+
+        assert result.status == "pass"
+        assert "No world-writable or SUID/SGID files" in result.details
+
+    def test_plain_file_is_ignored(self, privileged_probe):
+        """A file without dangerous bits never becomes a finding."""
+        result = check_privileged_writable_triage(
+            privileged_probe([_probe_row("/etc/example.conf", "0644")])
+        )
+
+        assert result.status == "pass"
+        assert "No world-writable or SUID/SGID files" in result.details
+
+    def test_rpm_ownership_is_supported(self, privileged_probe):
+        """RPM hosts use the same allowlist semantics."""
+        rows = [_probe_row("/usr/bin/su", "4755", "util-linux")]
+        result = check_privileged_writable_triage(privileged_probe(rows, tool="rpm"))
+
+        assert result.status == "pass"
+        assert "util-linux" in result.details
+
+    def test_missing_package_tool_is_unknown(self, privileged_probe):
+        """Without a package database the allowlist cannot be applied."""
+        rows = [_probe_row("/usr/local/bin/backdoor", "4755", owner="alice")]
+        result = check_privileged_writable_triage(privileged_probe(rows, tool="none"))
+
+        assert result.status == "unknown"
+        assert "allowlist cannot be applied" in result.details
+        assert "backdoor" not in result.details
+
+    def test_probe_failure_is_unknown(self):
+        """A failed probe never claims a pass."""
+        ssh = mock_ssh_exec([(1, "", "Permission denied")])
+        result = check_privileged_writable_triage(ssh)
+
+        assert result.status == "unknown"
+        assert "Unable to probe file permissions" in result.details
+
+    def test_malformed_rows_are_ignored(self, privileged_probe):
+        """Blank, short, non-absolute, and non-octal rows are skipped."""
+        rows = [
+            "",
+            "malformed",
+            _probe_row("relative/path", "0666"),
+            _probe_row("/etc/bad-mode", "not-octal"),
+            _probe_row("/usr/bin/sudo", "4755", "sudo"),
+        ]
+        result = check_privileged_writable_triage(privileged_probe(rows))
+
+        assert result.status == "pass"
+        assert "1 package-owned SUID/SGID binary(ies) allowlisted" in result.details
+        assert "bad-mode" not in result.details
+
+    def test_probe_exception_is_unknown(self):
+        """Transport failures produce an unknown result with a real test ID."""
+        ssh = MagicMock()
+        ssh._client.exec_command.side_effect = Exception("Connection lost")
+        result = check_privileged_writable_triage(ssh)
+
+        assert result.status == "unknown"
+        assert result.test_id == "FILE-7525"
+        assert "Error triaging privileged/writable files" in result.details
+
+    def test_parse_probe_reads_tool_and_rows(self):
+        """The pure parser keeps the tool marker and valid candidate rows."""
+        output = (
+            "tool:dpkg\n" + _probe_row("/usr/bin/sudo", "4755", "sudo") + "\nignored\n"
+        )
+        tool, files = _parse_privileged_probe(output)
+
+        assert tool == "dpkg"
+        assert len(files) == 1
+        assert files[0].path == "/usr/bin/sudo"
+        assert files[0].privileged
+        assert files[0].package_owned
+
+
+def test_privileged_triage_id_is_registered_and_usable() -> None:
+    """The new ID is mapped to CIS 6.1 and accepted by profile lint."""
+    from auditless.compliance import TEST_CIS
+    from auditless.config import lint_profile
+    from auditless.test_ids import CHECK_TEST_IDS
+
+    assert CHECK_TEST_IDS["check_privileged_writable_triage"] == "FILE-7525"
+    assert ("6.1", "partial") in TEST_CIS["FILE-7525"]
+    errors, _ = lint_profile({"skip_tests": ["FILE-7525"]})
+    assert not errors
+
+
 class TestRunAllFilesystemChecks:
     """Test run_all_filesystem_checks function."""
 
     def test_all_checks_executed(self):
-        """Test that all 6 filesystem checks are executed."""
+        """Test that all 7 filesystem checks are executed."""
         ssh = mock_ssh_exec(
             [
                 (1, "", ""),  # Default: not installed/not found
@@ -392,7 +558,7 @@ class TestRunAllFilesystemChecks:
 
         results = run_all_filesystem_checks(ssh, password="test")
 
-        assert len(results) == 6
+        assert len(results) == 7
         assert all(isinstance(r.test_id, str) for r in results)
 
     def test_error_handling_in_checks(self):
@@ -402,7 +568,7 @@ class TestRunAllFilesystemChecks:
 
         results = run_all_filesystem_checks(ssh, password="test")
 
-        # Should still return 6 results, all marked unknown (not fail)
-        assert len(results) == 6
+        # Should still return 7 results, all marked unknown (not fail)
+        assert len(results) == 7
         assert all(r.status == "unknown" for r in results)
         assert all("error" in r.details.lower() for r in results)
